@@ -215,6 +215,12 @@ export default function Page() {
     }
   };
 
+  // 처음 접속 시 기본 지역으로 자동 조회 (버튼을 누르지 않아도 바로 데이터가 보이도록)
+  useEffect(() => {
+    handleFetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const getUnitPrice = (item) => (
     dealType === 'rent' ? (item.isJeonse ? item.depositPerPyeong : null) : item.pricePerPyeong
   );
@@ -678,6 +684,8 @@ export default function Page() {
               </div>
             </div>
 
+            {renderSeoulMap()}
+
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>전세가율 추이 (%)</h2>
               <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
@@ -726,7 +734,6 @@ export default function Page() {
               </table>
               </div>
             </div>
-            {renderSeoulMap()}
           </>
         )}
 
@@ -763,6 +770,8 @@ export default function Page() {
                 </div>
               </div>
             </div>
+
+            {renderSeoulMap()}
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>평균매매가격 추이 (한국부동산원)</h2>
@@ -811,7 +820,6 @@ export default function Page() {
               </table>
               </div>
             </div>
-            {renderSeoulMap()}
           </>
         )}
 
@@ -847,6 +855,8 @@ export default function Page() {
                 </div>
               </div>
             </div>
+
+            {renderSeoulMap()}
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>
@@ -946,7 +956,6 @@ export default function Page() {
                 </table>
               </div>
             </div>
-            {renderSeoulMap()}
           </>
         )}
 
