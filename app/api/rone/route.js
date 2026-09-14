@@ -23,7 +23,8 @@ function lastNMonthsYm(n) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const codes = (searchParams.get('codes') || '').split(',').map((c) => c.trim()).filter(Boolean);
-  const monthCount = Math.min(Math.max(parseInt(searchParams.get('months') || '6', 10), 1), 24);
+  const startParam = searchParams.get('start');
+  const endParam = searchParams.get('end');
 
   const key = (process.env.RONE_SERVICE_KEY || '').trim();
   if (!key) {
@@ -36,9 +37,28 @@ export async function GET(request) {
     return Response.json({ error: '지역 코드가 1개 이상 필요합니다.' }, { status: 400 });
   }
 
-  const months = lastNMonthsYm(monthCount);
-  const startYm = months[0];
-  const endYm = months[months.length - 1];
+  let startYm;
+  let endYm;
+  if (startParam && endParam && /^\d{6}$/.test(startParam) && /^\d{6}$/.test(endParam) && startParam <= endParam) {
+    startYm = startParam;
+    endYm = endParam;
+  } else {
+    const monthCount = Math.min(Math.max(parseInt(searchParams.get('months') || '6', 10), 1), 24);
+    const months = lastNMonthsYm(monthCount);
+    startYm = months[0];
+    endYm = months[months.length - 1];
+  }
+  const months = [];
+  {
+    const s = { y: parseInt(startYm.slice(0, 4), 10), m: parseInt(startYm.slice(4, 6), 10) };
+    const e = { y: parseInt(endYm.slice(0, 4), 10), m: parseInt(endYm.slice(4, 6), 10) };
+    const d = new Date(s.y, s.m - 1, 1);
+    const end = new Date(e.y, e.m - 1, 1);
+    while (d <= end && months.length < 24) {
+      months.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`);
+      d.setMonth(d.getMonth() + 1);
+    }
+  }
 
   const unmapped = codes.filter((c) => !getClsId(c));
   const mappedCodes = codes.filter((c) => getClsId(c));

@@ -58,6 +58,26 @@ function monthLabel(ym) {
   return `${ym.slice(0, 4)}.${ym.slice(4, 6)}`;
 }
 
+function ymNow() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function ymShift(ym, delta) {
+  const y = parseInt(ym.slice(0, 4), 10);
+  const m = parseInt(ym.slice(4, 6), 10);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function ymToMonthInput(ym) {
+  return `${ym.slice(0, 4)}-${ym.slice(4, 6)}`;
+}
+
+function monthInputToYm(v) {
+  return v.replace('-', '');
+}
+
 function labelFor(code) {
   return roneRegionLabel(code, regionLabel(code));
 }
@@ -68,7 +88,8 @@ export default function Page() {
   const isRone = dealType === 'rone';
   const isRatio = dealType === 'ratio';
   const [panelOpen, setPanelOpen] = useState(true);
-  const [monthCount, setMonthCount] = useState(6);
+  const [startYm, setStartYm] = useState(ymShift(ymNow(), -5));
+  const [endYm, setEndYm] = useState(ymNow());
   const [selected, setSelected] = useState(DEFAULT_SELECTED);
   const [pickerValue, setPickerValue] = useState('');
   const [status, setStatus] = useState('idle');
@@ -153,7 +174,7 @@ export default function Page() {
     const name = favName.trim();
     if (!name) return;
     const next = [...favorites.filter((f) => f.name !== name), {
-      name, dealType, monthCount, selected: [...selected],
+      name, dealType, startYm, endYm, selected: [...selected],
     }];
     persistFavorites(next);
     setFavName('');
@@ -161,7 +182,10 @@ export default function Page() {
 
   const applyFavorite = (fav) => {
     setDealTypeSafe(fav.dealType);
-    setMonthCount(fav.monthCount);
+    if (fav.startYm && fav.endYm) {
+      setStartYm(fav.startYm);
+      setEndYm(fav.endYm);
+    }
     setSelected(fav.selected);
   };
 
@@ -184,10 +208,14 @@ export default function Page() {
       setErrorMsg('지역을 하나 이상 선택해주세요.');
       return;
     }
+    if (startYm > endYm) {
+      setErrorMsg('시작월이 종료월보다 이후입니다.');
+      return;
+    }
     setStatus('loading');
     try {
       if (dealType === 'rone') {
-        const res = await fetch(`/api/rone?codes=${selected.join(',')}&months=${monthCount}`);
+        const res = await fetch(`/api/rone?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`);
         const json = await res.json();
         if (!res.ok) {
           setErrorMsg(json.error || `요청 실패 (HTTP ${res.status})`);
@@ -204,8 +232,8 @@ export default function Page() {
       }
       if (dealType === 'ratio') {
         const [saleRes, rentRes] = await Promise.all([
-          fetch(`/api/trades?codes=${selected.join(',')}&months=${monthCount}`),
-          fetch(`/api/rents?codes=${selected.join(',')}&months=${monthCount}`),
+          fetch(`/api/trades?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`),
+          fetch(`/api/rents?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`),
         ]);
         const [saleJson, rentJson] = await Promise.all([saleRes.json(), rentRes.json()]);
         if (!saleRes.ok || !rentRes.ok) {
@@ -223,7 +251,7 @@ export default function Page() {
         return;
       }
       const endpoint = dealType === 'rent' ? '/api/rents' : '/api/trades';
-      const res = await fetch(`${endpoint}?codes=${selected.join(',')}&months=${monthCount}`);
+      const res = await fetch(`${endpoint}?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`);
       const json = await res.json();
       if (!res.ok) {
         setErrorMsg(json.error || `요청 실패 (HTTP ${res.status})`);
@@ -653,27 +681,33 @@ export default function Page() {
 
         <div>
           <label style={styles.label}>조회 기간</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 10 }}>
             {[1, 3, 6, 12].map((n) => (
-              <div key={n} onClick={() => setMonthCount(n)} style={{ ...styles.toggleBtn(monthCount === n), padding: '7px 0', fontSize: 12 }}>
-                {n}개월
+              <div
+                key={n}
+                onClick={() => { setEndYm(ymNow()); setStartYm(ymShift(ymNow(), -(n - 1))); }}
+                style={{ ...styles.toggleBtn(startYm === ymShift(ymNow(), -(n - 1)) && endYm === ymNow()), padding: '7px 0', fontSize: 12 }}
+              >
+                최근 {n}개월
               </div>
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11.5, color: PALETTE.textMuted, whiteSpace: 'nowrap' }}>직접 입력</span>
             <input
-              type="number"
-              min={1}
-              max={24}
-              value={monthCount}
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                if (Number.isFinite(v)) setMonthCount(Math.min(24, Math.max(1, v)));
-              }}
-              style={{ ...styles.select, padding: '6px 8px', width: 60 }}
+              type="month"
+              value={ymToMonthInput(startYm)}
+              max={ymToMonthInput(endYm)}
+              onChange={(e) => e.target.value && setStartYm(monthInputToYm(e.target.value))}
+              style={{ ...styles.select, padding: '6px 8px', fontSize: 12 }}
             />
-            <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>개월 (최대 24)</span>
+            <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>~</span>
+            <input
+              type="month"
+              value={ymToMonthInput(endYm)}
+              min={ymToMonthInput(startYm)}
+              onChange={(e) => e.target.value && setEndYm(monthInputToYm(e.target.value))}
+              style={{ ...styles.select, padding: '6px 8px', fontSize: 12 }}
+            />
           </div>
         </div>
 
