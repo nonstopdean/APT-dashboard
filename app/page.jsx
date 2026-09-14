@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import * as topojson from 'topojson-client';
 import { geoMercator, geoPath } from 'd3-geo';
 import KakaoChoropleth from '../components/KakaoChoropleth';
+import NaverChoropleth from '../components/NaverChoropleth';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -531,7 +532,15 @@ export default function Page() {
 
     return heroWrap(
       <>
-        {process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
+        {process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID ? (
+          <NaverChoropleth
+            features={seoulMapData.values}
+            colorFor={colorFor}
+            borderColor={PALETTE.border}
+            onSelect={(code) => addRegion(code)}
+            height="100%"
+          />
+        ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
           <KakaoChoropleth
             features={seoulMapData.values}
             colorFor={colorFor}
@@ -806,7 +815,13 @@ export default function Page() {
           )}
         </div>
 
-        <button style={styles.btn} onClick={handleFetch} disabled={status === 'loading'}>
+        <button
+          style={{
+            ...styles.btn, position: 'sticky', bottom: 0, boxShadow: '0 -8px 12px -4px rgba(255,255,255,0.9)',
+          }}
+          onClick={handleFetch}
+          disabled={status === 'loading'}
+        >
           <RefreshCw size={14} className={status === 'loading' ? 'spin' : ''} />
           {status === 'loading' ? '조회 중...' : '데이터 조회'}
         </button>

@@ -106,6 +106,21 @@ API를 씁니다. 별도 계정/키가 필요합니다.
 - "시세동향(한국부동산원)" 탭은 원래 통계 자체에 시/도 롤업 수치가 있어서
   호출 1번으로 끝나 훨씬 빠릅니다.
 
+## 지도를 네이버로 바꾸기 (선택)
+
+`NEXT_PUBLIC_NAVER_MAP_KEY_ID`를 등록하면 카카오맵 대신 네이버 지도가 우선 사용됩니다.
+
+1. https://console.ncloud.com (네이버 클라우드 플랫폼) 가입/로그인
+2. **Services > AI·NAVER API > Application** 메뉴에서 새 Application 생성
+3. 등록할 API 중 **Web Dynamic Map** 선택
+4. 생성 후 **Web 서비스 URL**에 배포된 사이트 도메인 등록
+   (예: `https://apt-dashboard-five.vercel.app`, 포트나 경로는 빼고 도메인만)
+5. Application 상세에서 **Client ID(=Key ID)** 확인 → Vercel 환경변수
+   `NEXT_PUBLIC_NAVER_MAP_KEY_ID`로 등록 후 재배포
+
+참고: 최근 네이버 지도 API가 `ncpClientId` 방식에서 `ncpKeyId` 방식으로 바뀌었습니다
+(2025년 이후 발급 키 기준). Client Secret은 이 지도 표시 기능에는 필요 없습니다.
+
 ## 서울 지도에 카카오맵 얹기 (선택)
 
 `RONE_SERVICE_KEY`처럼 필수는 아니고, 안 넣으면 자동으로 색칠된 SVG 지도가 대신
