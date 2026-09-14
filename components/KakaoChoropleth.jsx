@@ -6,7 +6,7 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]);
-  const [caption, setCaption] = useState('지역을 클릭하면 값이 여기 표시됩니다.');
+  const [caption, setCaption] = useState('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
@@ -20,8 +20,8 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
 
       if (!mapRef.current) {
         mapRef.current = new window.kakao.maps.Map(containerRef.current, {
-          center: new window.kakao.maps.LatLng(36.5, 127.85),
-          level: 13,
+          center: new window.kakao.maps.LatLng(37.5665, 126.978),
+          level: 8,
         });
       }
 
@@ -52,9 +52,11 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
           });
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
             polygon.setOptions({ fillOpacity: hasValue ? 0.7 : 0.12 });
+            setCaption(hasValue ? `${name}: ${Math.round(value).toLocaleString()}` : `${name} (검색되지 않은 지역)`);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
             polygon.setOptions({ fillOpacity: baseFillOpacity });
+            setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
           });
           polygonsRef.current.push(polygon);
         });

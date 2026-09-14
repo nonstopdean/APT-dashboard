@@ -13,7 +13,7 @@ import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
 
-const DEFAULT_SELECTED = ['11000'];
+const DEFAULT_SELECTED = [];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 
 const PALETTE = {
@@ -70,13 +70,9 @@ function ymShift(ym, delta) {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function ymToMonthInput(ym) {
-  return `${ym.slice(0, 4)}-${ym.slice(4, 6)}`;
-}
-
-function monthInputToYm(v) {
-  return v.replace('-', '');
-}
+const currentYear = new Date().getFullYear();
+const YEAR_OPTIONS = Array.from({ length: currentYear - 2005 + 1 }, (_, i) => String(2005 + i)).reverse();
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 
 function labelFor(code) {
   return roneRegionLabel(code, regionLabel(code));
@@ -269,9 +265,9 @@ export default function Page() {
     }
   };
 
-  // 처음 접속 시 기본 지역으로 자동 조회 (버튼을 누르지 않아도 바로 데이터가 보이도록)
+  // 처음 접속 시 지역이 선택돼 있으면 자동 조회 (버튼을 누르지 않아도 바로 데이터가 보이도록)
   useEffect(() => {
-    handleFetch();
+    if (selected.length > 0) handleFetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -692,22 +688,41 @@ export default function Page() {
               </div>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              type="month"
-              value={ymToMonthInput(startYm)}
-              max={ymToMonthInput(endYm)}
-              onChange={(e) => e.target.value && setStartYm(monthInputToYm(e.target.value))}
-              style={{ ...styles.select, padding: '6px 8px', fontSize: 12 }}
-            />
-            <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>~</span>
-            <input
-              type="month"
-              value={ymToMonthInput(endYm)}
-              min={ymToMonthInput(startYm)}
-              onChange={(e) => e.target.value && setEndYm(monthInputToYm(e.target.value))}
-              style={{ ...styles.select, padding: '6px 8px', fontSize: 12 }}
-            />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 11, color: PALETTE.textMuted, width: 28 }}>부터</span>
+              <select
+                value={startYm.slice(0, 4)}
+                onChange={(e) => setStartYm(`${e.target.value}${startYm.slice(4, 6)}`)}
+                style={{ ...styles.select, padding: '6px 4px', fontSize: 12, flex: 1 }}
+              >
+                {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}년</option>)}
+              </select>
+              <select
+                value={startYm.slice(4, 6)}
+                onChange={(e) => setStartYm(`${startYm.slice(0, 4)}${e.target.value}`)}
+                style={{ ...styles.select, padding: '6px 4px', fontSize: 12, flex: 1 }}
+              >
+                {MONTH_OPTIONS.map((m) => <option key={m} value={m}>{parseInt(m, 10)}월</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 11, color: PALETTE.textMuted, width: 28 }}>까지</span>
+              <select
+                value={endYm.slice(0, 4)}
+                onChange={(e) => setEndYm(`${e.target.value}${endYm.slice(4, 6)}`)}
+                style={{ ...styles.select, padding: '6px 4px', fontSize: 12, flex: 1 }}
+              >
+                {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}년</option>)}
+              </select>
+              <select
+                value={endYm.slice(4, 6)}
+                onChange={(e) => setEndYm(`${endYm.slice(0, 4)}${e.target.value}`)}
+                style={{ ...styles.select, padding: '6px 4px', fontSize: 12, flex: 1 }}
+              >
+                {MONTH_OPTIONS.map((m) => <option key={m} value={m}>{parseInt(m, 10)}월</option>)}
+              </select>
+            </div>
           </div>
         </div>
 
