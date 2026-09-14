@@ -434,8 +434,6 @@ export default function Page() {
     const heroWrap = (content) => (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>{content}</div>
     );
-    const hasSeoulSelected = selected.includes('11000')
-      || selected.some((c) => Object.values(SEOUL_NAME_TO_CODE).includes(c));
     const emptyState = (msg) => heroWrap(
       <div style={{
         width: '100%', height: '100%', background: PALETTE.bg,
@@ -445,7 +443,6 @@ export default function Page() {
         {msg}
       </div>,
     );
-    if (!hasSeoulSelected) return emptyState('왼쪽에서 서울 지역을 선택하면 지도가 표시됩니다.');
     if (mapError) return emptyState(mapError);
     if (!seoulMapData) return emptyState('지도 불러오는 중...');
 
