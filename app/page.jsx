@@ -440,7 +440,7 @@ export default function Page() {
       return <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }}>지도 불러오는 중...</div>;
     }
     const featureCollection = { type: 'FeatureCollection', features: seoulMapData.values.map((v) => v.feature) };
-    const projection = geoMercator().fitSize([320, 320], featureCollection);
+    const projection = geoMercator().fitSize([560, 480], featureCollection);
     const pathGen = geoPath(projection);
     const colorFor = (value) => {
       if (value == null) return PALETTE.panelAlt;
@@ -455,14 +455,28 @@ export default function Page() {
       <div style={styles.card}>
         <h2 style={styles.sectionTitle}>서울 지역별 지도</h2>
         <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-          선택한 지역 중 서울 자치구만 색으로 표시됩니다 (짙을수록 값이 높음). 지역을 클릭하면 값이 보여요.
+          짙을수록 값이 높은 지역이에요. 구를 클릭하면 그 지역이 비교 목록에 바로 추가됩니다.
         </p>
         {process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
-          <KakaoChoropleth features={seoulMapData.values} colorFor={colorFor} borderColor={PALETTE.border} />
+          <KakaoChoropleth
+            features={seoulMapData.values}
+            colorFor={colorFor}
+            borderColor={PALETTE.border}
+            onSelect={(code) => addRegion(code)}
+            height={480}
+          />
         ) : (
-          <svg viewBox="0 0 320 320" style={{ width: '100%', maxWidth: 360, display: 'block', margin: '0 auto' }}>
+          <svg viewBox="0 0 560 480" style={{ width: '100%', display: 'block' }}>
             {seoulMapData.values.map((v) => (
-              <path key={v.name} d={pathGen(v.feature)} fill={colorFor(v.value)} stroke={PALETTE.border} strokeWidth={0.5}>
+              <path
+                key={v.name}
+                d={pathGen(v.feature)}
+                fill={colorFor(v.value)}
+                stroke={PALETTE.border}
+                strokeWidth={0.75}
+                style={{ cursor: v.code ? 'pointer' : 'default' }}
+                onClick={() => v.code && addRegion(v.code)}
+              >
                 <title>{v.name}{v.value != null ? `: ${Math.round(v.value).toLocaleString()}` : ' (데이터 없음)'}</title>
               </path>
             ))}
@@ -663,6 +677,8 @@ export default function Page() {
           </p>
         </div>
 
+        {status === 'done' && renderSeoulMap()}
+
         {status === 'done' && isRatio && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
@@ -684,7 +700,6 @@ export default function Page() {
               </div>
             </div>
 
-            {renderSeoulMap()}
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>전세가율 추이 (%)</h2>
@@ -771,7 +786,6 @@ export default function Page() {
               </div>
             </div>
 
-            {renderSeoulMap()}
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>평균매매가격 추이 (한국부동산원)</h2>
@@ -856,7 +870,6 @@ export default function Page() {
               </div>
             </div>
 
-            {renderSeoulMap()}
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>

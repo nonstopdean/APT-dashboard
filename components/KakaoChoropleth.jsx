@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function KakaoChoropleth({ features, colorFor, borderColor }) {
+export default function KakaoChoropleth({ features, colorFor, borderColor, onSelect, height }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]);
@@ -28,7 +28,7 @@ export default function KakaoChoropleth({ features, colorFor, borderColor }) {
       polygonsRef.current.forEach((p) => p.setMap(null));
       polygonsRef.current = [];
 
-      features.forEach(({ feature, name, value }) => {
+      features.forEach(({ feature, name, value, code }) => {
         if (!feature) return;
         const geomType = feature.geometry.type;
         const polygons = geomType === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
@@ -46,6 +46,7 @@ export default function KakaoChoropleth({ features, colorFor, borderColor }) {
           polygon.setMap(mapRef.current);
           window.kakao.maps.event.addListener(polygon, 'click', () => {
             setCaption(value != null ? `${name}: ${Math.round(value).toLocaleString()}` : `${name}: 데이터 없음`);
+            if (code) onSelect?.(code);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
             polygon.setOptions({ fillOpacity: 0.9 });
@@ -81,7 +82,7 @@ export default function KakaoChoropleth({ features, colorFor, borderColor }) {
       cancelled = true;
       polygonsRef.current.forEach((p) => p.setMap(null));
     };
-  }, [features, colorFor, borderColor]);
+  }, [features, colorFor, borderColor, onSelect]);
 
   if (!process.env.NEXT_PUBLIC_KAKAO_MAP_KEY) return null;
   if (loadFailed) {
@@ -94,7 +95,7 @@ export default function KakaoChoropleth({ features, colorFor, borderColor }) {
 
   return (
     <div>
-      <div ref={containerRef} style={{ width: '100%', height: 420, borderRadius: 8, overflow: 'hidden' }} />
+      <div ref={containerRef} style={{ width: '100%', height: height || 420, borderRadius: 8, overflow: 'hidden' }} />
       <p style={{ fontSize: 12, color: '#5C594E', marginTop: 8 }}>{caption}</p>
     </div>
   );
