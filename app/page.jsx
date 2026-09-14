@@ -7,7 +7,7 @@ import KakaoChoropleth from '../components/KakaoChoropleth';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
-import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2 } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate } from '../lib/regions';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
@@ -54,6 +54,7 @@ function labelFor(code) {
 
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
+  const [panelOpen, setPanelOpen] = useState(true);
   const [monthCount, setMonthCount] = useState(6);
   const [selected, setSelected] = useState(DEFAULT_SELECTED);
   const [pickerValue, setPickerValue] = useState('');
@@ -546,6 +547,22 @@ export default function Page() {
         <div style={{ position: 'absolute', inset: 0 }}>
           {renderSeoulMap()}
         </div>
+
+        {!panelOpen && (
+          <button
+            onClick={() => setPanelOpen(true)}
+            style={{
+              position: 'absolute', top: 16, left: 16, width: 40, height: 40, borderRadius: '50%',
+              background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, boxShadow: '0 6px 18px rgba(20,18,14,0.22)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10,
+            }}
+            aria-label="패널 펼치기"
+          >
+            <ChevronRight size={18} color={PALETTE.textPrimary} />
+          </button>
+        )}
+
+        {panelOpen && (
         <aside
           style={{
             ...styles.sidebar,
@@ -557,11 +574,19 @@ export default function Page() {
           className="dash-sidebar-float"
         >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <Building2 size={18} color={PALETTE.accent} />
-            <span style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 16, fontWeight: 600 }}>
-              아파트 실거래가 대시보드
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Building2 size={18} color={PALETTE.accent} />
+              <span style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 16, fontWeight: 600 }}>
+                아파트 실거래가 대시보드
+              </span>
+            </div>
+            <ChevronLeft
+              size={18}
+              color={PALETTE.textMuted}
+              style={{ cursor: 'pointer', flexShrink: 0 }}
+              onClick={() => setPanelOpen(false)}
+            />
           </div>
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, lineHeight: 1.5, margin: 0 }}>
             국토교통부 실거래 공개자료 기반. 접속할 때마다 서버가 최신 데이터를 가져옵니다.
@@ -689,6 +714,7 @@ export default function Page() {
           </div>
         )}
       </aside>
+        )}
       </div>
 
       <main style={styles.main} className="dash-main">
