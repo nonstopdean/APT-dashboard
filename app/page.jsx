@@ -10,7 +10,7 @@ import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
 
-const DEFAULT_SELECTED = ['11680', '11650', '11710', '11440'];
+const DEFAULT_SELECTED = ['11000'];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 
 const PALETTE = {
@@ -323,7 +323,7 @@ export default function Page() {
     page: {
       background: PALETTE.bg, color: PALETTE.textPrimary,
       fontFamily: "'Pretendard', 'Noto Sans KR', system-ui, sans-serif",
-      minHeight: '100vh', display: 'grid', gridTemplateColumns: 'minmax(240px, 280px) 1fr',
+      minHeight: '100vh',
     },
     sidebar: {
       background: PALETTE.panel, borderRight: `1px solid ${PALETTE.border}`,
@@ -360,8 +360,8 @@ export default function Page() {
   };
 
   return (
-    <div style={styles.page}>
-      <aside style={styles.sidebar}>
+    <div style={styles.page} className="dash-shell">
+      <aside style={styles.sidebar} className="dash-sidebar">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Building2 size={18} color={PALETTE.accent} />
@@ -460,9 +460,9 @@ export default function Page() {
         )}
       </aside>
 
-      <main style={styles.main}>
+      <main style={styles.main} className="dash-main">
         <div>
-          <h1 style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 24, margin: '0 0 4px' }}>
+          <h1 className="dash-title" style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 24, margin: '0 0 4px' }}>
             선택 지역 아파트 {isRatio ? '전세가율' : isRone ? '시세동향' : isRent ? '전월세' : '매매'} 시황
           </h1>
           <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>
@@ -518,7 +518,8 @@ export default function Page() {
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>지역별 전세가율 순위</h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th style={styles.th}>지역</th>
@@ -538,6 +539,7 @@ export default function Page() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </>
         )}
@@ -598,7 +600,8 @@ export default function Page() {
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>지역별 순위</h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th style={styles.th}>지역</th>
@@ -620,6 +623,7 @@ export default function Page() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           </>
         )}
@@ -681,7 +685,8 @@ export default function Page() {
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>지역별 순위</h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th style={styles.th}>지역</th>
@@ -703,11 +708,12 @@ export default function Page() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
 
             <div style={styles.card}>
               <h2 style={styles.sectionTitle}>최근 거래 내역</h2>
-              <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+              <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
@@ -761,8 +767,15 @@ export default function Page() {
       </main>
 
       <style>{`
+        .dash-shell { display: grid; grid-template-columns: minmax(240px, 280px) 1fr; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin { animation: spin 1s linear infinite; }
+        @media (max-width: 820px) {
+          .dash-shell { grid-template-columns: 1fr; }
+          .dash-sidebar { border-right: none !important; border-bottom: 1px solid ${PALETTE.border}; padding: 16px !important; }
+          .dash-main { padding: 16px !important; }
+          .dash-title { font-size: 20px !important; }
+        }
       `}</style>
     </div>
   );
