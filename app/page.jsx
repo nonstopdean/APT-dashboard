@@ -430,15 +430,24 @@ export default function Page() {
   }, [seoulFeatures, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, SEOUL_NAME_TO_CODE]);
 
   const renderSeoulMap = () => {
+    const heroWrap = (content) => (
+      <div style={{ position: 'relative', width: '100%', height: '100%' }}>{content}</div>
+    );
     const hasSeoulSelected = selected.includes('11000')
       || selected.some((c) => Object.values(SEOUL_NAME_TO_CODE).includes(c));
-    if (!hasSeoulSelected) return null;
-    if (mapError) {
-      return <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }}>{mapError}</div>;
-    }
-    if (!seoulMapData) {
-      return <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }}>지도 불러오는 중...</div>;
-    }
+    const emptyState = (msg) => heroWrap(
+      <div style={{
+        width: '100%', height: '100%', background: PALETTE.bg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: PALETTE.textMuted, fontSize: 13, textAlign: 'center', padding: 20,
+      }}>
+        {msg}
+      </div>,
+    );
+    if (!hasSeoulSelected) return emptyState('왼쪽에서 서울 지역을 선택하면 지도가 표시됩니다.');
+    if (mapError) return emptyState(mapError);
+    if (!seoulMapData) return emptyState('지도 불러오는 중...');
+
     const featureCollection = { type: 'FeatureCollection', features: seoulMapData.values.map((v) => v.feature) };
     const projection = geoMercator().fitSize([560, 480], featureCollection);
     const pathGen = geoPath(projection);
@@ -451,22 +460,19 @@ export default function Page() {
       const mix = from.map((c, i) => Math.round(c + (to[i] - c) * t));
       return `rgb(${mix.join(',')})`;
     };
-    return (
-      <div style={styles.card}>
-        <h2 style={styles.sectionTitle}>서울 지역별 지도</h2>
-        <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-          짙을수록 값이 높은 지역이에요. 구를 클릭하면 그 지역이 비교 목록에 바로 추가됩니다.
-        </p>
+
+    return heroWrap(
+      <>
         {process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
           <KakaoChoropleth
             features={seoulMapData.values}
             colorFor={colorFor}
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
-            height={480}
+            height="100%"
           />
         ) : (
-          <svg viewBox="0 0 560 480" style={{ width: '100%', display: 'block' }}>
+          <svg viewBox="0 0 560 480" preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', background: PALETTE.bg }}>
             {seoulMapData.values.map((v) => (
               <path
                 key={v.name}
@@ -482,10 +488,16 @@ export default function Page() {
             ))}
           </svg>
         )}
-      </div>
+        <div style={{
+          position: 'absolute', left: 16, bottom: 16, background: 'rgba(255,255,255,0.92)',
+          border: `1px solid ${PALETTE.border}`, borderRadius: 8, padding: '8px 12px',
+          fontSize: 11.5, color: PALETTE.textSecondary, maxWidth: 280, pointerEvents: 'none',
+        }}>
+          짙을수록 값이 높은 지역이에요. 구를 클릭하면 비교 목록에 바로 추가됩니다.
+        </div>
+      </>,
     );
   };
-
 
 
   const styles = {
@@ -529,8 +541,21 @@ export default function Page() {
   };
 
   return (
-    <div style={styles.page} className="dash-shell">
-      <aside style={styles.sidebar} className="dash-sidebar">
+    <div style={styles.page}>
+      <div className="hero-wrap" style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0 }}>
+          {renderSeoulMap()}
+        </div>
+        <aside
+          style={{
+            ...styles.sidebar,
+            position: 'absolute', top: 16, left: 16, width: 300,
+            maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
+            borderRadius: 12, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
+            boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 10,
+          }}
+          className="dash-sidebar-float"
+        >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <Building2 size={18} color={PALETTE.accent} />
@@ -664,6 +689,7 @@ export default function Page() {
           </div>
         )}
       </aside>
+      </div>
 
       <main style={styles.main} className="dash-main">
         <div>
@@ -676,8 +702,6 @@ export default function Page() {
               : '왼쪽에서 조건을 설정한 뒤 데이터 조회를 눌러주세요.'}
           </p>
         </div>
-
-        {status === 'done' && renderSeoulMap()}
 
         {status === 'done' && isRatio && (
           <>
@@ -1049,12 +1073,14 @@ export default function Page() {
       )}
 
       <style>{`
-        .dash-shell { display: grid; grid-template-columns: minmax(240px, 280px) 1fr; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin { animation: spin 1s linear infinite; }
-        @media (max-width: 820px) {
-          .dash-shell { grid-template-columns: 1fr; }
-          .dash-sidebar { border-right: none !important; border-bottom: 1px solid ${PALETTE.border}; padding: 16px !important; }
+        @media (max-width: 720px) {
+          .hero-wrap { height: 60vh !important; }
+          .dash-sidebar-float {
+            position: absolute !important; top: 8px !important; left: 8px !important; right: 8px !important;
+            width: auto !important; max-height: 70vh !important;
+          }
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
         }
