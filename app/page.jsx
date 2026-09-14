@@ -64,6 +64,9 @@ export default function Page() {
   const [roneMonths, setRoneMonths] = useState([]);
   const [roneUnmapped, setRoneUnmapped] = useState([]);
 
+  const [saleRaw, setSaleRaw] = useState({});
+  const [jeonseRaw, setJeonseRaw] = useState({});
+
   const setDealTypeSafe = (next) => {
     if (next !== 'rone') {
       setSelected((prev) => prev.filter((c) => !RONE_ONLY_EXTRA.some((r) => r.code === c)));
@@ -101,6 +104,26 @@ export default function Page() {
         setRoneUnmapped(json.unmapped || []);
         setFetchedAt(new Date(json.fetchedAt));
         if (json.error) setErrorMsg(`일부 항목에서 오류: ${json.error}`);
+        setStatus('done');
+        return;
+      }
+      if (dealType === 'ratio') {
+        const [saleRes, rentRes] = await Promise.all([
+          fetch(`/api/trades?codes=${selected.join(',')}&months=${monthCount}`),
+          fetch(`/api/rents?codes=${selected.join(',')}&months=${monthCount}`),
+        ]);
+        const [saleJson, rentJson] = await Promise.all([saleRes.json(), rentRes.json()]);
+        if (!saleRes.ok || !rentRes.ok) {
+          setErrorMsg(saleJson.error || rentJson.error || '요청 실패');
+          setStatus('error');
+          return;
+        }
+        setSaleRaw(saleJson.data);
+        setJeonseRaw(rentJson.data);
+        setMonths(saleJson.months);
+        setFetchedAt(new Date());
+        const combinedError = saleJson.error || rentJson.error;
+        if (combinedError) setErrorMsg(`일부 항목에서 오류: ${combinedError}`);
         setStatus('done');
         return;
       }
@@ -242,6 +265,58 @@ export default function Page() {
 
   const isRent = dealType === 'rent';
   const isRone = dealType === 'rone';
+  const isRatio = dealType === 'ratio';
+
+  const ratioByRegion = useMemo(() => {
+    const out = {};
+    selected.forEach((code) => {
+      out[code] = months.map((ym) => {
+        const saleItems = saleRaw[`${code}_${ym}`] || [];
+        const jeonseItems = (jeonseRaw[`${code}_${ym}`] || []).filter((r) => r.isJeonse);
+        const avgSale = saleItems.length
+          ? saleItems.reduce((s, r) => s + r.amount, 0) / saleItems.length
+          : null;
+        const avgJeonse = jeonseItems.length
+          ? jeonseItems.reduce((s, r) => s + r.deposit, 0) / jeonseItems.length
+          : null;
+        const ratio = avgSale && avgJeonse ? (avgJeonse / avgSale) * 100 : null;
+        return { ym, avgSale, avgJeonse, ratio };
+      });
+    });
+    return out;
+  }, [selected, months, saleRaw, jeonseRaw]);
+
+  const ratioChartData = useMemo(() => {
+    return months.map((ym) => {
+      const row = { ym: monthLabel(ym) };
+      selected.forEach((code) => {
+        const point = (ratioByRegion[code] || []).find((p) => p.ym === ym);
+        row[labelFor(code)] = point?.ratio != null ? Math.round(point.ratio * 10) / 10 : null;
+      });
+      return row;
+    });
+  }, [months, selected, ratioByRegion]);
+
+  const ratioRanking = useMemo(() => {
+    return selected.map((code) => {
+      const series = ratioByRegion[code] || [];
+      const withData = series.filter((p) => p.ratio != null);
+      const last = withData[withData.length - 1];
+      return {
+        code, name: labelFor(code),
+        avgSale: last?.avgSale ?? null, avgJeonse: last?.avgJeonse ?? null, ratio: last?.ratio ?? null,
+      };
+    }).sort((a, b) => (b.ratio ?? -Infinity) - (a.ratio ?? -Infinity));
+  }, [selected, ratioByRegion]);
+
+  const ratioKpis = useMemo(() => {
+    const withRatio = ratioRanking.filter((r) => r.ratio != null);
+    const avg = withRatio.length ? withRatio.reduce((s, r) => s + r.ratio, 0) / withRatio.length : null;
+    const highest = withRatio[0];
+    const lowest = withRatio[withRatio.length - 1];
+    return { avg, highest, lowest };
+  }, [ratioRanking]);
+
   const unitLabel = isRent ? '전세보증금 평당가' : '매매가 평당가';
 
   const styles = {
@@ -301,10 +376,11 @@ export default function Page() {
 
         <div>
           <label style={styles.label}>거래 유형</label>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             <div style={styles.toggleBtn(dealType === 'trade')} onClick={() => setDealTypeSafe('trade')}>매매</div>
             <div style={styles.toggleBtn(dealType === 'rent')} onClick={() => setDealTypeSafe('rent')}>전월세</div>
             <div style={styles.toggleBtn(dealType === 'rone')} onClick={() => setDealTypeSafe('rone')}>시세동향</div>
+            <div style={styles.toggleBtn(dealType === 'ratio')} onClick={() => setDealTypeSafe('ratio')}>전세가율</div>
           </div>
           {isRone && (
             <p style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 6 }}>
@@ -387,7 +463,7 @@ export default function Page() {
       <main style={styles.main}>
         <div>
           <h1 style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 24, margin: '0 0 4px' }}>
-            선택 지역 아파트 {isRone ? '시세동향' : isRent ? '전월세' : '매매'} 시황
+            선택 지역 아파트 {isRatio ? '전세가율' : isRone ? '시세동향' : isRent ? '전월세' : '매매'} 시황
           </h1>
           <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>
             {fetchedAt
@@ -395,6 +471,76 @@ export default function Page() {
               : '왼쪽에서 조건을 설정한 뒤 데이터 조회를 눌러주세요.'}
           </p>
         </div>
+
+        {status === 'done' && isRatio && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+              <div style={styles.card}>
+                <div style={styles.kpiLabel}>선택 지역 평균 전세가율</div>
+                <div style={styles.kpiValue}>{ratioKpis.avg != null ? `${ratioKpis.avg.toFixed(1)}%` : '-'}</div>
+              </div>
+              <div style={styles.card}>
+                <div style={styles.kpiLabel}>전세가율 최고 지역</div>
+                <div style={{ ...styles.kpiValue, fontSize: 16 }}>
+                  {ratioKpis.highest ? `${ratioKpis.highest.name} ${ratioKpis.highest.ratio.toFixed(1)}%` : '-'}
+                </div>
+              </div>
+              <div style={styles.card}>
+                <div style={styles.kpiLabel}>전세가율 최저 지역</div>
+                <div style={{ ...styles.kpiValue, fontSize: 16 }}>
+                  {ratioKpis.lowest ? `${ratioKpis.lowest.name} ${ratioKpis.lowest.ratio.toFixed(1)}%` : '-'}
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>전세가율 추이 (%)</h2>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+                해당 월 평균 전세보증금 ÷ 평균 매매가 × 100. 면적·평형 보정은 하지 않은 단순 평균 기준입니다.
+              </p>
+              <div style={{ width: '100%', height: 280 }}>
+                <ResponsiveContainer>
+                  <LineChart data={ratioChartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={44} unit="%" />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    {selected.map((code, i) => (
+                      <Line key={code} type="monotone" dataKey={labelFor(code)}
+                        stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>지역별 전세가율 순위</h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>지역</th>
+                    <th style={styles.th}>매매 평균가</th>
+                    <th style={styles.th}>전세 평균가</th>
+                    <th style={styles.th}>전세가율</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ratioRanking.map((r) => (
+                    <tr key={r.code}>
+                      <td style={styles.td}>{r.name}</td>
+                      <td style={styles.td}>{r.avgSale != null ? fmtWon(r.avgSale) : '-'}</td>
+                      <td style={styles.td}>{r.avgJeonse != null ? fmtWon(r.avgJeonse) : '-'}</td>
+                      <td style={styles.td}>{r.ratio != null ? `${r.ratio.toFixed(1)}%` : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {status === 'done' && isRone && (
           <>
@@ -478,7 +624,7 @@ export default function Page() {
           </>
         )}
 
-        {status === 'done' && !isRone && (
+        {status === 'done' && !isRone && !isRatio && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
               <div style={styles.card}>
