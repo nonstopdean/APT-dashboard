@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import * as topojson from 'topojson-client';
 import { geoMercator, geoPath, geoCentroid } from 'd3-geo';
+import KakaoChoropleth from '../components/KakaoChoropleth';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -80,6 +81,7 @@ export default function Page() {
   const [favName, setFavName] = useState('');
   const [seoulFeatures, setSeoulFeatures] = useState(null);
   const [mapError, setMapError] = useState('');
+  const [selectedApt, setSelectedApt] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,7 +282,7 @@ export default function Page() {
     return { totalCount, avgPyeongAll, rising, falling, avgMonthlyRent };
   }, [ranking, dealType, selected, months, rawByRegionMonth]);
 
-  const recentTx = useMemo(() => {
+  const allTx = useMemo(() => {
     const all = [];
     selected.forEach((code) => {
       months.forEach((ym) => {
@@ -293,8 +295,15 @@ export default function Page() {
       const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
       return db.localeCompare(da);
     });
-    return all.slice(0, 30);
+    return all;
   }, [selected, months, rawByRegionMonth]);
+
+  const recentTx = useMemo(() => allTx.slice(0, 30), [allTx]);
+
+  const aptHistory = useMemo(() => {
+    if (!selectedApt) return [];
+    return allTx.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.regionCode === selectedApt.regionCode);
+  }, [allTx, selectedApt]);
 
   const roneChartData = useMemo(() => {
     return roneMonths.map((ym) => {
@@ -436,15 +445,19 @@ export default function Page() {
       <div style={styles.card}>
         <h2 style={styles.sectionTitle}>서울 지역별 지도</h2>
         <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-          선택한 지역 중 서울 자치구만 색으로 표시됩니다 (짙을수록 값이 높음). 지역에 마우스를 올리면 값이 보여요.
+          선택한 지역 중 서울 자치구만 색으로 표시됩니다 (짙을수록 값이 높음). 지역을 클릭하면 값이 보여요.
         </p>
-        <svg viewBox="0 0 320 320" style={{ width: '100%', maxWidth: 360, display: 'block', margin: '0 auto' }}>
-          {seoulMapData.values.map((v) => (
-            <path key={v.name} d={pathGen(v.feature)} fill={colorFor(v.value)} stroke={PALETTE.border} strokeWidth={0.5}>
-              <title>{v.name}{v.value != null ? `: ${Math.round(v.value).toLocaleString()}` : ' (데이터 없음)'}</title>
-            </path>
-          ))}
-        </svg>
+        {process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
+          <KakaoChoropleth features={seoulMapData.values} colorFor={colorFor} borderColor={PALETTE.border} />
+        ) : (
+          <svg viewBox="0 0 320 320" style={{ width: '100%', maxWidth: 360, display: 'block', margin: '0 auto' }}>
+            {seoulMapData.values.map((v) => (
+              <path key={v.name} d={pathGen(v.feature)} fill={colorFor(v.value)} stroke={PALETTE.border} strokeWidth={0.5}>
+                <title>{v.name}{v.value != null ? `: ${Math.round(v.value).toLocaleString()}` : ' (데이터 없음)'}</title>
+              </path>
+            ))}
+          </svg>
+        )}
       </div>
     );
   };
@@ -907,7 +920,10 @@ export default function Page() {
                     {recentTx.map((t, i) => (
                       <tr key={i}>
                         <td style={styles.td}>{regionLabel(t.regionCode)}</td>
-                        <td style={styles.td}>{t.apt} ({t.dong})</td>
+                        <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                          onClick={() => setSelectedApt({ apt: t.apt, dong: t.dong, regionCode: t.regionCode })}>
+                          {t.apt} ({t.dong})
+                        </td>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
                         <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
                         <td style={styles.td}>{t.floor}층</td>
@@ -936,6 +952,75 @@ export default function Page() {
           </div>
         )}
       </main>
+
+      {selectedApt && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(30,28,24,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16,
+          }}
+          onClick={() => setSelectedApt(null)}
+        >
+          <div
+            style={{
+              background: PALETTE.panel, borderRadius: 12, padding: 20, width: '100%', maxWidth: 640,
+              maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${PALETTE.border}`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <h2 style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 18, margin: 0 }}>
+                {selectedApt.apt} ({selectedApt.dong})
+              </h2>
+              <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
+            </div>
+            <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
+              {regionLabel(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
+            </p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>계약일</th>
+                    <th style={styles.th}>전용면적</th>
+                    <th style={styles.th}>층</th>
+                    {isRent ? (
+                      <>
+                        <th style={styles.th}>구분</th>
+                        <th style={styles.th}>보증금</th>
+                        <th style={styles.th}>월세</th>
+                      </>
+                    ) : (
+                      <th style={styles.th}>거래금액</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {aptHistory.map((t, i) => (
+                    <tr key={i}>
+                      <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
+                      <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
+                      <td style={styles.td}>{t.floor}층</td>
+                      {isRent ? (
+                        <>
+                          <td style={styles.td}>{t.isJeonse ? '전세' : '월세'}</td>
+                          <td style={styles.td}>{fmtWon(t.deposit)}</td>
+                          <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만`}</td>
+                        </>
+                      ) : (
+                        <td style={styles.td}>{fmtWon(t.amount)}</td>
+                      )}
+                    </tr>
+                  ))}
+                  {aptHistory.length === 0 && (
+                    <tr><td style={styles.td} colSpan={isRent ? 6 : 4}>표시할 거래 내역이 없습니다.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .dash-shell { display: grid; grid-template-columns: minmax(240px, 280px) 1fr; }
