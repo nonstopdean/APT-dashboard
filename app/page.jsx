@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
@@ -72,6 +72,47 @@ export default function Page() {
       setSelected((prev) => prev.filter((c) => !RONE_ONLY_EXTRA.some((r) => r.code === c)));
     }
     setDealType(next);
+  };
+
+  const [favorites, setFavorites] = useState([]);
+  const [favName, setFavName] = useState('');
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('apt-dashboard-favorites');
+      if (raw) setFavorites(JSON.parse(raw));
+    } catch (e) {
+      // 저장된 값이 없거나 읽기 실패 시 무시
+    }
+  }, []);
+
+  const persistFavorites = (next) => {
+    setFavorites(next);
+    try {
+      window.localStorage.setItem('apt-dashboard-favorites', JSON.stringify(next));
+    } catch (e) {
+      // 저장 실패는 조용히 무시 (예: 저장공간 초과)
+    }
+  };
+
+  const saveFavorite = () => {
+    const name = favName.trim();
+    if (!name) return;
+    const next = [...favorites.filter((f) => f.name !== name), {
+      name, dealType, monthCount, selected: [...selected],
+    }];
+    persistFavorites(next);
+    setFavName('');
+  };
+
+  const applyFavorite = (fav) => {
+    setDealTypeSafe(fav.dealType);
+    setMonthCount(fav.monthCount);
+    setSelected(fav.selected);
+  };
+
+  const removeFavorite = (name) => {
+    persistFavorites(favorites.filter((f) => f.name !== name));
   };
 
   const addRegion = (code) => {
@@ -441,6 +482,42 @@ export default function Page() {
               시/도 전체는 그 안의 모든 시/군/구를 합산하는 방식이라 조회가 더 오래 걸려요.
               기간은 3~6개월 정도로 시작해보세요.
             </p>
+          )}
+        </div>
+
+        <div>
+          <label style={styles.label}>즐겨찾기</label>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input
+              style={styles.select}
+              placeholder="이름 (예: 우리동네)"
+              value={favName}
+              onChange={(e) => setFavName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveFavorite(); }}
+            />
+            <button onClick={saveFavorite} style={{ ...styles.btn, width: 68, padding: 0 }}>저장</button>
+          </div>
+          {favorites.length === 0 ? (
+            <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: 0 }}>
+              현재 거래유형·기간·지역 조합을 이름 붙여 저장해두면 다음에 바로 불러올 수 있어요.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {favorites.map((fav) => (
+                <div key={fav.name} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: '6px 8px',
+                }}>
+                  <span
+                    style={{ fontSize: 12.5, cursor: 'pointer', color: PALETTE.textPrimary }}
+                    onClick={() => applyFavorite(fav)}
+                  >
+                    {fav.name}
+                  </span>
+                  <X size={12} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => removeFavorite(fav.name)} />
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
