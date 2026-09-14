@@ -1,11 +1,11 @@
 'use client';
 import { useState } from 'react';
-import KakaoMap from '@/components/KakaoMap';
+import KakaoMap from '@/components/KaKaoMap'; // 방금 만든 컴포넌트 불러오기
 
 export default function Page() {
   const [selectedComplex, setSelectedComplex] = useState(null); // 모달에 띄울 단지명
 
-  // 단지 클릭 또는 마커 클릭 시 실행될 함수
+  // 단지 클릭 또는 마커 클릭 시 모달을 열어주는 함수
   const handleOpenModal = (complexName) => {
     setSelectedComplex(complexName);
   };
@@ -21,7 +21,8 @@ export default function Page() {
         {/* 좌측: 단지 목록 영역 */}
         <div className="w-1/2 bg-white p-4 rounded-lg shadow overflow-y-auto">
           <h2 className="text-lg font-semibold mb-3">최근 거래 단지 목록</h2>
-          {/* 예시 단지 아이템 (기존 목록 코드를 여기에 배치하시면 됩니다) */}
+          
+          {/* 예시 단지 아이템 1 */}
           <div 
             onClick={() => handleOpenModal('래미안 ○○아파트')}
             className="p-3 mb-2 border rounded cursor-pointer hover:bg-blue-50 transition"
@@ -29,6 +30,8 @@ export default function Page() {
             <p className="font-bold">래미안 ○○아파트</p>
             <p className="text-sm text-gray-500">매매 · 6억 8,000만원</p>
           </div>
+
+          {/* 예시 단지 아이템 2 */}
           <div 
             onClick={() => handleOpenModal('△△아파트')}
             className="p-3 mb-2 border rounded cursor-pointer hover:bg-blue-50 transition"
@@ -41,7 +44,7 @@ export default function Page() {
         {/* 우측: 카카오맵 영역 */}
         <div className="w-1/2 bg-white p-4 rounded-lg shadow flex flex-col">
           <h2 className="text-lg font-semibold mb-3">지도 보기</h2>
-          <div className="flex-1">
+          <div className="flex-1 w-full h-full">
             <KakaoMap onMarkerClick={handleOpenModal} />
           </div>
         </div>
@@ -60,8 +63,8 @@ export default function Page() {
                 ✕
               </button>
             </div>
-            <p className="text-gray-600 mb-4">이곳에 해당 단지의 상세 거래 내역 데이터가 쫙 펼쳐집니다.</p>
-            {/* 상세 거래 내역 테이블 또는 리스트 컴포넌트 위치 */}
+            <p className="text-gray-600 mb-4">이곳에 선택하신 단지의 상세 실거래가 데이터와 그래프가 표시됩니다.</p>
+            
             <div className="flex justify-end">
               <button 
                 onClick={() => setSelectedComplex(null)}
