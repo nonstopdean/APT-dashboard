@@ -77,6 +77,20 @@ export default function Page() {
   const [favorites, setFavorites] = useState([]);
   const [favName, setFavName] = useState('');
 
+  // 단지명 클릭 시 표시할 거래내역 모달
+  const [selectedComplex, setSelectedComplex] = useState(null);
+
+  const closeComplexModal = () => setSelectedComplex(null);
+
+  useEffect(() => {
+    if (!selectedComplex) return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') closeComplexModal();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedComplex]);
+
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem('apt-dashboard-favorites');
@@ -269,6 +283,34 @@ export default function Page() {
     });
     return all.slice(0, 30);
   }, [selected, months, rawByRegionMonth]);
+
+  const complexTransactions = useMemo(() => {
+    if (!selectedComplex) return [];
+
+    const all = [];
+    selected.forEach((code) => {
+      months.forEach((ym) => {
+        const rows = rawByRegionMonth[`${code}_${ym}`] || [];
+        rows.forEach((r) => {
+          if (
+            code === selectedComplex.regionCode &&
+            r.apt === selectedComplex.apt &&
+            r.dong === selectedComplex.dong
+          ) {
+            all.push({ ...r, regionCode: code });
+          }
+        });
+      });
+    });
+
+    all.sort((a, b) => {
+      const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
+      const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
+      return db.localeCompare(da);
+    });
+
+    return all;
+  }, [selectedComplex, selected, months, rawByRegionMonth]);
 
   const roneChartData = useMemo(() => {
     return roneMonths.map((ym) => {
@@ -814,7 +856,32 @@ export default function Page() {
                     {recentTx.map((t, i) => (
                       <tr key={i}>
                         <td style={styles.td}>{regionLabel(t.regionCode)}</td>
-                        <td style={styles.td}>{t.apt} ({t.dong})</td>
+                        <td style={styles.td}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedComplex({
+                              regionCode: t.regionCode,
+                              apt: t.apt,
+                              dong: t.dong,
+                            })}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              padding: 0,
+                              margin: 0,
+                              color: PALETTE.accent,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: 13,
+                              textDecoration: 'underline',
+                              textUnderlineOffset: 3,
+                            }}
+                            title="클릭하면 이 단지의 최근 거래내역을 볼 수 있습니다."
+                          >
+                            {t.apt} ({t.dong})
+                          </button>
+                        </td>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
                         <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
                         <td style={styles.td}>{t.floor}층</td>
@@ -842,6 +909,170 @@ export default function Page() {
           </div>
         )}
       </main>
+
+      {selectedComplex && (
+        <div
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeComplexModal();
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(33,31,26,0.48)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="complex-modal-title"
+            style={{
+              width: 'min(920px, 100%)',
+              maxHeight: 'min(760px, calc(100vh - 40px))',
+              overflow: 'hidden',
+              background: PALETTE.panel,
+              border: `1px solid ${PALETTE.borderStrong}`,
+              borderRadius: 12,
+              boxShadow: '0 18px 60px rgba(0,0,0,0.20)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '18px 20px 14px',
+              borderBottom: `1px solid ${PALETTE.border}`,
+              flexShrink: 0,
+            }}>
+              <div>
+                <h2
+                  id="complex-modal-title"
+                  style={{
+                    fontFamily: "'Noto Serif KR', serif",
+                    fontSize: 20,
+                    margin: 0,
+                    fontWeight: 600,
+                  }}
+                >
+                  {selectedComplex.apt}
+                </h2>
+                <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '5px 0 0' }}>
+                  {regionLabel(selectedComplex.regionCode)} · {selectedComplex.dong}
+                  {' · '}최근 {monthCount}개월 실거래
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeComplexModal}
+                aria-label="거래내역 닫기"
+                style={{
+                  width: 34,
+                  height: 34,
+                  border: `1px solid ${PALETTE.border}`,
+                  borderRadius: 7,
+                  background: PALETTE.panelAlt,
+                  color: PALETTE.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div style={{ padding: '12px 20px 8px', flexShrink: 0 }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                background: PALETTE.panelAlt,
+                border: `1px solid ${PALETTE.border}`,
+                borderRadius: 7,
+                padding: '7px 10px',
+                fontSize: 12,
+                color: PALETTE.textSecondary,
+              }}>
+                <strong style={{ color: PALETTE.textPrimary }}>
+                  {complexTransactions.length.toLocaleString()}건
+                </strong>
+                의 거래가 조회되었습니다.
+              </div>
+            </div>
+
+            <div style={{
+              overflow: 'auto',
+              padding: '0 20px 20px',
+            }}>
+              {complexTransactions.length === 0 ? (
+                <div style={{
+                  padding: '48px 20px',
+                  textAlign: 'center',
+                  color: PALETTE.textMuted,
+                  fontSize: 13,
+                }}>
+                  조회된 기간에 해당 단지의 거래내역이 없습니다.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+                  <thead style={{ position: 'sticky', top: 0, background: PALETTE.panel, zIndex: 1 }}>
+                    <tr>
+                      <th style={styles.th}>계약일</th>
+                      <th style={styles.th}>전용면적</th>
+                      <th style={styles.th}>층</th>
+                      {isRent ? (
+                        <>
+                          <th style={styles.th}>구분</th>
+                          <th style={styles.th}>보증금</th>
+                          <th style={styles.th}>월세</th>
+                          <th style={styles.th}>계약형태</th>
+                        </>
+                      ) : (
+                        <>
+                          <th style={styles.th}>거래금액</th>
+                          <th style={styles.th}>평당가</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {complexTransactions.map((t, i) => (
+                      <tr key={`${t.year}-${t.month}-${t.day}-${t.area}-${t.floor}-${i}`}>
+                        <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
+                        <td style={styles.td}>{t.area != null ? `${t.area.toFixed(1)}㎡` : '-'}</td>
+                        <td style={styles.td}>{t.floor != null ? `${t.floor}층` : '-'}</td>
+                        {isRent ? (
+                          <>
+                            <td style={styles.td}>{t.isJeonse ? '전세' : '월세'}</td>
+                            <td style={styles.td}>{fmtWon(t.deposit)}</td>
+                            <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만`}</td>
+                            <td style={styles.td}>{t.contractType || '-'}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td style={styles.td}>{fmtWon(t.amount)}</td>
+                            <td style={styles.td}>{t.pricePerPyeong != null ? fmtWon(t.pricePerPyeong) : '-'}</td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .dash-shell { display: grid; grid-template-columns: minmax(240px, 280px) 1fr; }
