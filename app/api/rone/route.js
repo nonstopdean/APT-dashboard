@@ -1,5 +1,5 @@
 import { fetchRoneSeries } from '../../../lib/rone';
-import { LAWD_TO_CLS } from '../../../lib/rone-regions';
+import { getClsId } from '../../../lib/rone-regions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,8 +40,8 @@ export async function GET(request) {
   const startYm = months[0];
   const endYm = months[months.length - 1];
 
-  const unmapped = codes.filter((c) => !LAWD_TO_CLS[c]);
-  const mappedCodes = codes.filter((c) => LAWD_TO_CLS[c]);
+  const unmapped = codes.filter((c) => !getClsId(c));
+  const mappedCodes = codes.filter((c) => getClsId(c));
 
   const data = {};
   let errorMsg = null;
@@ -49,7 +49,7 @@ export async function GET(request) {
   await Promise.all(mappedCodes.map(async (code) => {
     try {
       const series = await fetchRoneSeries({
-        key, statblId: STATBL_ID, itmId: ITM_ID, clsId: LAWD_TO_CLS[code], startYm, endYm,
+        key, statblId: STATBL_ID, itmId: ITM_ID, clsId: getClsId(code), startYm, endYm,
       });
       data[code] = series;
     } catch (e) {

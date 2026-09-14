@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2 } from 'lucide-react';
 import { REGION_GROUPS, regionLabel } from '../lib/regions';
+import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
 const DEFAULT_SELECTED = ['11680', '11650', '11710', '11440'];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
@@ -41,6 +42,10 @@ function monthLabel(ym) {
   return `${ym.slice(0, 4)}.${ym.slice(4, 6)}`;
 }
 
+function labelFor(code) {
+  return roneRegionLabel(code, regionLabel(code));
+}
+
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
   const [monthCount, setMonthCount] = useState(6);
@@ -55,6 +60,13 @@ export default function Page() {
   const [roneSeries, setRoneSeries] = useState({});
   const [roneMonths, setRoneMonths] = useState([]);
   const [roneUnmapped, setRoneUnmapped] = useState([]);
+
+  const setDealTypeSafe = (next) => {
+    if (next !== 'rone') {
+      setSelected((prev) => prev.filter((c) => !SIDO_REGIONS.some((r) => r.code === c)));
+    }
+    setDealType(next);
+  };
 
   const addRegion = (code) => {
     if (!code) return;
@@ -196,7 +208,7 @@ export default function Page() {
       const row = { ym: monthLabel(ym) };
       selected.forEach((code) => {
         const point = (roneSeries[code] || []).find((p) => p.ym === ym);
-        row[regionLabel(code)] = point ? Math.round(point.value) : null;
+        row[labelFor(code)] = point ? Math.round(point.value) : null;
       });
       return row;
     });
@@ -211,7 +223,7 @@ export default function Page() {
         ? ((last.value - first.value) / first.value) * 100
         : null;
       return {
-        code, name: regionLabel(code), latest: last?.value ?? null, unit: last?.unit, change,
+        code, name: labelFor(code), latest: last?.value ?? null, unit: last?.unit, change,
         unsupported: !!roneUnmapped.includes(code),
       };
     }).sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
@@ -287,9 +299,9 @@ export default function Page() {
         <div>
           <label style={styles.label}>거래 유형</label>
           <div style={{ display: 'flex', gap: 6 }}>
-            <div style={styles.toggleBtn(dealType === 'trade')} onClick={() => setDealType('trade')}>매매</div>
-            <div style={styles.toggleBtn(dealType === 'rent')} onClick={() => setDealType('rent')}>전월세</div>
-            <div style={styles.toggleBtn(dealType === 'rone')} onClick={() => setDealType('rone')}>시세동향</div>
+            <div style={styles.toggleBtn(dealType === 'trade')} onClick={() => setDealTypeSafe('trade')}>매매</div>
+            <div style={styles.toggleBtn(dealType === 'rent')} onClick={() => setDealTypeSafe('rent')}>전월세</div>
+            <div style={styles.toggleBtn(dealType === 'rone')} onClick={() => setDealTypeSafe('rone')}>시세동향</div>
           </div>
           {isRone && (
             <p style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 6 }}>
@@ -313,6 +325,13 @@ export default function Page() {
           <label style={styles.label}>지역 추가 (전국)</label>
           <select style={styles.select} value={pickerValue} onChange={(e) => addRegion(e.target.value)}>
             <option value="">시/도 - 시/군/구 선택</option>
+            {isRone && (
+              <optgroup label="시/도 전체 (한국부동산원)">
+                {SIDO_REGIONS.map((it) => (
+                  <option key={it.code} value={it.code}>{it.name}</option>
+                ))}
+              </optgroup>
+            )}
             {REGION_GROUPS.map((g) => (
               <optgroup key={g.sido} label={g.sido}>
                 {g.items.map((it) => (
@@ -325,7 +344,7 @@ export default function Page() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, maxHeight: 180, overflowY: 'auto' }}>
             {selected.map((code) => (
               <span key={code} style={styles.chip}>
-                {regionLabel(code)}
+                {labelFor(code)}
                 <X size={11} style={{ cursor: 'pointer' }} onClick={() => removeRegion(code)} />
               </span>
             ))}
@@ -371,7 +390,7 @@ export default function Page() {
                 background: 'rgba(196,119,106,0.1)', border: `1px solid ${PALETTE.down}`, borderRadius: 6, padding: 10,
               }}>
                 <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span>이 통계를 아직 지원하지 않는 지역: {roneUnmapped.map(regionLabel).join(', ')}</span>
+                <span>이 통계를 아직 지원하지 않는 지역: {roneUnmapped.map(labelFor).join(', ')}</span>
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
@@ -409,7 +428,7 @@ export default function Page() {
                       labelStyle={{ color: PALETTE.textPrimary }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     {selected.filter((c) => !roneUnmapped.includes(c)).map((code, i) => (
-                      <Line key={code} type="monotone" dataKey={regionLabel(code)}
+                      <Line key={code} type="monotone" dataKey={labelFor(code)}
                         stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
                     ))}
                   </LineChart>
