@@ -52,6 +52,10 @@ export default function Page() {
   const [months, setMonths] = useState([]);
   const [fetchedAt, setFetchedAt] = useState(null);
 
+  const [roneSeries, setRoneSeries] = useState({});
+  const [roneMonths, setRoneMonths] = useState([]);
+  const [roneUnmapped, setRoneUnmapped] = useState([]);
+
   const addRegion = (code) => {
     if (!code) return;
     setSelected((prev) => (prev.includes(code) ? prev : [...prev, code]));
@@ -69,6 +73,22 @@ export default function Page() {
     }
     setStatus('loading');
     try {
+      if (dealType === 'rone') {
+        const res = await fetch(`/api/rone?codes=${selected.join(',')}&months=${monthCount}`);
+        const json = await res.json();
+        if (!res.ok) {
+          setErrorMsg(json.error || `요청 실패 (HTTP ${res.status})`);
+          setStatus('error');
+          return;
+        }
+        setRoneSeries(json.data);
+        setRoneMonths(json.months);
+        setRoneUnmapped(json.unmapped || []);
+        setFetchedAt(new Date(json.fetchedAt));
+        if (json.error) setErrorMsg(`일부 항목에서 오류: ${json.error}`);
+        setStatus('done');
+        return;
+      }
       const endpoint = dealType === 'rent' ? '/api/rents' : '/api/trades';
       const res = await fetch(`${endpoint}?codes=${selected.join(',')}&months=${monthCount}`);
       const json = await res.json();
@@ -171,7 +191,42 @@ export default function Page() {
     return all.slice(0, 30);
   }, [selected, months, rawByRegionMonth]);
 
+  const roneChartData = useMemo(() => {
+    return roneMonths.map((ym) => {
+      const row = { ym: monthLabel(ym) };
+      selected.forEach((code) => {
+        const point = (roneSeries[code] || []).find((p) => p.ym === ym);
+        row[regionLabel(code)] = point ? Math.round(point.value) : null;
+      });
+      return row;
+    });
+  }, [roneMonths, selected, roneSeries]);
+
+  const roneRanking = useMemo(() => {
+    return selected.map((code) => {
+      const series = roneSeries[code] || [];
+      const first = series[0];
+      const last = series[series.length - 1];
+      const change = first && last && first.value
+        ? ((last.value - first.value) / first.value) * 100
+        : null;
+      return {
+        code, name: regionLabel(code), latest: last?.value ?? null, unit: last?.unit, change,
+        unsupported: !!roneUnmapped.includes(code),
+      };
+    }).sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
+  }, [selected, roneSeries, roneUnmapped]);
+
+  const roneKpis = useMemo(() => {
+    const withVal = roneRanking.filter((r) => r.latest != null);
+    const avg = withVal.length ? withVal.reduce((s, r) => s + r.latest, 0) / withVal.length : null;
+    const rising = roneRanking.filter((r) => r.change != null).sort((a, b) => b.change - a.change)[0];
+    const falling = roneRanking.filter((r) => r.change != null).sort((a, b) => a.change - b.change)[0];
+    return { avg, rising, falling, unit: withVal[0]?.unit };
+  }, [roneRanking]);
+
   const isRent = dealType === 'rent';
+  const isRone = dealType === 'rone';
   const unitLabel = isRent ? '전세보증금 평당가' : '매매가 평당가';
 
   const styles = {
@@ -234,7 +289,13 @@ export default function Page() {
           <div style={{ display: 'flex', gap: 6 }}>
             <div style={styles.toggleBtn(dealType === 'trade')} onClick={() => setDealType('trade')}>매매</div>
             <div style={styles.toggleBtn(dealType === 'rent')} onClick={() => setDealType('rent')}>전월세</div>
+            <div style={styles.toggleBtn(dealType === 'rone')} onClick={() => setDealType('rone')}>시세동향</div>
           </div>
+          {isRone && (
+            <p style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 6 }}>
+              한국부동산원 전국주택가격동향조사 기준 (실거래와 별도 통계, 표본조사)
+            </p>
+          )}
         </div>
 
         <div>
@@ -293,7 +354,7 @@ export default function Page() {
       <main style={styles.main}>
         <div>
           <h1 style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 24, margin: '0 0 4px' }}>
-            선택 지역 아파트 {isRent ? '전월세' : '매매'} 시황
+            선택 지역 아파트 {isRone ? '시세동향' : isRent ? '전월세' : '매매'} 시황
           </h1>
           <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>
             {fetchedAt
@@ -302,7 +363,89 @@ export default function Page() {
           </p>
         </div>
 
-        {status === 'done' && (
+        {status === 'done' && isRone && (
+          <>
+            {roneUnmapped.length > 0 && (
+              <div style={{
+                display: 'flex', gap: 8, fontSize: 12, color: PALETTE.down,
+                background: 'rgba(196,119,106,0.1)', border: `1px solid ${PALETTE.down}`, borderRadius: 6, padding: 10,
+              }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>이 통계를 아직 지원하지 않는 지역: {roneUnmapped.map(regionLabel).join(', ')}</span>
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+              <div style={styles.card}>
+                <div style={styles.kpiLabel}>선택 지역 평균매매가격 평균</div>
+                <div style={styles.kpiValue}>
+                  {roneKpis.avg != null ? `${Math.round(roneKpis.avg).toLocaleString()}${roneKpis.unit || '만원'}` : '-'}
+                </div>
+              </div>
+              <div style={styles.card}>
+                <div style={styles.kpiLabel}>기간 내 최고 상승</div>
+                <div style={{ ...styles.kpiValue, fontSize: 16, color: PALETTE.up, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <TrendingUp size={15} />
+                  {roneKpis.rising ? `${roneKpis.rising.name} ${fmtPct(roneKpis.rising.change)}` : '-'}
+                </div>
+              </div>
+              <div style={styles.card}>
+                <div style={styles.kpiLabel}>기간 내 최고 하락</div>
+                <div style={{ ...styles.kpiValue, fontSize: 16, color: PALETTE.down, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <TrendingDown size={15} />
+                  {roneKpis.falling ? `${roneKpis.falling.name} ${fmtPct(roneKpis.falling.change)}` : '-'}
+                </div>
+              </div>
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>평균매매가격 추이 (한국부동산원)</h2>
+              <div style={{ width: '100%', height: 280 }}>
+                <ResponsiveContainer>
+                  <LineChart data={roneChartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    {selected.filter((c) => !roneUnmapped.includes(c)).map((code, i) => (
+                      <Line key={code} type="monotone" dataKey={regionLabel(code)}
+                        stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>지역별 순위</h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>지역</th>
+                    <th style={styles.th}>최근월 평균매매가격</th>
+                    <th style={styles.th}>기간 등락률</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roneRanking.map((r) => (
+                    <tr key={r.code}>
+                      <td style={styles.td}>{r.name}</td>
+                      <td style={styles.td}>
+                        {r.unsupported ? '미지원' : r.latest != null ? `${Math.round(r.latest).toLocaleString()}${r.unit || '만원'}` : '-'}
+                      </td>
+                      <td style={{ ...styles.td, color: r.change > 0 ? PALETTE.up : r.change < 0 ? PALETTE.down : PALETTE.textSecondary }}>
+                        {r.unsupported ? '-' : fmtPct(r.change)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {status === 'done' && !isRone && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
               <div style={styles.card}>
