@@ -330,6 +330,32 @@ export default function Page() {
     return allTx.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.regionCode === selectedApt.regionCode);
   }, [allTx, selectedApt]);
 
+  // 단지별로 묶어서, 가장 최근 거래 기준으로 여러 단지를 한눈에 비교할 수 있는 목록.
+  // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
+  const complexCompare = useMemo(() => {
+    const groups = {};
+    allTx.forEach((t) => {
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    const list = Object.values(groups).map((rows) => {
+      rows.sort((a, b) => {
+        const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
+        const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
+        return db.localeCompare(da);
+      });
+      const latest = rows[0];
+      const unitPrice = isRent
+        ? (latest.isJeonse ? latest.depositPerPyeong : null)
+        : latest.pricePerPyeong;
+      return { ...latest, count: rows.length, unitPrice };
+    });
+    return list
+      .filter((r) => r.unitPrice != null)
+      .sort((a, b) => a.unitPrice - b.unitPrice);
+  }, [allTx, isRent]);
+
   const roneChartData = useMemo(() => {
     return roneMonths.map((ym) => {
       const row = { ym: monthLabel(ym) };
@@ -618,12 +644,27 @@ export default function Page() {
 
         <div>
           <label style={styles.label}>조회 기간</label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[3, 6, 12].map((n) => (
-              <div key={n} onClick={() => setMonthCount(n)} style={styles.toggleBtn(monthCount === n)}>
-                최근 {n}개월
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8 }}>
+            {[1, 3, 6, 12].map((n) => (
+              <div key={n} onClick={() => setMonthCount(n)} style={{ ...styles.toggleBtn(monthCount === n), padding: '7px 0', fontSize: 12 }}>
+                {n}개월
               </div>
             ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11.5, color: PALETTE.textMuted, whiteSpace: 'nowrap' }}>직접 입력</span>
+            <input
+              type="number"
+              min={1}
+              max={24}
+              value={monthCount}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                if (Number.isFinite(v)) setMonthCount(Math.min(24, Math.max(1, v)));
+              }}
+              style={{ ...styles.select, padding: '6px 8px', width: 60 }}
+            />
+            <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>개월 (최대 24)</span>
           </div>
         </div>
 
@@ -976,6 +1017,50 @@ export default function Page() {
                   ))}
                 </tbody>
               </table>
+              </div>
+            </div>
+
+            <div style={styles.card}>
+              <h2 style={styles.sectionTitle}>단지별 비교</h2>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+                선택 지역·기간 내 단지들을 {isRent ? '전세보증금' : '매매'} 평당가 기준으로 정렬했어요.
+                값이 비슷한 단지끼리 가까이 있어서 한눈에 비교하기 좋아요. 단지명을 누르면 상세 내역이 열립니다.
+              </p>
+              <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>지역</th>
+                      <th style={styles.th}>단지명</th>
+                      <th style={styles.th}>전용면적</th>
+                      <th style={styles.th}>평당가</th>
+                      <th style={styles.th}>최근 {isRent ? '보증금' : '거래금액'}</th>
+                      <th style={styles.th}>최근 계약일</th>
+                      <th style={styles.th}>거래건수</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {complexCompare.map((c, i) => (
+                      <tr key={i}>
+                        <td style={styles.td}>{regionLabel(c.regionCode)}</td>
+                        <td
+                          style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
+                          onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
+                        >
+                          {c.apt} ({c.dong})
+                        </td>
+                        <td style={styles.td}>{c.area?.toFixed(1)}㎡</td>
+                        <td style={styles.td}>{fmtWon(c.unitPrice)}</td>
+                        <td style={styles.td}>{fmtWon(isRent ? c.deposit : c.amount)}</td>
+                        <td style={styles.td}>{c.year}.{c.month}.{c.day}</td>
+                        <td style={styles.td}>{c.count}</td>
+                      </tr>
+                    ))}
+                    {complexCompare.length === 0 && (
+                      <tr><td style={styles.td} colSpan={7}>비교할 단지가 없습니다.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
