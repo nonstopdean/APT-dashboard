@@ -12,18 +12,19 @@ const DEFAULT_SELECTED = ['11680', '11650', '11710', '11440'];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 
 const PALETTE = {
-  bg: '#12161D',
-  panel: '#1A2029',
-  panelAlt: '#20272F',
-  border: '#2C3440',
-  borderStrong: '#3A4451',
-  textPrimary: '#EDEAE2',
-  textSecondary: '#A6ADB8',
-  textMuted: '#6E7683',
-  up: '#C9AE73',
-  down: '#C4776A',
-  accent: '#C79A46',
+  bg: '#EFEEE8',
+  panel: '#FFFFFF',
+  panelAlt: '#F5F4EF',
+  border: '#DEDBCF',
+  borderStrong: '#C6C2B2',
+  textPrimary: '#211F1A',
+  textSecondary: '#5C594E',
+  textMuted: '#8B8775',
+  up: '#B23A2E',
+  down: '#2F5FA0',
+  accent: '#B23A2E',
 };
+const ACCENT_TEXT = '#FDF6F3';
 
 function fmtWon(manwon) {
   if (manwon == null || Number.isNaN(manwon)) return '-';
@@ -258,19 +259,19 @@ export default function Page() {
       borderRadius: 6, padding: '8px 10px', color: PALETTE.textPrimary, fontSize: 13,
     },
     btn: {
-      background: PALETTE.accent, color: '#1A1408', border: 'none', borderRadius: 6,
+      background: PALETTE.accent, color: ACCENT_TEXT, border: 'none', borderRadius: 6,
       padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
     },
     toggleBtn: (active) => ({
       flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 6, fontSize: 13, cursor: 'pointer',
       border: `1px solid ${active ? PALETTE.accent : PALETTE.border}`,
-      background: active ? 'rgba(199,154,70,0.15)' : 'transparent',
+      background: active ? 'rgba(178,58,46,0.10)' : 'transparent',
       color: active ? PALETTE.up : PALETTE.textSecondary,
     }),
     chip: {
       display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 14,
-      border: `1px solid ${PALETTE.accent}`, background: 'rgba(199,154,70,0.15)',
+      border: `1px solid ${PALETTE.accent}`, background: 'rgba(178,58,46,0.10)',
       color: PALETTE.up, fontSize: 12,
     },
     card: { background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: '16px 18px' },
