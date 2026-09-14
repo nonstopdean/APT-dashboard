@@ -1,4 +1,4 @@
-import { fetchRegionMonth, runPool, lastNMonths } from '../../../lib/molit';
+import { fetchRegionMonthRent, runPool, lastNMonths } from '../../../lib/molit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,7 @@ export async function GET(request) {
   codes.forEach((code) => {
     months.forEach((ym) => {
       keys.push(`${code}_${ym}`);
-      tasks.push(() => fetchRegionMonth(serviceKey, code, ym));
+      tasks.push(() => fetchRegionMonthRent(serviceKey, code, ym));
     });
   });
 
