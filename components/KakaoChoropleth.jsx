@@ -35,24 +35,26 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
 
         polygons.forEach((rings) => {
           const path = rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
+          const hasValue = value != null;
+          const baseFillOpacity = hasValue ? 0.55 : 0;
           const polygon = new window.kakao.maps.Polygon({
             path,
-            strokeWeight: 1,
+            strokeWeight: hasValue ? 1.5 : 0.5,
             strokeColor: borderColor || '#DEDBCF',
-            strokeOpacity: 0.9,
+            strokeOpacity: hasValue ? 0.9 : 0.15,
             fillColor: colorFor(value),
-            fillOpacity: 0.24,
+            fillOpacity: baseFillOpacity,
           });
           polygon.setMap(mapRef.current);
           window.kakao.maps.event.addListener(polygon, 'click', () => {
-            setCaption(value != null ? `${name}: ${Math.round(value).toLocaleString()}` : `${name}: 데이터 없음`);
+            setCaption(value != null ? `${name}: ${Math.round(value).toLocaleString()}` : `${name}: 검색되지 않은 지역 (클릭하면 추가됩니다)`);
             if (code) onSelect?.(code);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
-            polygon.setOptions({ fillOpacity: 0.4 });
+            polygon.setOptions({ fillOpacity: hasValue ? 0.7 : 0.12 });
           });
           window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions({ fillOpacity: 0.24 });
+            polygon.setOptions({ fillOpacity: baseFillOpacity });
           });
           polygonsRef.current.push(polygon);
         });

@@ -1090,7 +1090,7 @@ export default function Page() {
                           style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
                           onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
                         >
-                          {c.apt} ({c.dong})
+                          {c.apt}{c.aptDong ? ` ${c.aptDong}동` : ''} ({c.dong})
                         </td>
                         <td style={styles.td}>{c.area?.toFixed(1)}㎡</td>
                         <td style={styles.td}>{fmtWon(c.unitPrice)}</td>
@@ -1135,7 +1135,7 @@ export default function Page() {
                         <td style={styles.td}>{regionLabel(t.regionCode)}</td>
                         <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
                           onClick={() => setSelectedApt({ apt: t.apt, dong: t.dong, regionCode: t.regionCode })}>
-                          {t.apt} ({t.dong})
+                          {t.apt}{t.aptDong ? ` ${t.aptDong}동` : ''} ({t.dong})
                         </td>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
                         <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
@@ -1193,6 +1193,7 @@ export default function Page() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
+                    <th style={styles.th}>동</th>
                     <th style={styles.th}>계약일</th>
                     <th style={styles.th}>전용면적</th>
                     <th style={styles.th}>층</th>
@@ -1210,6 +1211,7 @@ export default function Page() {
                 <tbody>
                   {aptHistory.map((t, i) => (
                     <tr key={i}>
+                      <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                       <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
                       <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
                       <td style={styles.td}>{t.floor}층</td>
@@ -1225,7 +1227,7 @@ export default function Page() {
                     </tr>
                   ))}
                   {aptHistory.length === 0 && (
-                    <tr><td style={styles.td} colSpan={isRent ? 6 : 4}>표시할 거래 내역이 없습니다.</td></tr>
+                    <tr><td style={styles.td} colSpan={isRent ? 7 : 5}>표시할 거래 내역이 없습니다.</td></tr>
                   )}
                 </tbody>
               </table>
