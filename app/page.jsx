@@ -334,6 +334,58 @@ export default function Page() {
   const isRone = dealType === 'rone';
   const isRatio = dealType === 'ratio';
 
+  const ratioByRegion = useMemo(() => {
+    const out = {};
+    selected.forEach((code) => {
+      out[code] = months.map((ym) => {
+        const saleItems = saleRaw[`${code}_${ym}`] || [];
+        const jeonseItems = (jeonseRaw[`${code}_${ym}`] || []).filter((r) => r.isJeonse);
+        const avgSale = saleItems.length
+          ? saleItems.reduce((s, r) => s + r.amount, 0) / saleItems.length
+          : null;
+        const avgJeonse = jeonseItems.length
+          ? jeonseItems.reduce((s, r) => s + r.deposit, 0) / jeonseItems.length
+          : null;
+        const ratio = avgSale && avgJeonse ? (avgJeonse / avgSale) * 100 : null;
+        return { ym, avgSale, avgJeonse, ratio };
+      });
+    });
+    return out;
+  }, [selected, months, saleRaw, jeonseRaw]);
+
+  const ratioChartData = useMemo(() => {
+    return months.map((ym) => {
+      const row = { ym: monthLabel(ym) };
+      selected.forEach((code) => {
+        const point = (ratioByRegion[code] || []).find((p) => p.ym === ym);
+        row[labelFor(code)] = point?.ratio != null ? Math.round(point.ratio * 10) / 10 : null;
+      });
+      return row;
+    });
+  }, [months, selected, ratioByRegion]);
+
+  const ratioRanking = useMemo(() => {
+    return selected.map((code) => {
+      const series = ratioByRegion[code] || [];
+      const withData = series.filter((p) => p.ratio != null);
+      const last = withData[withData.length - 1];
+      return {
+        code, name: labelFor(code),
+        avgSale: last?.avgSale ?? null, avgJeonse: last?.avgJeonse ?? null, ratio: last?.ratio ?? null,
+      };
+    }).sort((a, b) => (b.ratio ?? -Infinity) - (a.ratio ?? -Infinity));
+  }, [selected, ratioByRegion]);
+
+  const ratioKpis = useMemo(() => {
+    const withRatio = ratioRanking.filter((r) => r.ratio != null);
+    const avg = withRatio.length ? withRatio.reduce((s, r) => s + r.ratio, 0) / withRatio.length : null;
+    const highest = withRatio[0];
+    const lowest = withRatio[withRatio.length - 1];
+    return { avg, highest, lowest };
+  }, [ratioRanking]);
+
+  const unitLabel = isRent ? '전세보증금 평당가' : '매매가 평당가';
+
   const SEOUL_NAME_TO_CODE = useMemo(() => {
     const map = {};
     (REGION_GROUPS.find((g) => g.sido === '서울특별시')?.items || []).forEach((it) => { map[it.name] = it.code; });
@@ -398,57 +450,6 @@ export default function Page() {
   };
 
 
-  const ratioByRegion = useMemo(() => {
-    const out = {};
-    selected.forEach((code) => {
-      out[code] = months.map((ym) => {
-        const saleItems = saleRaw[`${code}_${ym}`] || [];
-        const jeonseItems = (jeonseRaw[`${code}_${ym}`] || []).filter((r) => r.isJeonse);
-        const avgSale = saleItems.length
-          ? saleItems.reduce((s, r) => s + r.amount, 0) / saleItems.length
-          : null;
-        const avgJeonse = jeonseItems.length
-          ? jeonseItems.reduce((s, r) => s + r.deposit, 0) / jeonseItems.length
-          : null;
-        const ratio = avgSale && avgJeonse ? (avgJeonse / avgSale) * 100 : null;
-        return { ym, avgSale, avgJeonse, ratio };
-      });
-    });
-    return out;
-  }, [selected, months, saleRaw, jeonseRaw]);
-
-  const ratioChartData = useMemo(() => {
-    return months.map((ym) => {
-      const row = { ym: monthLabel(ym) };
-      selected.forEach((code) => {
-        const point = (ratioByRegion[code] || []).find((p) => p.ym === ym);
-        row[labelFor(code)] = point?.ratio != null ? Math.round(point.ratio * 10) / 10 : null;
-      });
-      return row;
-    });
-  }, [months, selected, ratioByRegion]);
-
-  const ratioRanking = useMemo(() => {
-    return selected.map((code) => {
-      const series = ratioByRegion[code] || [];
-      const withData = series.filter((p) => p.ratio != null);
-      const last = withData[withData.length - 1];
-      return {
-        code, name: labelFor(code),
-        avgSale: last?.avgSale ?? null, avgJeonse: last?.avgJeonse ?? null, ratio: last?.ratio ?? null,
-      };
-    }).sort((a, b) => (b.ratio ?? -Infinity) - (a.ratio ?? -Infinity));
-  }, [selected, ratioByRegion]);
-
-  const ratioKpis = useMemo(() => {
-    const withRatio = ratioRanking.filter((r) => r.ratio != null);
-    const avg = withRatio.length ? withRatio.reduce((s, r) => s + r.ratio, 0) / withRatio.length : null;
-    const highest = withRatio[0];
-    const lowest = withRatio[withRatio.length - 1];
-    return { avg, highest, lowest };
-  }, [ratioRanking]);
-
-  const unitLabel = isRent ? '전세보증금 평당가' : '매매가 평당가';
 
   const styles = {
     page: {
