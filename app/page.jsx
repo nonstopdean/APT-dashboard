@@ -230,6 +230,29 @@ export default function Page() {
     });
   }, [months, selected, monthlyByRegion]);
 
+  // 가격 추이 그래프의 Y축을 실제 데이터 범위에 맞춰 자동 조정합니다.
+  // 기존처럼 0부터 크게 잡지 않고, 최저/최고값 주변에 약 15% 여백만 둬
+  // 월별 가격 변동이 더 잘 보이도록 합니다.
+  const priceChartDomain = useMemo(() => {
+    const values = chartData
+      .flatMap((row) => selected.map((code) => row[labelFor(code)]))
+      .filter((v) => typeof v === 'number' && Number.isFinite(v));
+
+    if (!values.length) return ['auto', 'auto'];
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+
+    if (range === 0) {
+      const padding = Math.max(Math.abs(min) * 0.05, 0.1);
+      return [Math.max(0, min - padding), max + padding];
+    }
+
+    const padding = range * 0.15;
+    return [Math.max(0, min - padding), max + padding];
+  }, [chartData, selected]);
+
   const ranking = useMemo(() => {
     return selected.map((code) => {
       const series = monthlyByRegion[code] || [];
@@ -789,7 +812,7 @@ export default function Page() {
                   <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={PALETTE.border} vertical={false} />
                     <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} domain={priceChartDomain} />
                     <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
                       labelStyle={{ color: PALETTE.textPrimary }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
