@@ -5,8 +5,10 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2 } from 'lucide-react';
-import { REGION_GROUPS, regionLabel } from '../lib/regions';
+import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate } from '../lib/regions';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
+
+const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
 
 const DEFAULT_SELECTED = ['11680', '11650', '11710', '11440'];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
@@ -64,7 +66,7 @@ export default function Page() {
 
   const setDealTypeSafe = (next) => {
     if (next !== 'rone') {
-      setSelected((prev) => prev.filter((c) => !SIDO_REGIONS.some((r) => r.code === c)));
+      setSelected((prev) => prev.filter((c) => !RONE_ONLY_EXTRA.some((r) => r.code === c)));
     }
     setDealType(next);
   };
@@ -144,7 +146,7 @@ export default function Page() {
       const row = { ym: monthLabel(ym) };
       selected.forEach((code) => {
         const m = monthlyByRegion[code]?.find((x) => x.ym === ym);
-        row[regionLabel(code)] = m?.avgPyeong ? Math.round(m.avgPyeong / 10) / 100 : null;
+        row[labelFor(code)] = m?.avgPyeong ? Math.round(m.avgPyeong / 10) / 100 : null;
       });
       return row;
     });
@@ -161,7 +163,7 @@ export default function Page() {
         : null;
       const totalCount = series.reduce((s, m) => s + m.count, 0);
       return {
-        code, name: regionLabel(code), latestAvgPyeong: last?.avgPyeong ?? null, change, totalCount,
+        code, name: labelFor(code), latestAvgPyeong: last?.avgPyeong ?? null, change, totalCount,
       };
     }).sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
   }, [selected, monthlyByRegion]);
@@ -326,9 +328,14 @@ export default function Page() {
           <label style={styles.label}>지역 추가 (전국)</label>
           <select style={styles.select} value={pickerValue} onChange={(e) => addRegion(e.target.value)}>
             <option value="">시/도 - 시/군/구 선택</option>
+            <optgroup label="시/도 전체 (합산)">
+              {SIDO_AGGREGATES.map((it) => (
+                <option key={it.code} value={it.code}>{it.name}</option>
+              ))}
+            </optgroup>
             {isRone && (
-              <optgroup label="시/도 전체 (한국부동산원)">
-                {SIDO_REGIONS.map((it) => (
+              <optgroup label="광역 통계 (한국부동산원)">
+                {RONE_ONLY_EXTRA.map((it) => (
                   <option key={it.code} value={it.code}>{it.name}</option>
                 ))}
               </optgroup>
@@ -353,6 +360,12 @@ export default function Page() {
               <span style={{ fontSize: 12, color: PALETTE.textMuted }}>선택된 지역이 없습니다.</span>
             )}
           </div>
+          {!isRone && selected.some(isSidoAggregate) && (
+            <p style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 6 }}>
+              시/도 전체는 그 안의 모든 시/군/구를 합산하는 방식이라 조회가 더 오래 걸려요.
+              기간은 3~6개월 정도로 시작해보세요.
+            </p>
+          )}
         </div>
 
         <button style={styles.btn} onClick={handleFetch} disabled={status === 'loading'}>
@@ -512,7 +525,7 @@ export default function Page() {
                       labelStyle={{ color: PALETTE.textPrimary }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     {selected.map((code, i) => (
-                      <Line key={code} type="monotone" dataKey={regionLabel(code)}
+                      <Line key={code} type="monotone" dataKey={labelFor(code)}
                         stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
                     ))}
                   </LineChart>
