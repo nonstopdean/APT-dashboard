@@ -1028,6 +1028,7 @@ export default function Page() {
                   <thead style={{ position: 'sticky', top: 0, background: PALETTE.panel, zIndex: 1 }}>
                     <tr>
                       <th style={styles.th}>계약일</th>
+                      <th style={styles.th}>동</th>
                       <th style={styles.th}>전용면적</th>
                       <th style={styles.th}>층</th>
                       {isRent ? (
@@ -1049,6 +1050,7 @@ export default function Page() {
                     {complexTransactions.map((t, i) => (
                       <tr key={`${t.year}-${t.month}-${t.day}-${t.area}-${t.floor}-${i}`}>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
+                        <td style={styles.td}>{t.dong || '-'}</td>
                         <td style={styles.td}>{t.area != null ? `${t.area.toFixed(1)}㎡` : '-'}</td>
                         <td style={styles.td}>{t.floor != null ? `${t.floor}층` : '-'}</td>
                         {isRent ? (
