@@ -41,7 +41,7 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
             strokeColor: borderColor || '#DEDBCF',
             strokeOpacity: 0.9,
             fillColor: colorFor(value),
-            fillOpacity: 0.38,
+            fillOpacity: 0.24,
           });
           polygon.setMap(mapRef.current);
           window.kakao.maps.event.addListener(polygon, 'click', () => {
@@ -49,10 +49,10 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
             if (code) onSelect?.(code);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
-            polygon.setOptions({ fillOpacity: 0.6 });
+            polygon.setOptions({ fillOpacity: 0.4 });
           });
           window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions({ fillOpacity: 0.38 });
+            polygon.setOptions({ fillOpacity: 0.24 });
           });
           polygonsRef.current.push(polygon);
         });

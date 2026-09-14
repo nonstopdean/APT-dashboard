@@ -108,18 +108,22 @@ export default function Page() {
 
         // 이름 -> 코드 조회를 시/도별로 나눠서, 같은 이름의 구(중구/서구/남구 등)가 다른
         // 도시에 있어도 헷갈리지 않게 한다.
-        const nameToCodeBySido = {};
-        REGION_GROUPS.forEach((g) => {
-          nameToCodeBySido[g.sido] = {};
-          g.items.forEach((it) => { nameToCodeBySido[g.sido][it.name] = it.code; });
-        });
-
         const matched = geo.features.map((f) => {
           const kostatCode = f.properties.code || '';
           const rawSidoName = KOSTAT_SIDO_CODE_TO_NAME[kostatCode.slice(0, 2)];
           const sidoName = SIDO_NAME_ALIAS[rawSidoName] || rawSidoName;
-          const code = sidoName ? nameToCodeBySido[sidoName]?.[f.properties.name] : undefined;
-          return { feature: f, name: f.properties.name, code };
+          const group = sidoName ? REGION_GROUPS.find((g) => g.sido === sidoName) : null;
+          const codes = [];
+          if (group) {
+            const exact = group.items.find((it) => it.name === f.properties.name);
+            if (exact) codes.push(exact.code);
+            // 이 지도 데이터는 2018년 기준이라, 그 이후 구로 나뉜 도시(예: 화성시 동탄구)는
+            // 지도엔 통합된 폴리곤 하나만 있다. 그런 하위 지역 코드도 같이 묶어둔다.
+            group.items
+              .filter((it) => it.name.startsWith(`${f.properties.name} `))
+              .forEach((it) => codes.push(it.code));
+          }
+          return { feature: f, name: f.properties.name, codes };
         });
         setMapFeatures(matched);
       })
@@ -456,15 +460,21 @@ export default function Page() {
 
   const seoulMapData = useMemo(() => {
     if (!mapFeatures) return null;
-    const values = mapFeatures.map((f) => (
-      { feature: f.feature, code: f.code, name: f.name, value: f.code ? mapValueFor(f.code) : null }
-    ));
+    const values = mapFeatures.map((f) => {
+      const codes = f.codes && f.codes.length ? f.codes : [];
+      const activeCodes = codes.filter((c) => selected.includes(c));
+      const candidateCodes = activeCodes.length ? activeCodes : codes;
+      const vals = candidateCodes.map((c) => mapValueFor(c)).filter((v) => v != null);
+      const value = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+      const primaryCode = activeCodes[0] || codes[0];
+      return { feature: f.feature, code: primaryCode, name: f.name, value };
+    });
     const available = values.filter((v) => v.value != null).map((v) => v.value);
     const min = available.length ? Math.min(...available) : 0;
     const max = available.length ? Math.max(...available) : 1;
     return { values, min, max };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapFeatures, rawByRegionMonth, months, roneRanking, ratioRanking, dealType]);
+  }, [mapFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
