@@ -20,8 +20,8 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
 
       if (!mapRef.current) {
         mapRef.current = new window.kakao.maps.Map(containerRef.current, {
-          center: new window.kakao.maps.LatLng(37.5665, 126.978),
-          level: 8,
+          center: new window.kakao.maps.LatLng(36.5, 127.85),
+          level: 13,
         });
       }
 

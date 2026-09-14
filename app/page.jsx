@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import * as topojson from 'topojson-client';
-import { geoMercator, geoPath, geoCentroid } from 'd3-geo';
+import { geoMercator, geoPath } from 'd3-geo';
 import KakaoChoropleth from '../components/KakaoChoropleth';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -44,6 +44,16 @@ function fmtPct(v) {
   return `${s}${v.toFixed(1)}%`;
 }
 
+// KOSTAT 지도 데이터의 시/도 코드(앞 2자리) -> 시/도 이름. 우리 REGION_GROUPS와 이름이 다른
+// (개편된) 시/도는 별칭으로 연결한다.
+const KOSTAT_SIDO_CODE_TO_NAME = {
+  '11': '서울특별시', '21': '부산광역시', '22': '대구광역시', '23': '인천광역시',
+  '24': '광주광역시', '25': '대전광역시', '26': '울산광역시', '29': '세종특별자치시',
+  '31': '경기도', '32': '강원도', '33': '충청북도', '34': '충청남도',
+  '35': '전라북도', '36': '전라남도', '37': '경상북도', '38': '경상남도', '39': '제주특별자치도',
+};
+const SIDO_NAME_ALIAS = { '강원도': '강원특별자치도', '전라북도': '전북특별자치도' };
+
 function monthLabel(ym) {
   return `${ym.slice(0, 4)}.${ym.slice(4, 6)}`;
 }
@@ -80,7 +90,7 @@ export default function Page() {
 
   const [favorites, setFavorites] = useState([]);
   const [favName, setFavName] = useState('');
-  const [seoulFeatures, setSeoulFeatures] = useState(null);
+  const [mapFeatures, setMapFeatures] = useState(null);
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
 
@@ -92,15 +102,23 @@ export default function Page() {
         if (cancelled) return;
         const key = Object.keys(topology.objects)[0];
         const geo = topojson.feature(topology, topology.objects[key]);
-        // 전국 데이터에서 서울(위도 37.40~37.75, 경도 126.70~127.20) 안에 있는 구만 추려낸다.
-        const seoulNames = new Set(
-          (REGION_GROUPS.find((g) => g.sido === '서울특별시')?.items || []).map((it) => it.name),
-        );
-        const features = geo.features.filter((f) => {
-          const [lon, lat] = geoCentroid(f);
-          return seoulNames.has(f.properties.name) && lat > 37.38 && lat < 37.78 && lon > 126.6 && lon < 127.3;
+
+        // 이름 -> 코드 조회를 시/도별로 나눠서, 같은 이름의 구(중구/서구/남구 등)가 다른
+        // 도시에 있어도 헷갈리지 않게 한다.
+        const nameToCodeBySido = {};
+        REGION_GROUPS.forEach((g) => {
+          nameToCodeBySido[g.sido] = {};
+          g.items.forEach((it) => { nameToCodeBySido[g.sido][it.name] = it.code; });
         });
-        setSeoulFeatures(features);
+
+        const matched = geo.features.map((f) => {
+          const kostatCode = f.properties.code || '';
+          const rawSidoName = KOSTAT_SIDO_CODE_TO_NAME[kostatCode.slice(0, 2)];
+          const sidoName = SIDO_NAME_ALIAS[rawSidoName] || rawSidoName;
+          const code = sidoName ? nameToCodeBySido[sidoName]?.[f.properties.name] : undefined;
+          return { feature: f, name: f.properties.name, code };
+        });
+        setMapFeatures(matched);
       })
       .catch(() => { if (!cancelled) setMapError('지도 데이터를 불러오지 못했습니다.'); });
     return () => { cancelled = true; };
@@ -402,12 +420,6 @@ export default function Page() {
 
   const unitLabel = isRent ? '전세보증금 평당가' : '매매가 평당가';
 
-  const SEOUL_NAME_TO_CODE = useMemo(() => {
-    const map = {};
-    (REGION_GROUPS.find((g) => g.sido === '서울특별시')?.items || []).forEach((it) => { map[it.name] = it.code; });
-    return map;
-  }, []);
-
   const mapValueFor = (code) => {
     if (isRone) return roneRanking.find((r) => r.code === code)?.latest ?? null;
     if (isRatio) return ratioRanking.find((r) => r.code === code)?.ratio ?? null;
@@ -418,17 +430,16 @@ export default function Page() {
   };
 
   const seoulMapData = useMemo(() => {
-    if (!seoulFeatures) return null;
-    const values = seoulFeatures.map((f) => {
-      const code = SEOUL_NAME_TO_CODE[f.properties.name];
-      return { feature: f, code, name: f.properties.name, value: code ? mapValueFor(code) : null };
-    });
+    if (!mapFeatures) return null;
+    const values = mapFeatures.map((f) => (
+      { feature: f.feature, code: f.code, name: f.name, value: f.code ? mapValueFor(f.code) : null }
+    ));
     const available = values.filter((v) => v.value != null).map((v) => v.value);
     const min = available.length ? Math.min(...available) : 0;
     const max = available.length ? Math.max(...available) : 1;
     return { values, min, max };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seoulFeatures, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, SEOUL_NAME_TO_CODE]);
+  }, [mapFeatures, rawByRegionMonth, months, roneRanking, ratioRanking, dealType]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
