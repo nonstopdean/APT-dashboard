@@ -64,6 +64,9 @@ function labelFor(code) {
 
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
+  const isRent = dealType === 'rent';
+  const isRone = dealType === 'rone';
+  const isRatio = dealType === 'ratio';
   const [panelOpen, setPanelOpen] = useState(true);
   const [monthCount, setMonthCount] = useState(6);
   const [selected, setSelected] = useState(DEFAULT_SELECTED);
@@ -389,10 +392,6 @@ export default function Page() {
     const falling = roneRanking.filter((r) => r.change != null).sort((a, b) => a.change - b.change)[0];
     return { avg, rising, falling, unit: withVal[0]?.unit };
   }, [roneRanking]);
-
-  const isRent = dealType === 'rent';
-  const isRone = dealType === 'rone';
-  const isRatio = dealType === 'ratio';
 
   const ratioByRegion = useMemo(() => {
     const out = {};
