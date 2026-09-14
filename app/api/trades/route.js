@@ -71,6 +71,14 @@ export async function GET(request) {
       data[`${code}_${ym}`] = combined;
     });
   });
+  // 지도 등에서 구 단위 값이 필요할 수 있어, 이미 불러온 개별 시/군/구 데이터도 함께 내려준다
+  // (추가 호출 없이 이미 fetch한 결과를 재사용).
+  members.forEach((mc) => {
+    months.forEach((ym) => {
+      const key = `${mc}_${ym}`;
+      if (!(key in data)) data[key] = rawByMember[key] || [];
+    });
+  });
 
   return Response.json({ data, months, error: errorMsg, fetchedAt: new Date().toISOString() });
 }

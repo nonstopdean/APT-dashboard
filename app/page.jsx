@@ -404,7 +404,10 @@ export default function Page() {
   const mapValueFor = (code) => {
     if (isRone) return roneRanking.find((r) => r.code === code)?.latest ?? null;
     if (isRatio) return ratioRanking.find((r) => r.code === code)?.ratio ?? null;
-    return ranking.find((r) => r.code === code)?.latestAvgPyeong ?? null;
+    const lastMonth = months[months.length - 1];
+    const items = rawByRegionMonth[`${code}_${lastMonth}`] || [];
+    const valid = items.map((r) => r.pricePerPyeong).filter(Boolean);
+    return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
   };
 
   const seoulMapData = useMemo(() => {
@@ -418,10 +421,11 @@ export default function Page() {
     const max = available.length ? Math.max(...available) : 1;
     return { values, min, max };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seoulFeatures, ranking, roneRanking, ratioRanking, dealType, SEOUL_NAME_TO_CODE]);
+  }, [seoulFeatures, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, SEOUL_NAME_TO_CODE]);
 
   const renderSeoulMap = () => {
-    const hasSeoulSelected = selected.some((c) => Object.values(SEOUL_NAME_TO_CODE).includes(c));
+    const hasSeoulSelected = selected.includes('11000')
+      || selected.some((c) => Object.values(SEOUL_NAME_TO_CODE).includes(c));
     if (!hasSeoulSelected) return null;
     if (mapError) {
       return <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }}>{mapError}</div>;

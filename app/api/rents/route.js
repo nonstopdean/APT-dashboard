@@ -69,6 +69,12 @@ export async function GET(request) {
       data[`${code}_${ym}`] = combined;
     });
   });
+  members.forEach((mc) => {
+    months.forEach((ym) => {
+      const key = `${mc}_${ym}`;
+      if (!(key in data)) data[key] = rawByMember[key] || [];
+    });
+  });
 
   return Response.json({ data, months, error: errorMsg, fetchedAt: new Date().toISOString() });
 }
