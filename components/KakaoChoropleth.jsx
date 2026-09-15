@@ -32,7 +32,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
       strokeColor: borderColor || '#DEDBCF',
       strokeOpacity: hasValue ? 0.9 : 0.15,
       fillColor: colorForRef.current(value),
-      fillOpacity: hasValue ? 0.55 : 0,
+      fillOpacity: hasValue ? 0.32 : 0,
     };
   };
 
@@ -100,7 +100,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
             const value = valuesRef.current?.[idx];
             const hasValue = value != null;
-            polygon.setOptions({ fillOpacity: hasValue ? 0.7 : 0.12 });
+            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
             setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
@@ -174,7 +174,9 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
         let coord = geocodeCacheRef.current[c.key];
         if (coord === undefined) {
           // eslint-disable-next-line no-await-in-loop
-          coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`);
+          coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
+            || await geocodeComplex(`${c.dong} ${c.apt}`)
+            || await geocodeComplex(c.apt);
           geocodeCacheRef.current[c.key] = coord;
         }
         if (cancelled || !coord) continue;
