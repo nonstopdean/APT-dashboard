@@ -104,6 +104,7 @@ export default function Page() {
   const isRent = dealType === 'rent';
   const isRone = dealType === 'rone';
   const isRatio = dealType === 'ratio';
+  const isSilv = dealType === 'silv';
   const [panelOpen, setPanelOpen] = useState(true);
   const [viewMode, setViewMode] = useState('normal'); // 'normal' | 'map'
   const [startYm, setStartYm] = useState(ymShift(ymNow(), -5));
@@ -288,9 +289,11 @@ export default function Page() {
         setStatus('done');
         return;
       }
-      const endpoint = propertyType === 'offi'
-        ? (dealType === 'rent' ? '/api/offi-rents' : '/api/offi-trades')
-        : (dealType === 'rent' ? '/api/rents' : '/api/trades');
+      const endpoint = dealType === 'silv'
+        ? '/api/silv-trades'
+        : propertyType === 'offi'
+          ? (dealType === 'rent' ? '/api/offi-rents' : '/api/offi-trades')
+          : (dealType === 'rent' ? '/api/rents' : '/api/trades');
       const res = await fetch(`${endpoint}?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`);
       const json = await res.json();
       if (!res.ok) {
@@ -839,9 +842,10 @@ export default function Page() {
 
         <div>
           <label style={styles.label}>거래 유형</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
             <div style={styles.toggleBtn(dealType === 'trade')} onClick={() => setDealTypeSafe('trade')}>매매</div>
             <div style={styles.toggleBtn(dealType === 'rent')} onClick={() => setDealTypeSafe('rent')}>전월세</div>
+            <div style={styles.toggleBtn(dealType === 'silv')} onClick={() => setDealTypeSafe('silv')}>분양권전매</div>
             <div style={styles.toggleBtn(dealType === 'rone')} onClick={() => setDealTypeSafe('rone')}>시세동향</div>
             <div style={styles.toggleBtn(dealType === 'ratio')} onClick={() => setDealTypeSafe('ratio')}>전세가율</div>
           </div>
@@ -852,7 +856,7 @@ export default function Page() {
           )}
         </div>
 
-        {!isRone && (
+        {!isRone && !isSilv && (
         <div>
           <label style={styles.label}>매물 종류</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
@@ -1310,7 +1314,7 @@ export default function Page() {
       <main style={styles.main} className="dash-main">
         <div>
           <h1 className="dash-title" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
-            선택 지역 아파트 {isRatio ? '전세가율' : isRone ? '시세동향' : isRent ? '전월세' : '매매'} 시황
+            선택 지역 아파트 {isRatio ? '전세가율' : isRone ? '시세동향' : isSilv ? '분양권전매' : isRent ? '전월세' : '매매'} 시황
           </h1>
           <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>
             {fetchedAt
