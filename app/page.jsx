@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode } from '../lib/regions';
+import { nearestStation } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
@@ -136,7 +137,19 @@ export default function Page() {
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
   const [aptBasicInfo, setAptBasicInfo] = useState(null);
+  const [nearbySchools, setNearbySchools] = useState([]);
   const aptListCacheRef = useRef({}); // regionCode -> [{kaptCode, kaptName}]
+
+  useEffect(() => {
+    setNearbySchools([]);
+    if (!selectedApt?.dong) return undefined;
+    let cancelled = false;
+    fetch(`/api/schools?keyword=${encodeURIComponent(selectedApt.dong)}`)
+      .then((res) => res.json())
+      .then((json) => { if (!cancelled) setNearbySchools(json?.schools || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedApt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -465,6 +478,11 @@ export default function Page() {
     return allTx.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.regionCode === selectedApt.regionCode);
   }, [allTx, selectedApt]);
 
+  const nearestStationInfo = useMemo(() => {
+    if (!selectedApt?.lat || !selectedApt?.lng) return null;
+    return nearestStation(selectedApt.lat, selectedApt.lng);
+  }, [selectedApt]);
+
   const aptTrendData = useMemo(() => {
     const byMonth = {};
     aptHistory.forEach((t) => {
@@ -780,7 +798,7 @@ export default function Page() {
             onSelect={(code) => addRegion(code)}
             focusLatLng={focusLatLng}
             complexes={mapComplexes}
-            onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
+            onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -792,7 +810,7 @@ export default function Page() {
             onSelect={(code) => addRegion(code)}
             focusLatLng={focusLatLng}
             complexes={mapComplexes}
-            onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
+            onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             height="100%"
           />
         ) : (
@@ -1767,12 +1785,24 @@ export default function Page() {
               {labelFor(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
-            {aptBasicInfo && (
+            {(aptBasicInfo || nearestStationInfo) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {aptBasicInfo.households && <span style={styles.chip}>세대수 {aptBasicInfo.households}</span>}
-                {aptBasicInfo.dongCount && <span style={styles.chip}>{aptBasicInfo.dongCount}개동</span>}
-                {aptBasicInfo.useDate && <span style={styles.chip}>준공 {String(aptBasicInfo.useDate).slice(0, 4)}년</span>}
-                {aptBasicInfo.builder && <span style={styles.chip}>시공 {aptBasicInfo.builder}</span>}
+                {aptBasicInfo?.households && <span style={styles.chip}>세대수 {aptBasicInfo.households}</span>}
+                {aptBasicInfo?.dongCount && <span style={styles.chip}>{aptBasicInfo.dongCount}개동</span>}
+                {aptBasicInfo?.useDate && <span style={styles.chip}>준공 {String(aptBasicInfo.useDate).slice(0, 4)}년</span>}
+                {aptBasicInfo?.builder && <span style={styles.chip}>시공 {aptBasicInfo.builder}</span>}
+                {nearestStationInfo && (
+                  <span style={styles.chip}>
+                    {nearestStationInfo.name}역({nearestStationInfo.line}) 도보 {nearestStationInfo.walkMin}분
+                  </span>
+                )}
+              </div>
+            )}
+            {nearbySchools.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {nearbySchools.map((s) => (
+                  <span key={s.name} style={styles.chip}>{s.name} ({s.kind})</span>
+                ))}
               </div>
             )}
             {aptTrendData.length > 1 && (

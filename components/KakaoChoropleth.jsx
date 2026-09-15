@@ -184,7 +184,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
           position: new window.kakao.maps.LatLng(coord.lat, coord.lng),
         });
         window.kakao.maps.event.addListener(marker, 'click', () => {
-          onComplexSelectRef.current?.(c);
+          onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
         });
         markersRef.current.push({ marker, key: c.key });
       }

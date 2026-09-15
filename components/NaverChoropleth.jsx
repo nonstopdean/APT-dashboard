@@ -220,7 +220,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
           position: new window.naver.maps.LatLng(coord.lat, coord.lng),
         });
         window.naver.maps.Event.addListener(marker, 'click', () => {
-          onComplexSelectRef.current?.(c);
+          onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
         });
         markersRef.current.push({ marker, key: c.key });
       }
