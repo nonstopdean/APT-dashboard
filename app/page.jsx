@@ -557,23 +557,30 @@ export default function Page() {
     if (codeToLatLng[code]) setFocusLatLng(codeToLatLng[code]);
   };
 
-  const seoulMapData = useMemo(() => {
+  const mapDisplayFeatures = useMemo(() => {
     if (!mapFeatures) return null;
-    const values = mapFeatures.map((f) => {
-      const codes = f.codes && f.codes.length ? f.codes : [];
+    return mapFeatures.map((f) => ({ feature: f.feature, name: f.name, code: (f.codes && f.codes[0]) || undefined, codes: f.codes || [] }));
+  }, [mapFeatures]);
+
+  const mapValues = useMemo(() => {
+    if (!mapDisplayFeatures) return null;
+    return mapDisplayFeatures.map((f) => {
+      const codes = f.codes || [];
       const activeCodes = codes.filter((c) => selected.includes(c));
       const candidateCodes = activeCodes.length ? activeCodes : codes;
       const vals = candidateCodes.map((c) => mapValueFor(c)).filter((v) => v != null);
-      const value = vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-      const primaryCode = activeCodes[0] || codes[0];
-      return { feature: f.feature, code: primaryCode, name: f.name, value };
+      return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
     });
-    const available = values.filter((v) => v.value != null).map((v) => v.value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType]);
+
+  const seoulMapData = useMemo(() => {
+    if (!mapDisplayFeatures || !mapValues) return null;
+    const available = mapValues.filter((v) => v != null);
     const min = available.length ? Math.min(...available) : 0;
     const max = available.length ? Math.max(...available) : 1;
-    return { values, min, max };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType]);
+    return { features: mapDisplayFeatures, values: mapValues, min, max };
+  }, [mapDisplayFeatures, mapValues]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -591,7 +598,7 @@ export default function Page() {
     if (mapError) return emptyState(mapError);
     if (!seoulMapData) return emptyState('지도 불러오는 중...');
 
-    const featureCollection = { type: 'FeatureCollection', features: seoulMapData.values.map((v) => v.feature) };
+    const featureCollection = { type: 'FeatureCollection', features: seoulMapData.features.map((f) => f.feature) };
     const projection = geoMercator().fitSize([560, 480], featureCollection);
     const pathGen = geoPath(projection);
     const colorFor = (value) => {
@@ -608,7 +615,8 @@ export default function Page() {
       <>
         {process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID ? (
           <NaverChoropleth
-            features={seoulMapData.values}
+            features={seoulMapData.features}
+            values={seoulMapData.values}
             colorFor={colorFor}
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
@@ -617,7 +625,8 @@ export default function Page() {
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
           <KakaoChoropleth
-            features={seoulMapData.values}
+            features={seoulMapData.features}
+            values={seoulMapData.values}
             colorFor={colorFor}
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
@@ -626,19 +635,22 @@ export default function Page() {
           />
         ) : (
           <svg viewBox="0 0 560 480" preserveAspectRatio="xMidYMid meet" style={{ width: '100%', height: '100%', display: 'block', background: PALETTE.bg }}>
-            {seoulMapData.values.map((v) => (
-              <path
-                key={v.name}
-                d={pathGen(v.feature)}
-                fill={colorFor(v.value)}
-                stroke={PALETTE.border}
-                strokeWidth={0.75}
-                style={{ cursor: v.code ? 'pointer' : 'default' }}
-                onClick={() => v.code && addRegion(v.code)}
-              >
-                <title>{v.name}{v.value != null ? `: ${Math.round(v.value).toLocaleString()}` : ' (데이터 없음)'}</title>
-              </path>
-            ))}
+            {seoulMapData.features.map((f, idx) => {
+              const value = seoulMapData.values[idx];
+              return (
+                <path
+                  key={f.name + idx}
+                  d={pathGen(f.feature)}
+                  fill={colorFor(value)}
+                  stroke={PALETTE.border}
+                  strokeWidth={0.75}
+                  style={{ cursor: f.code ? 'pointer' : 'default' }}
+                  onClick={() => f.code && addRegion(f.code)}
+                >
+                  <title>{f.name}{value != null ? `: ${Math.round(value).toLocaleString()}` : ' (데이터 없음)'}</title>
+                </path>
+              );
+            })}
           </svg>
         )}
       </>,

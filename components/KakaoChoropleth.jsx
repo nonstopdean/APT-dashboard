@@ -2,13 +2,42 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function KakaoChoropleth({ features, colorFor, borderColor, onSelect, height, focusLatLng }) {
+// features: [{ feature, name, code }] - 지오메트리는 안정적으로 유지되는 배열(선택 상태가 바뀌어도
+// 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
+// 색상만 자주 바뀔 수 있음. 이렇게 나눠서, 클릭할 때마다 도형을 전부 새로 그리지 않고 색만 바꾼다.
+export default function KakaoChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  const polygonsRef = useRef([]);
+  const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
+  const valuesRef = useRef(values);
+  const colorForRef = useRef(colorFor);
+  const onSelectRef = useRef(onSelect);
   const [caption, setCaption] = useState('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
   const [loadFailed, setLoadFailed] = useState(false);
 
+  useEffect(() => { valuesRef.current = values; }, [values]);
+  useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+
+  const styleFor = (idx) => {
+    const value = valuesRef.current?.[idx];
+    const hasValue = value != null;
+    return {
+      strokeWeight: hasValue ? 1.5 : 0.5,
+      strokeColor: borderColor || '#DEDBCF',
+      strokeOpacity: hasValue ? 0.9 : 0.15,
+      fillColor: colorForRef.current(value),
+      fillOpacity: hasValue ? 0.55 : 0,
+    };
+  };
+
+  const applyAllStyles = () => {
+    polygonsRef.current.forEach(({ polygon, featureIndex }) => {
+      polygon.setOptions(styleFor(featureIndex));
+    });
+  };
+
+  // 지오메트리(도형) 생성은 features가 실제로 바뀔 때만 실행한다.
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY;
     if (!key) return undefined;
@@ -25,42 +54,38 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
         });
       }
 
-      polygonsRef.current.forEach((p) => p.setMap(null));
+      polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
       polygonsRef.current = [];
 
-      features.forEach(({ feature, name, value, code }) => {
-        if (!feature) return;
-        const geomType = feature.geometry.type;
-        const polygons = geomType === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+      features.forEach((f, idx) => {
+        if (!f.feature) return;
+        const geomType = f.feature.geometry.type;
+        const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
 
-        polygons.forEach((rings) => {
+        polys.forEach((rings) => {
           const path = rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
-          const hasValue = value != null;
-          const baseFillOpacity = hasValue ? 0.55 : 0;
-          const polygon = new window.kakao.maps.Polygon({
-            path,
-            strokeWeight: hasValue ? 1.5 : 0.5,
-            strokeColor: borderColor || '#DEDBCF',
-            strokeOpacity: hasValue ? 0.9 : 0.15,
-            fillColor: colorFor(value),
-            fillOpacity: baseFillOpacity,
-          });
+          const polygon = new window.kakao.maps.Polygon({ path, ...styleFor(idx) });
           polygon.setMap(mapRef.current);
           window.kakao.maps.event.addListener(polygon, 'click', () => {
-            setCaption(value != null ? `${name}: ${Math.round(value).toLocaleString()}` : `${name}: 검색되지 않은 지역 (클릭하면 추가됩니다)`);
-            if (code) onSelect?.(code);
+            const value = valuesRef.current?.[idx];
+            setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name}: 검색되지 않은 지역 (클릭하면 추가됩니다)`);
+            if (f.code) onSelectRef.current?.(f.code);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
+            const value = valuesRef.current?.[idx];
+            const hasValue = value != null;
             polygon.setOptions({ fillOpacity: hasValue ? 0.7 : 0.12 });
-            setCaption(hasValue ? `${name}: ${Math.round(value).toLocaleString()}` : `${name} (검색되지 않은 지역)`);
+            setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (검색되지 않은 지역)`);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions({ fillOpacity: baseFillOpacity });
+            polygon.setOptions(styleFor(idx));
             setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
           });
-          polygonsRef.current.push(polygon);
+          polygonsRef.current.push({ polygon, featureIndex: idx });
         });
       });
+
+      applyAllStyles();
     }
 
     if (window.kakao && window.kakao.maps) {
@@ -78,15 +103,21 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
       script.addEventListener('load', () => {
         if (!cancelled && window.kakao && window.kakao.maps) window.kakao.maps.load(draw);
       });
-      // 스크립트가 이미 로드 완료된 상태에서 재마운트된 경우 대비
       if (window.kakao && window.kakao.maps) window.kakao.maps.load(draw);
     }
 
     return () => {
       cancelled = true;
-      polygonsRef.current.forEach((p) => p.setMap(null));
+      polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
     };
-  }, [features, colorFor, borderColor, onSelect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, borderColor]);
+
+  // 값(색상)만 바뀔 때는 기존 도형의 옵션만 갱신한다 (재생성 없음 -> 클릭/선택이 즉각 반응).
+  useEffect(() => {
+    applyAllStyles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values, colorFor]);
 
   useEffect(() => {
     if (!focusLatLng || !mapRef.current || !window.kakao?.maps) return;

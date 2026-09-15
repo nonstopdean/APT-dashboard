@@ -2,14 +2,39 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function NaverChoropleth({ features, colorFor, borderColor, onSelect, height, focusLatLng }) {
+// features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
+// [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
+export default function NaverChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  const polygonsRef = useRef([]);
-  const [caption, setCaption] = useState('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
+  const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
+  const infoWindowRef = useRef(null);
+  const valuesRef = useRef(values);
+  const colorForRef = useRef(colorFor);
+  const onSelectRef = useRef(onSelect);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  const infoWindowRef = useRef(null);
+  useEffect(() => { valuesRef.current = values; }, [values]);
+  useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+
+  const styleFor = (idx) => {
+    const value = valuesRef.current?.[idx];
+    const hasValue = value != null;
+    return {
+      strokeWeight: hasValue ? 1.5 : 0.5,
+      strokeColor: borderColor || '#DEDBCF',
+      strokeOpacity: hasValue ? 0.9 : 0.15,
+      fillColor: colorForRef.current(value),
+      fillOpacity: hasValue ? 0.55 : 0,
+    };
+  };
+
+  const applyAllStyles = () => {
+    polygonsRef.current.forEach(({ polygon, featureIndex }) => {
+      polygon.setOptions(styleFor(featureIndex));
+    });
+  };
 
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID;
@@ -36,40 +61,33 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
         });
       }
 
-      polygonsRef.current.forEach((p) => p.setMap(null));
+      polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
       polygonsRef.current = [];
 
-      features.forEach(({ feature, name, value, code }) => {
-        if (!feature) return;
-        const geomType = feature.geometry.type;
-        const polygons = geomType === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+      features.forEach((f, idx) => {
+        if (!f.feature) return;
+        const geomType = f.feature.geometry.type;
+        const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
 
-        polygons.forEach((rings) => {
+        polys.forEach((rings) => {
           const path = rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng));
-          const hasValue = value != null;
-          const baseFillColor = colorFor(value);
-          const baseFillOpacity = hasValue ? 0.55 : 0;
-          const hoverFillColor = '#F2B441';
           const polygon = new window.naver.maps.Polygon({
             map: mapRef.current,
             paths: [path],
-            strokeWeight: hasValue ? 1.5 : 0.5,
-            strokeColor: borderColor || '#DEDBCF',
-            strokeOpacity: hasValue ? 0.9 : 0.15,
-            fillColor: baseFillColor,
-            fillOpacity: baseFillOpacity,
             clickable: true,
+            ...styleFor(idx),
           });
-          const label = hasValue ? `${name}: ${Math.round(value).toLocaleString()}` : `${name} (검색되지 않은 지역)`;
+          const labelFor = () => {
+            const value = valuesRef.current?.[idx];
+            return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (검색되지 않은 지역)`;
+          };
           window.naver.maps.Event.addListener(polygon, 'click', () => {
-            setCaption(label);
-            if (code) onSelect?.(code);
+            if (f.code) onSelectRef.current?.(f.code);
           });
           window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
-            polygon.setOptions({ fillColor: hoverFillColor, fillOpacity: 0.75, strokeColor: '#B23A2E', strokeWeight: 2 });
-            setCaption(label);
+            polygon.setOptions({ fillColor: '#F2B441', fillOpacity: 0.75, strokeColor: '#B23A2E', strokeWeight: 2 });
             infoWindowRef.current.setContent(
-              `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${label}</div>`,
+              `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
             );
             infoWindowRef.current.open(mapRef.current, e.coord);
           });
@@ -77,16 +95,14 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
             infoWindowRef.current.setPosition(e.coord);
           });
           window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions({
-              fillColor: baseFillColor, fillOpacity: baseFillOpacity,
-              strokeColor: borderColor || '#DEDBCF', strokeWeight: hasValue ? 1.5 : 0.5,
-            });
-            setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
+            polygon.setOptions(styleFor(idx));
             infoWindowRef.current.close();
           });
-          polygonsRef.current.push(polygon);
+          polygonsRef.current.push({ polygon, featureIndex: idx });
         });
       });
+
+      applyAllStyles();
     }
 
     if (window.naver && window.naver.maps) {
@@ -109,9 +125,15 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
 
     return () => {
       cancelled = true;
-      polygonsRef.current.forEach((p) => p.setMap(null));
+      polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
     };
-  }, [features, colorFor, borderColor, onSelect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, borderColor]);
+
+  useEffect(() => {
+    applyAllStyles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values, colorFor]);
 
   useEffect(() => {
     if (!focusLatLng || !mapRef.current || !window.naver?.maps) return;
