@@ -155,10 +155,32 @@ export default function Page() {
         if (cancelled) return;
         const match = list.find((it) => it.kaptName === selectedApt.apt)
           || list.find((it) => it.kaptName?.replace(/\s/g, '') === selectedApt.apt.replace(/\s/g, ''));
-        if (!match) return;
-        const infoRes = await fetch(`/api/apt-basic?kaptCode=${match.kaptCode}`);
-        const infoJson = await infoRes.json();
-        if (!cancelled) setAptBasicInfo(infoJson?.info || null);
+
+        if (match) {
+          const infoRes = await fetch(`/api/apt-basic?kaptCode=${match.kaptCode}`);
+          const infoJson = await infoRes.json();
+          if (!cancelled && infoJson?.info) {
+            setAptBasicInfo(infoJson.info);
+            return;
+          }
+        }
+
+        // 국토부 기본정보로 못 찾았으면, 한국부동산원 단지 식별정보를 주소로 보조 검색해본다.
+        const addrQuery = `${labelFor(selectedApt.regionCode)} ${selectedApt.dong}`;
+        const idRes = await fetch(`/api/apt-identity?q=${encodeURIComponent(addrQuery)}`);
+        const idJson = await idRes.json();
+        const rows = idJson?.rows || [];
+        const idMatch = rows.find((r) => [r.nameKb, r.nameBldg, r.nameRoad].some(
+          (n) => n && n.replace(/\s/g, '').includes(selectedApt.apt.replace(/\s/g, '')),
+        ));
+        if (!cancelled && idMatch) {
+          setAptBasicInfo({
+            households: idMatch.households,
+            dongCount: idMatch.dongCount,
+            useDate: idMatch.useDate,
+            builder: null,
+          });
+        }
       } catch (e) {
         // 조용히 실패 — 모달의 나머지 정보는 그대로 보여준다
       }
