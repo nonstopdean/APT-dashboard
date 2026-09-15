@@ -100,7 +100,6 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div ref={containerRef} style={{ width: '100%', flex: 1, minHeight: 0, borderRadius: 8, overflow: 'hidden' }} />
-      <p style={{ fontSize: 12, color: '#5C594E', marginTop: 8, flexShrink: 0 }}>{caption}</p>
     </div>
   );
 }

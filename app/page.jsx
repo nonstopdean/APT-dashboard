@@ -565,13 +565,6 @@ export default function Page() {
             ))}
           </svg>
         )}
-        <div style={{
-          position: 'absolute', left: 16, bottom: 16, background: 'rgba(255,255,255,0.92)',
-          border: `1px solid ${PALETTE.border}`, borderRadius: 8, padding: '8px 12px',
-          fontSize: 11.5, color: PALETTE.textSecondary, maxWidth: 280, pointerEvents: 'none',
-        }}>
-          짙을수록 값이 높은 지역이에요. 구를 클릭하면 비교 목록에 바로 추가됩니다.
-        </div>
       </>,
     );
   };
@@ -628,9 +621,9 @@ export default function Page() {
           <button
             onClick={() => setPanelOpen(true)}
             style={{
-              position: 'absolute', top: 16, left: 16, width: 40, height: 40, borderRadius: '50%',
+              position: 'fixed', top: 16, left: 16, width: 40, height: 40, borderRadius: '50%',
               background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, boxShadow: '0 6px 18px rgba(20,18,14,0.22)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 1000,
             }}
             aria-label="패널 펼치기"
           >
@@ -642,10 +635,10 @@ export default function Page() {
         <aside
           style={{
             ...styles.sidebar,
-            position: 'absolute', top: 16, left: 16, width: 300,
+            position: 'fixed', top: 16, left: 16, width: 300,
             maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
             borderRadius: 12, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
-            boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 10,
+            boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 1000,
           }}
           className="dash-sidebar-float"
         >
@@ -1272,8 +1265,8 @@ export default function Page() {
         @media (max-width: 720px) {
           .hero-wrap { height: 60vh !important; }
           .dash-sidebar-float {
-            position: absolute !important; top: 8px !important; left: 8px !important; right: 8px !important;
-            width: auto !important; max-height: 70vh !important;
+            position: fixed !important; top: 8px !important; left: 8px !important; right: 8px !important;
+            width: auto !important; max-height: 80vh !important;
           }
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
