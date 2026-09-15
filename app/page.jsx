@@ -100,6 +100,7 @@ function labelFor(code) {
 
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
+  const [propertyType, setPropertyType] = useState('apt'); // 'apt' | 'offi' (매매/전월세에만 적용)
   const isRent = dealType === 'rent';
   const isRone = dealType === 'rone';
   const isRatio = dealType === 'ratio';
@@ -266,9 +267,11 @@ export default function Page() {
         return;
       }
       if (dealType === 'ratio') {
+        const saleEp = propertyType === 'offi' ? '/api/offi-trades' : '/api/trades';
+        const rentEp = propertyType === 'offi' ? '/api/offi-rents' : '/api/rents';
         const [saleRes, rentRes] = await Promise.all([
-          fetch(`/api/trades?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`),
-          fetch(`/api/rents?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`),
+          fetch(`${saleEp}?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`),
+          fetch(`${rentEp}?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`),
         ]);
         const [saleJson, rentJson] = await Promise.all([saleRes.json(), rentRes.json()]);
         if (!saleRes.ok || !rentRes.ok) {
@@ -285,7 +288,9 @@ export default function Page() {
         setStatus('done');
         return;
       }
-      const endpoint = dealType === 'rent' ? '/api/rents' : '/api/trades';
+      const endpoint = propertyType === 'offi'
+        ? (dealType === 'rent' ? '/api/offi-rents' : '/api/offi-trades')
+        : (dealType === 'rent' ? '/api/rents' : '/api/trades');
       const res = await fetch(`${endpoint}?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`);
       const json = await res.json();
       if (!res.ok) {
@@ -846,6 +851,16 @@ export default function Page() {
             </p>
           )}
         </div>
+
+        {!isRone && (
+        <div>
+          <label style={styles.label}>매물 종류</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+            <div style={styles.toggleBtn(propertyType === 'apt')} onClick={() => setPropertyType('apt')}>아파트</div>
+            <div style={styles.toggleBtn(propertyType === 'offi')} onClick={() => setPropertyType('offi')}>오피스텔</div>
+          </div>
+        </div>
+        )}
 
         <div>
           <label style={styles.label}>조회 기간</label>
