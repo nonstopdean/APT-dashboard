@@ -929,19 +929,6 @@ export default function Page() {
 
           {!sidebarDrillSido ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-              {SIDO_AGGREGATES
-                .filter((it) => !regionSearch || it.name.includes(regionSearch))
-                .map((it) => (
-                  <div
-                    key={it.code}
-                    onClick={() => addRegionAndFetch(it.code)}
-                    style={{
-                      ...styles.toggleBtn(selected.includes(it.code)), padding: '8px 2px', fontSize: 11.5,
-                    }}
-                  >
-                    {it.name}
-                  </div>
-                ))}
               {REGION_GROUPS
                 .filter((g) => !regionSearch || g.sido.includes(regionSearch))
                 .map((g) => (
@@ -973,6 +960,20 @@ export default function Page() {
                 <span style={{ fontSize: 13, fontWeight: 700 }}>{sidebarDrillSido}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                {(() => {
+                  const agg = SIDO_AGGREGATES.find((a) => a.sido === sidebarDrillSido);
+                  return agg && (!regionSearch || agg.name.includes(regionSearch)) ? (
+                    <div
+                      key={agg.code}
+                      onClick={() => addRegionAndFetch(agg.code)}
+                      style={{
+                        ...styles.toggleBtn(selected.includes(agg.code)), padding: '7px 2px', fontSize: 11.5, fontWeight: 700,
+                      }}
+                    >
+                      {agg.name}
+                    </div>
+                  ) : null;
+                })()}
                 {(REGION_GROUPS.find((g) => g.sido === sidebarDrillSido)?.items || [])
                   .filter((it) => !regionSearch || it.name.includes(regionSearch))
                   .map((it) => (
