@@ -5,10 +5,14 @@ import { useEffect, useRef, useState } from 'react';
 // features: [{ feature, name, code }] - 지오메트리는 안정적으로 유지되는 배열(선택 상태가 바뀌어도
 // 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
 // 색상만 자주 바뀔 수 있음. 이렇게 나눠서, 클릭할 때마다 도형을 전부 새로 그리지 않고 색만 바꾼다.
-export default function KakaoChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng }) {
+export default function KakaoChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
+  const markersRef = useRef([]); // [{ marker, key }]
+  const geocodeCacheRef = useRef({}); // key -> {lat,lng} | null (실패)
+  const placesRef = useRef(null);
+  const onComplexSelectRef = useRef(onComplexSelect);
   const valuesRef = useRef(values);
   const colorForRef = useRef(colorFor);
   const onSelectRef = useRef(onSelect);
@@ -18,6 +22,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
   useEffect(() => { valuesRef.current = values; }, [values]);
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
 
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
@@ -37,6 +42,25 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     });
   };
 
+  const MARKER_ZOOM_LEVEL = 6; // 카카오 레벨: 숫자가 작을수록 확대된 상태
+
+  const updateMarkerVisibility = () => {
+    if (!mapRef.current) return;
+    const show = mapRef.current.getLevel() <= MARKER_ZOOM_LEVEL;
+    markersRef.current.forEach(({ marker }) => marker.setMap(show ? mapRef.current : null));
+  };
+
+  const geocodeComplex = (query) => new Promise((resolve) => {
+    if (!placesRef.current) return resolve(null);
+    placesRef.current.keywordSearch(query, (result, status) => {
+      if (status === window.kakao.maps.services.Status.OK && result[0]) {
+        resolve({ lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) });
+      } else {
+        resolve(null);
+      }
+    });
+  });
+
   // 지오메트리(도형) 생성은 features가 실제로 바뀔 때만 실행한다.
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY;
@@ -52,6 +76,8 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
           center: new window.kakao.maps.LatLng(37.5665, 126.978),
           level: 8,
         });
+        if (window.kakao.maps.services) placesRef.current = new window.kakao.maps.services.Places();
+        window.kakao.maps.event.addListener(mapRef.current, 'zoom_changed', updateMarkerVisibility);
       }
 
       polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
@@ -95,7 +121,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
       if (!script) {
         script = document.createElement('script');
         script.id = 'kakao-map-sdk';
-        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false`;
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false&libraries=services`;
         script.async = true;
         script.onerror = () => { if (!cancelled) setLoadFailed(true); };
         document.head.appendChild(script);
@@ -125,6 +151,47 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     mapRef.current.panTo(latlng);
     mapRef.current.setLevel(5);
   }, [focusLatLng]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!complexes || !mapRef.current || !window.kakao?.maps?.services) return;
+      if (!placesRef.current) placesRef.current = new window.kakao.maps.services.Places();
+
+      const existingKeys = new Set(markersRef.current.map((m) => m.key));
+      const wanted = new Set(complexes.map((c) => c.key));
+
+      // 더 이상 필요 없는 마커는 지운다
+      markersRef.current = markersRef.current.filter((m) => {
+        if (wanted.has(m.key)) return true;
+        m.marker.setMap(null);
+        return false;
+      });
+
+      for (const c of complexes) {
+        if (cancelled) return;
+        if (existingKeys.has(c.key)) continue;
+        let coord = geocodeCacheRef.current[c.key];
+        if (coord === undefined) {
+          // eslint-disable-next-line no-await-in-loop
+          coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`);
+          geocodeCacheRef.current[c.key] = coord;
+        }
+        if (cancelled || !coord) continue;
+        const marker = new window.kakao.maps.Marker({
+          position: new window.kakao.maps.LatLng(coord.lat, coord.lng),
+        });
+        window.kakao.maps.event.addListener(marker, 'click', () => {
+          onComplexSelectRef.current?.(c);
+        });
+        markersRef.current.push({ marker, key: c.key });
+      }
+      if (!cancelled) updateMarkerVisibility();
+    }
+    run();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complexes]);
 
   if (!process.env.NEXT_PUBLIC_KAKAO_MAP_KEY) return null;
   if (loadFailed) {

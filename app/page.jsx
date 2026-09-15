@@ -448,6 +448,21 @@ export default function Page() {
     return allTx.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.regionCode === selectedApt.regionCode);
   }, [allTx, selectedApt]);
 
+  const aptTrendData = useMemo(() => {
+    const byMonth = {};
+    aptHistory.forEach((t) => {
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
+      if (price == null) return;
+      if (!byMonth[ym]) byMonth[ym] = [];
+      byMonth[ym].push(price);
+    });
+    return Object.keys(byMonth).sort().map((ym) => ({
+      ym: monthLabel(ym),
+      가격: Math.round(byMonth[ym].reduce((s, v) => s + v, 0) / byMonth[ym].length),
+    }));
+  }, [aptHistory, isRent]);
+
   // 단지별로 묶어서, 가장 최근 거래 기준으로 여러 단지를 한눈에 비교할 수 있는 목록.
   // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
   const complexCompare = useMemo(() => {
@@ -473,6 +488,18 @@ export default function Page() {
       .filter((r) => r.unitPrice != null)
       .sort((a, b) => a.unitPrice - b.unitPrice);
   }, [allTx, isRent]);
+
+  const mapComplexes = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+    allTx.forEach((t) => {
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, regionName: regionLabel(t.regionCode) });
+    });
+    return list;
+  }, [allTx]);
 
   const [compareAKey, setCompareAKey] = useState('');
   const [compareBKey, setCompareBKey] = useState('');
@@ -749,6 +776,8 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
             focusLatLng={focusLatLng}
+            complexes={mapComplexes}
+            onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
             height="100%"
           />
         ) : (
@@ -1675,7 +1704,25 @@ export default function Page() {
             </div>
             <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
               {labelFor(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
+              {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
+            {aptTrendData.length > 1 && (
+              <div style={{ width: '100%', height: 160, marginBottom: 16 }}>
+                <ResponsiveContainer>
+                  <LineChart data={aptTrendData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={46} />
+                    <Tooltip
+                      contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => `${v.toLocaleString()}만원`}
+                    />
+                    <Line type="monotone" dataKey="가격" stroke={PALETTE.accent} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
