@@ -6,7 +6,7 @@ import { geoMercator, geoPath } from 'd3-geo';
 import KakaoChoropleth from '../components/KakaoChoropleth';
 import NaverChoropleth from '../components/NaverChoropleth';
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode } from '../lib/regions';
@@ -498,30 +498,42 @@ export default function Page() {
 
   const getCompareResult = (key) => {
     const opt = compareOptions.find((o) => o.value === key);
-    if (!opt) return { label: null, series: [] };
+    if (!opt) return { label: null, series: [], changePct: null, latest: null, min: null, max: null, count: 0, avgArea: null };
+    const rowsByMonth = [];
     const series = months.map((ym) => {
-      let value = null;
+      let rows;
       if (opt.kind === 'region') {
-        const rows = rawByRegionMonth[`${opt.code}_${ym}`] || [];
-        const valid = rows
-          .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
-          .filter((v) => v != null);
-        value = valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
+        rows = rawByRegionMonth[`${opt.code}_${ym}`] || [];
       } else {
-        const rows = (rawByRegionMonth[`${opt.regionCode}_${ym}`] || [])
+        rows = (rawByRegionMonth[`${opt.regionCode}_${ym}`] || [])
           .filter((r) => r.apt === opt.apt && r.dong === opt.dong);
-        const valid = rows
-          .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
-          .filter((v) => v != null);
-        value = valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
       }
+      rowsByMonth.push(...rows);
+      const valid = rows
+        .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
+        .filter((v) => v != null);
+      const value = valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
       return { ym, value };
     });
     const withData = series.filter((s) => s.value != null);
     const first = withData[0];
     const last = withData[withData.length - 1];
     const changePct = first && last && first.value ? ((last.value - first.value) / first.value) * 100 : null;
-    return { label: opt.label, series, changePct };
+
+    const prices = rowsByMonth
+      .map((r) => (isRent ? (r.isJeonse ? r.deposit : null) : r.amount))
+      .filter((v) => v != null);
+    const areas = rowsByMonth.map((r) => r.area).filter((v) => v != null);
+    return {
+      label: opt.label,
+      series,
+      changePct,
+      latest: last?.value ?? null,
+      min: prices.length ? Math.min(...prices) : null,
+      max: prices.length ? Math.max(...prices) : null,
+      count: rowsByMonth.length,
+      avgArea: areas.length ? areas.reduce((s, v) => s + v, 0) / areas.length : null,
+    };
   };
 
   const compareAResult = useMemo(() => getCompareResult(compareAKey), [compareAKey, compareOptions, months, rawByRegionMonth, isRent]);
@@ -537,6 +549,9 @@ export default function Page() {
       return row;
     });
   }, [months, compareAResult, compareBResult, compareCResult]);
+
+  const compareResultsList = [compareAResult, compareBResult, compareCResult].filter((r) => r.label);
+  const compareBarData = compareResultsList.map((r) => ({ name: r.label, 평당가: r.latest ? Math.round(r.latest / 10) / 100 : 0 }));
 
   const roneChartData = useMemo(() => {
     return roneMonths.map((ym) => {
@@ -1175,7 +1190,7 @@ export default function Page() {
                 ))}
               </div>
 
-              <div style={{ width: '100%', height: 300 }}>
+              <div style={{ width: '100%', height: 300, marginBottom: 20 }}>
                 <ResponsiveContainer>
                   <LineChart data={compareChartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={PALETTE.border} vertical={false} />
@@ -1191,6 +1206,58 @@ export default function Page() {
                     ))}
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+
+              <h3 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 8px', color: PALETTE.textPrimary }}>
+                최근 평당가 비교 (만원)
+              </h3>
+              <div style={{ width: '100%', height: 200, marginBottom: 20 }}>
+                <ResponsiveContainer>
+                  <BarChart data={compareBarData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="name" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }} />
+                    <Bar dataKey="평당가" radius={[4, 4, 0, 0]}>
+                      {compareBarData.map((_, i) => <Cell key={i} fill={LINE_COLORS[i % LINE_COLORS.length]} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <h3 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 8px', color: PALETTE.textPrimary }}>
+                요약 비교표
+              </h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>대상</th>
+                      <th style={styles.th}>최근 평당가</th>
+                      <th style={styles.th}>기간 등락률</th>
+                      <th style={styles.th}>최고가</th>
+                      <th style={styles.th}>최저가</th>
+                      <th style={styles.th}>평균 전용면적</th>
+                      <th style={styles.th}>거래건수</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compareResultsList.map((r) => (
+                      <tr key={r.label}>
+                        <td style={styles.td}>{r.label}</td>
+                        <td style={styles.td}>{r.latest != null ? fmtWon(r.latest) : '-'}</td>
+                        <td style={{ ...styles.td, color: r.changePct > 0 ? PALETTE.up : r.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                          {fmtPct(r.changePct)}
+                        </td>
+                        <td style={styles.td}>{fmtManwon(r.max)}</td>
+                        <td style={styles.td}>{fmtManwon(r.min)}</td>
+                        <td style={styles.td}>{fmtArea(r.avgArea)}</td>
+                        <td style={styles.td}>{r.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </>
           )}
