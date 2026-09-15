@@ -1269,12 +1269,12 @@ export default function Page() {
       <div style={{
         position: 'sticky', top: 0, zIndex: 200,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', height: 58, background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.border}`,
-        boxShadow: '0 2px 8px rgba(33,31,26,0.05)',
+        padding: '0 20px', height: 58, background: '#1A1A1A',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <Building2 size={20} color={PALETTE.accent} />
-          <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>실거래가</span>
+          <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>실거래가</span>
         </div>
         <nav style={{ display: 'flex', gap: 2, height: '100%', overflowX: 'auto' }} className="main-nav">
           {[
@@ -1282,6 +1282,7 @@ export default function Page() {
             { key: 'map', label: '지도' },
             { key: 'compare', label: '비교분석' },
             { key: 'subscriptions', label: '분양정보' },
+            { key: 'favorites', label: '즐겨찾기' },
           ].map((t) => (
             <div
               key={t.key}
@@ -1289,7 +1290,7 @@ export default function Page() {
               style={{
                 display: 'flex', alignItems: 'center', height: '100%', padding: '0 14px', cursor: 'pointer',
                 fontSize: 13.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
-                color: viewMode === t.key ? PALETTE.textPrimary : PALETTE.textMuted,
+                color: viewMode === t.key ? '#fff' : 'rgba(255,255,255,0.55)',
                 borderBottom: viewMode === t.key ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
                 transition: 'color 0.15s ease, border-color 0.15s ease',
               }}
@@ -1553,6 +1554,56 @@ export default function Page() {
           )}
         </div>
       </div>
+      ) : viewMode === 'favorites' ? (
+      <div style={{ padding: '20px 20px 0' }}>
+        <div style={styles.card} className="ui-card">
+          <h2 style={styles.sectionTitle}>즐겨찾기</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            저장해둔 조건 조합이에요. 클릭 한 번으로 그 설정 그대로 불러올 수 있어요.
+          </p>
+          {favorites.length === 0 ? (
+            <p style={{ fontSize: 13, color: PALETTE.textMuted }}>
+              아직 저장된 즐겨찾기가 없어요. 대시보드 탭 왼쪽 패널에서 조건을 설정한 뒤 이름을 붙여 저장해보세요.
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+              {favorites.map((fav) => (
+                <div
+                  key={fav.name}
+                  style={{
+                    ...styles.card, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8,
+                  }}
+                  className="ui-card"
+                  onClick={() => { applyFavorite(fav); setViewMode('normal'); }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{fav.name}</span>
+                    <X
+                      size={14}
+                      color={PALETTE.textMuted}
+                      style={{ cursor: 'pointer', flexShrink: 0 }}
+                      onClick={(e) => { e.stopPropagation(); removeFavorite(fav.name); }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, color: PALETTE.textSecondary }}>
+                    {{ trade: '매매', rent: '전월세', rone: '시세동향', ratio: '전세가율', silv: '분양권전매' }[fav.dealType] || fav.dealType}
+                    {' · '}
+                    {fav.startYm ? `${monthLabel(fav.startYm)} ~ ${monthLabel(fav.endYm)}` : ''}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {fav.selected.slice(0, 4).map((code) => (
+                      <span key={code} style={{ ...styles.chip, padding: '2px 8px', fontSize: 10.5 }}>{labelFor(code)}</span>
+                    ))}
+                    {fav.selected.length > 4 && (
+                      <span style={{ fontSize: 10.5, color: PALETTE.textMuted }}>+{fav.selected.length - 4}개 더</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
       ) : (
       <div style={{ padding: '20px 20px 0' }}>
         {panelOpen ? (
@@ -1580,7 +1631,7 @@ export default function Page() {
       </div>
       )}
 
-      {viewMode !== 'compare' && viewMode !== 'subscriptions' && (
+      {viewMode !== 'compare' && viewMode !== 'subscriptions' && viewMode !== 'favorites' && (
       <main style={styles.main} className="dash-main">
         <div>
           <h1 className="dash-title" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
