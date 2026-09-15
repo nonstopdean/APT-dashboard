@@ -9,7 +9,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode } from '../lib/regions';
+import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode, isRegulatedByCode } from '../lib/regions';
 import { nearestStation } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
@@ -138,6 +138,31 @@ export default function Page() {
   const [selectedApt, setSelectedApt] = useState(null);
   const [aptBasicInfo, setAptBasicInfo] = useState(null);
   const [nearbySchools, setNearbySchools] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
+
+  const currentSidoShort = useMemo(() => {
+    if (selected.length === 0) return null;
+    const firstCode = selected[0];
+    for (const g of REGION_GROUPS) {
+      if (g.items.some((it) => it.code === firstCode) || SIDO_AGGREGATES.some((a) => a.code === firstCode && a.sido === g.sido)) {
+        return g.sido.replace(/특별자치시|특별자치도|광역시|특별시|도$/, '');
+      }
+    }
+    return null;
+  }, [selected]);
+
+  useEffect(() => {
+    setSubscriptions([]);
+    if (!currentSidoShort) return undefined;
+    let cancelled = false;
+    const fromDate = ymShift(ymNow(), -12).replace(/(\d{4})(\d{2})/, '$1-$2-01');
+    fetch(`/api/subscriptions?sido=${encodeURIComponent(currentSidoShort)}&from=${fromDate}`)
+      .then((res) => res.json())
+      .then((json) => { if (!cancelled) setSubscriptions(json?.rows || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentSidoShort]);
+
   const aptListCacheRef = useRef({}); // regionCode -> [{kaptCode, kaptName}]
 
   useEffect(() => {
@@ -1398,6 +1423,51 @@ export default function Page() {
           </p>
         </div>
 
+        {subscriptions.length > 0 && (
+          <div style={styles.card} className="ui-card">
+            <h2 style={styles.sectionTitle}>최근 분양(청약) 정보 · {currentSidoShort}</h2>
+            <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+              한국부동산원 청약홈 기준, 최근 1년 내 모집공고. 빨간 배지는 투기과열지구/조정대상지역이에요.
+            </p>
+            <div style={{ maxHeight: 260, overflowY: 'auto', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>주택명</th>
+                    <th style={styles.th}>위치</th>
+                    <th style={styles.th}>공급규모</th>
+                    <th style={styles.th}>모집공고일</th>
+                    <th style={styles.th}>청약접수</th>
+                    <th style={styles.th}>입주예정</th>
+                    <th style={styles.th}>규제</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subscriptions.map((s, i) => (
+                    <tr key={i}>
+                      <td style={styles.td}>
+                        {s.url ? (
+                          <a href={s.url} target="_blank" rel="noreferrer" style={{ color: PALETTE.accent }}>{s.houseName}</a>
+                        ) : s.houseName}
+                      </td>
+                      <td style={styles.td}>{s.address}</td>
+                      <td style={styles.td}>{s.totalUnits}세대</td>
+                      <td style={styles.td}>{s.announceDate}</td>
+                      <td style={styles.td}>{s.receiptStart} ~ {s.receiptEnd}</td>
+                      <td style={styles.td}>{s.moveInMonth}</td>
+                      <td style={styles.td}>
+                        {(s.isSpeculationOverheated || s.isAdjustmentTarget) && (
+                          <span style={{ ...styles.chip, padding: '2px 8px', fontSize: 11 }}>규제</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {status === 'done' && isRatio && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
@@ -1785,8 +1855,13 @@ export default function Page() {
               {labelFor(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
-            {(aptBasicInfo || nearestStationInfo) && (
+            {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {isRegulatedByCode(selectedApt.regionCode) && (
+                  <span style={{ ...styles.chip, background: 'rgba(239,68,68,0.12)', borderColor: PALETTE.accent }}>
+                    규제지역(투기과열지구·조정대상지역)
+                  </span>
+                )}
                 {aptBasicInfo?.households && <span style={styles.chip}>세대수 {aptBasicInfo.households}</span>}
                 {aptBasicInfo?.dongCount && <span style={styles.chip}>{aptBasicInfo.dongCount}개동</span>}
                 {aptBasicInfo?.useDate && <span style={styles.chip}>준공 {String(aptBasicInfo.useDate).slice(0, 4)}년</span>}
