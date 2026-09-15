@@ -643,6 +643,8 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [selected]);
 
+  const MAX_MAP_COMPLEXES = 200;
+
   const mapComplexes = useMemo(() => {
     const seen = new Set();
     const list = [];
@@ -653,9 +655,14 @@ export default function Page() {
       seen.add(key);
       list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode) });
     };
+    // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다
+    // (지역이 크면 좌표 검색량이 너무 많아져 느려지므로 상한을 둔다).
     allTx.forEach((t) => addItem(t.apt, t.dong, t.regionCode));
-    fullComplexList.forEach((c) => addItem(c.apt, c.dong, c.regionCode));
-    return list;
+    for (const c of fullComplexList) {
+      if (list.length >= MAX_MAP_COMPLEXES) break;
+      addItem(c.apt, c.dong, c.regionCode);
+    }
+    return list.slice(0, MAX_MAP_COMPLEXES);
   }, [allTx, fullComplexList]);
 
   const [compareAKey, setCompareAKey] = useState('');
@@ -1268,13 +1275,13 @@ export default function Page() {
     <div style={styles.page}>
       <div style={{
         position: 'sticky', top: 0, zIndex: 200,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', alignItems: 'center', gap: 28,
         padding: '0 20px', height: 58, background: '#1A1A1A',
         boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <Building2 size={20} color={PALETTE.accent} />
-          <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>실거래가</span>
+          <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>도갱노노</span>
         </div>
         <nav style={{ display: 'flex', gap: 2, height: '100%', overflowX: 'auto' }} className="main-nav">
           {[

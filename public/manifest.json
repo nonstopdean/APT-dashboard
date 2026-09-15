@@ -1,6 +1,6 @@
 {
   "name": "아파트 실거래가 대시보드",
-  "short_name": "실거래가",
+  "short_name": "도갱노노",
   "description": "국토교통부·한국부동산원 공공데이터 기반 아파트 실거래가 대시보드",
   "start_url": "/",
   "display": "standalone",

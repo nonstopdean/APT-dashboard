@@ -22,7 +22,9 @@ export async function GET(request) {
 
   const memberSet = new Set();
   codes.forEach((code) => expandRegionCode(code).forEach((mc) => memberSet.add(mc)));
-  const members = [...memberSet];
+  // 시/도 전체처럼 한 번에 수십 개 구가 펼쳐지면 단지 목록 조회량이 너무 커져서 느려지므로,
+  // 지도 마커용으로는 앞쪽 일부 지역만 가져온다 (실거래가 있는 지역은 allTx 쪽에서 이미 커버됨).
+  const members = [...memberSet].slice(0, 8);
 
   const data = {};
   let errorMsg = null;
