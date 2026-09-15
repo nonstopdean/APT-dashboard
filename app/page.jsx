@@ -982,7 +982,7 @@ export default function Page() {
           style={{
             ...styles.btn, position: 'sticky', bottom: 0, boxShadow: '0 -8px 12px -4px rgba(255,255,255,0.9)',
           }}
-          onClick={handleFetch}
+          onClick={() => handleFetch()}
           disabled={status === 'loading'}
         >
           <RefreshCw size={14} className={status === 'loading' ? 'spin' : ''} />
