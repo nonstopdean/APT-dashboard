@@ -24,6 +24,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
 
   const MARKER_ZOOM_LEVEL = 13; // 네이버 zoom: 숫자가 클수록 확대된 상태
+  const zoomedInRef = useRef(false);
 
   const updateMarkerVisibility = () => {
     if (!mapRef.current) return;
@@ -65,6 +66,12 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
     const hasValue = value != null;
+    if (zoomedInRef.current) {
+      return {
+        strokeWeight: 0.5, strokeColor: borderColor || '#DEDBCF', strokeOpacity: 0,
+        fillColor: colorForRef.current(value), fillOpacity: 0,
+      };
+    }
     return {
       strokeWeight: hasValue ? 1.5 : 0.5,
       strokeColor: borderColor || '#DEDBCF',
@@ -78,6 +85,18 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     polygonsRef.current.forEach(({ polygon, featureIndex }) => {
       polygon.setOptions(styleFor(featureIndex));
     });
+  };
+
+  // 확대(구/단지 단위)하면 색칠은 빠지고 마커만 보이고, 축소(전체 구역 단위)하면
+  // 반대로 색칠 경계는 보이고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
+  const handleZoomChanged = () => {
+    if (!mapRef.current) return;
+    const isIn = mapRef.current.getZoom() >= MARKER_ZOOM_LEVEL;
+    if (isIn !== zoomedInRef.current) {
+      zoomedInRef.current = isIn;
+      applyAllStyles();
+    }
+    updateMarkerVisibility();
   };
 
   useEffect(() => {
@@ -94,7 +113,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
           center: new window.naver.maps.LatLng(37.5665, 126.978),
           zoom: 11,
         });
-        window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', updateMarkerVisibility);
+        window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', handleZoomChanged);
       }
       if (!infoWindowRef.current) {
         infoWindowRef.current = new window.naver.maps.InfoWindow({
@@ -132,7 +151,9 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
           window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
             const value = valuesRef.current?.[idx];
             const hasValue = value != null;
-            polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
+            if (!zoomedInRef.current) {
+              polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
+            }
             infoWindowRef.current.setContent(
               `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
             );
