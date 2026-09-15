@@ -23,12 +23,15 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
 
-  const MARKER_ZOOM_LEVEL = 13; // 네이버 zoom: 숫자가 클수록 확대된 상태
-  const zoomedInRef = useRef(false);
+  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
+  // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
+  const FAR_ZOOM_LEVEL = 12;
+  const NEAR_ZOOM_LEVEL = 16;
+  const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
   const updateMarkerVisibility = () => {
     if (!mapRef.current) return;
-    const show = mapRef.current.getZoom() >= MARKER_ZOOM_LEVEL;
+    const show = mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL;
     markersRef.current.forEach(({ marker }) => marker.setMap(show ? mapRef.current : null));
   };
 
@@ -66,16 +69,29 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
     const hasValue = value != null;
-    if (zoomedInRef.current) {
+    const tier = zoomTierRef.current;
+    if (tier === 'near') {
       return {
-        strokeWeight: 0.5, strokeColor: borderColor || '#DEDBCF', strokeOpacity: 0,
-        fillColor: colorForRef.current(value), fillOpacity: 0,
+        strokeWeight: hasValue ? 1.5 : 0.5,
+        strokeColor: borderColor || '#B8AFA0',
+        strokeOpacity: hasValue ? 0.55 : 0.08,
+        fillColor: colorForRef.current(value),
+        fillOpacity: hasValue ? 0.12 : 0,
+      };
+    }
+    if (tier === 'mid') {
+      return {
+        strokeWeight: hasValue ? 2 : 0.5,
+        strokeColor: borderColor || '#8A8172',
+        strokeOpacity: hasValue ? 0.85 : 0.12,
+        fillColor: colorForRef.current(value),
+        fillOpacity: hasValue ? 0.22 : 0,
       };
     }
     return {
-      strokeWeight: hasValue ? 1.5 : 0.5,
-      strokeColor: borderColor || '#DEDBCF',
-      strokeOpacity: hasValue ? 0.9 : 0.15,
+      strokeWeight: hasValue ? 2 : 0.5,
+      strokeColor: borderColor || '#8A8172',
+      strokeOpacity: hasValue ? 1 : 0.15,
       fillColor: colorForRef.current(value),
       fillOpacity: hasValue ? 0.32 : 0,
     };
@@ -87,13 +103,14 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     });
   };
 
-  // 확대(구/단지 단위)하면 색칠은 빠지고 마커만 보이고, 축소(전체 구역 단위)하면
-  // 반대로 색칠 경계는 보이고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
+  // 확대(구/단지 단위)하면 색칠은 옅어지다 빠지고 마커가 나타나고, 축소(전체 구역 단위)하면
+  // 반대로 색칠은 진해지고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
   const handleZoomChanged = () => {
     if (!mapRef.current) return;
-    const isIn = mapRef.current.getZoom() >= MARKER_ZOOM_LEVEL;
-    if (isIn !== zoomedInRef.current) {
-      zoomedInRef.current = isIn;
+    const level = mapRef.current.getZoom();
+    const tier = level <= FAR_ZOOM_LEVEL ? 'far' : (level >= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
+    if (tier !== zoomTierRef.current) {
+      zoomTierRef.current = tier;
       applyAllStyles();
     }
     updateMarkerVisibility();
@@ -151,7 +168,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
           window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
             const value = valuesRef.current?.[idx];
             const hasValue = value != null;
-            if (!zoomedInRef.current) {
+            if (zoomTierRef.current === 'far') {
               polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
             }
             infoWindowRef.current.setContent(

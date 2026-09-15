@@ -24,21 +24,34 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
 
-  const zoomedInRef = useRef(false);
+  const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
     const hasValue = value != null;
-    if (zoomedInRef.current) {
+    const tier = zoomTierRef.current;
+    if (tier === 'near') {
       return {
-        strokeWeight: 0.5, strokeColor: borderColor || '#DEDBCF', strokeOpacity: 0,
-        fillColor: colorForRef.current(value), fillOpacity: 0,
+        strokeWeight: hasValue ? 1.5 : 0.5,
+        strokeColor: borderColor || '#B8AFA0',
+        strokeOpacity: hasValue ? 0.55 : 0.08,
+        fillColor: colorForRef.current(value),
+        fillOpacity: hasValue ? 0.12 : 0,
+      };
+    }
+    if (tier === 'mid') {
+      return {
+        strokeWeight: hasValue ? 2 : 0.5,
+        strokeColor: borderColor || '#8A8172',
+        strokeOpacity: hasValue ? 0.85 : 0.12,
+        fillColor: colorForRef.current(value),
+        fillOpacity: hasValue ? 0.22 : 0,
       };
     }
     return {
-      strokeWeight: hasValue ? 1.5 : 0.5,
-      strokeColor: borderColor || '#DEDBCF',
-      strokeOpacity: hasValue ? 0.9 : 0.15,
+      strokeWeight: hasValue ? 2 : 0.5,
+      strokeColor: borderColor || '#8A8172',
+      strokeOpacity: hasValue ? 1 : 0.15,
       fillColor: colorForRef.current(value),
       fillOpacity: hasValue ? 0.32 : 0,
     };
@@ -50,21 +63,25 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     });
   };
 
-  const MARKER_ZOOM_LEVEL = 6; // 카카오 레벨: 숫자가 작을수록 확대된 상태
+  // 카카오 레벨: 숫자가 작을수록 확대된 상태. 대략 far~5레벨 이상(3km+), mid 3~4레벨(1km 안팎),
+  // near 2레벨 이하(약 300m 이내)에 대응하도록 잡았다.
+  const FAR_ZOOM_LEVEL = 5;
+  const NEAR_ZOOM_LEVEL = 2;
 
   const updateMarkerVisibility = () => {
     if (!mapRef.current) return;
-    const show = mapRef.current.getLevel() <= MARKER_ZOOM_LEVEL;
+    const show = mapRef.current.getLevel() <= NEAR_ZOOM_LEVEL;
     markersRef.current.forEach(({ marker }) => marker.setMap(show ? mapRef.current : null));
   };
 
-  // 확대(구/단지 단위)하면 색칠은 빠지고 마커만 보이고, 축소(전체 구역 단위)하면
-  // 반대로 색칠 경계는 보이고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
+  // 확대(구/단지 단위)하면 색칠은 옅어지다 빠지고 마커가 나타나고, 축소(전체 구역 단위)하면
+  // 반대로 색칠은 진해지고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
   const handleZoomChanged = () => {
     if (!mapRef.current) return;
-    const isIn = mapRef.current.getLevel() <= MARKER_ZOOM_LEVEL;
-    if (isIn !== zoomedInRef.current) {
-      zoomedInRef.current = isIn;
+    const level = mapRef.current.getLevel();
+    const tier = level >= FAR_ZOOM_LEVEL ? 'far' : (level <= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
+    if (tier !== zoomTierRef.current) {
+      zoomTierRef.current = tier;
       applyAllStyles();
     }
     updateMarkerVisibility();
@@ -120,7 +137,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
             const value = valuesRef.current?.[idx];
             const hasValue = value != null;
-            if (!zoomedInRef.current) {
+            if (zoomTierRef.current === 'far') {
               polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
             }
             setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
