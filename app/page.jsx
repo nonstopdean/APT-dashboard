@@ -171,14 +171,26 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [currentSidoShort]);
 
+  const subsCacheRef = useRef({}); // sido -> rows
+
   useEffect(() => {
     if (viewMode !== 'subscriptions') return undefined;
+    const cached = subsCacheRef.current[subsTabSido];
+    if (cached) {
+      setSubsTabRows(cached);
+      return undefined;
+    }
     let cancelled = false;
     setSubsTabLoading(true);
     const fromDate = ymShift(ymNow(), -12).replace(/(\d{4})(\d{2})/, '$1-$2-01');
     fetch(`/api/subscriptions?sido=${encodeURIComponent(subsTabSido)}&from=${fromDate}`)
       .then((res) => res.json())
-      .then((json) => { if (!cancelled) setSubsTabRows(json?.rows || []); })
+      .then((json) => {
+        if (cancelled) return;
+        const rows = json?.rows || [];
+        subsCacheRef.current[subsTabSido] = rows;
+        setSubsTabRows(rows);
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setSubsTabLoading(false); });
     return () => { cancelled = true; };

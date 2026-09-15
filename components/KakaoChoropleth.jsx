@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { geocodeCache, runPool } from '../lib/geocodeCache';
 
 // features: [{ feature, name, code }] - 지오메트리는 안정적으로 유지되는 배열(선택 상태가 바뀌어도
 // 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
@@ -10,7 +11,6 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
   const mapRef = useRef(null);
   const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
   const markersRef = useRef([]); // [{ marker, key }]
-  const geocodeCacheRef = useRef({}); // key -> {lat,lng} | null (실패)
   const placesRef = useRef(null);
   const onComplexSelectRef = useRef(onComplexSelect);
   const valuesRef = useRef(values);
@@ -168,18 +168,18 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
         return false;
       });
 
-      for (const c of complexes) {
+      const todo = complexes.filter((c) => !existingKeys.has(c.key));
+
+      await runPool(todo, async (c) => {
         if (cancelled) return;
-        if (existingKeys.has(c.key)) continue;
-        let coord = geocodeCacheRef.current[c.key];
+        let coord = geocodeCache[c.key];
         if (coord === undefined) {
-          // eslint-disable-next-line no-await-in-loop
           coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
             || await geocodeComplex(`${c.dong} ${c.apt}`)
             || await geocodeComplex(c.apt);
-          geocodeCacheRef.current[c.key] = coord;
+          geocodeCache[c.key] = coord;
         }
-        if (cancelled || !coord) continue;
+        if (cancelled || !coord) return;
         const marker = new window.kakao.maps.Marker({
           position: new window.kakao.maps.LatLng(coord.lat, coord.lng),
         });
@@ -187,7 +187,9 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
           onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
         });
         markersRef.current.push({ marker, key: c.key });
-      }
+        if (!cancelled) updateMarkerVisibility();
+      }, 6);
+
       if (!cancelled) updateMarkerVisibility();
     }
     run();
