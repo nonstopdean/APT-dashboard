@@ -820,24 +820,32 @@ export default function Page() {
     select: {
       width: '100%', background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`,
       borderRadius: 6, padding: '8px 10px', color: PALETTE.textPrimary, fontSize: 13,
+      transition: 'border-color 0.15s ease',
     },
     btn: {
       background: PALETTE.accent, color: ACCENT_TEXT, border: 'none', borderRadius: 6,
       padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
+      transition: 'transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease',
+      boxShadow: '0 2px 6px rgba(178,58,46,0.25)',
     },
     toggleBtn: (active) => ({
       flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 6, fontSize: 13, cursor: 'pointer',
       border: `1px solid ${active ? PALETTE.accent : PALETTE.border}`,
       background: active ? 'rgba(178,58,46,0.10)' : 'transparent',
       color: active ? PALETTE.up : PALETTE.textSecondary,
+      transition: 'all 0.15s ease',
     }),
     chip: {
       display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 14,
       border: `1px solid ${PALETTE.accent}`, background: 'rgba(178,58,46,0.10)',
-      color: PALETTE.up, fontSize: 12,
+      color: PALETTE.up, fontSize: 12, transition: 'all 0.15s ease',
     },
-    card: { background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: '16px 18px' },
+    card: {
+      background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: '16px 18px',
+      boxShadow: '0 1px 3px rgba(33,31,26,0.04)', transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+      animation: 'fadeInUp 0.35s ease both',
+    },
     kpiLabel: { fontSize: 12, color: PALETTE.textMuted, marginBottom: 6 },
     kpiValue: { fontSize: 24, fontWeight: 600, fontFamily: "'Noto Serif KR', serif" },
     sectionTitle: { fontFamily: "'Noto Serif KR', serif", fontSize: 18, fontWeight: 600, margin: '0 0 12px' },
@@ -996,7 +1004,7 @@ export default function Page() {
               onChange={(e) => setFavName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveFavorite(); }}
             />
-            <button onClick={saveFavorite} style={{ ...styles.btn, width: 68, padding: 0 }}>저장</button>
+            <button onClick={saveFavorite} className="ui-btn" style={{ ...styles.btn, width: 68, padding: 0 }}>저장</button>
           </div>
           {favorites.length === 0 ? (
             <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: 0 }}>
@@ -1023,6 +1031,7 @@ export default function Page() {
         </div>
 
         <button
+          className="ui-btn"
           style={{
             ...styles.btn, position: 'sticky', bottom: 0, boxShadow: '0 -8px 12px -4px rgba(255,255,255,0.9)',
           }}
@@ -1050,6 +1059,7 @@ export default function Page() {
       <div style={{
         position: 'sticky', top: 0, zIndex: 200, display: 'flex', gap: 8,
         padding: '10px 16px', background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.border}`,
+        boxShadow: '0 2px 8px rgba(33,31,26,0.05)',
       }}>
         <div
           onClick={() => setViewMode('normal')}
@@ -1135,7 +1145,7 @@ export default function Page() {
       </div>
       ) : viewMode === 'compare' ? (
       <div style={{ padding: '20px 20px 0' }}>
-        <div style={styles.card}>
+        <div style={styles.card} className="ui-card">
           <h2 style={styles.sectionTitle}>비교분석</h2>
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
             지역이나 단지를 최대 3개까지 골라서 {isRent ? '전세보증금' : '매매가'} 평당가 추이를 나란히 비교해요.
@@ -1335,17 +1345,17 @@ export default function Page() {
         {status === 'done' && isRatio && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>선택 지역 평균 전세가율</div>
                 <div style={styles.kpiValue}>{ratioKpis.avg != null ? `${ratioKpis.avg.toFixed(1)}%` : '-'}</div>
               </div>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>전세가율 최고 지역</div>
                 <div style={{ ...styles.kpiValue, fontSize: 16 }}>
                   {ratioKpis.highest ? `${ratioKpis.highest.name} ${ratioKpis.highest.ratio.toFixed(1)}%` : '-'}
                 </div>
               </div>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>전세가율 최저 지역</div>
                 <div style={{ ...styles.kpiValue, fontSize: 16 }}>
                   {ratioKpis.lowest ? `${ratioKpis.lowest.name} ${ratioKpis.lowest.ratio.toFixed(1)}%` : '-'}
@@ -1354,7 +1364,7 @@ export default function Page() {
             </div>
 
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>전세가율 추이 (%)</h2>
               <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
                 해당 월 평균 전세보증금 ÷ 평균 매매가 × 100. 면적·평형 보정은 하지 않은 단순 평균 기준입니다.
@@ -1377,7 +1387,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>지역별 전세가율 순위</h2>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1417,20 +1427,20 @@ export default function Page() {
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>선택 지역 평균매매가격 평균</div>
                 <div style={styles.kpiValue}>
                   {roneKpis.avg != null ? `${Math.round(roneKpis.avg).toLocaleString()}${roneKpis.unit || '만원'}` : '-'}
                 </div>
               </div>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>기간 내 최고 상승</div>
                 <div style={{ ...styles.kpiValue, fontSize: 16, color: PALETTE.up, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <TrendingUp size={15} />
                   {roneKpis.rising ? `${roneKpis.rising.name} ${fmtPct(roneKpis.rising.change)}` : '-'}
                 </div>
               </div>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>기간 내 최고 하락</div>
                 <div style={{ ...styles.kpiValue, fontSize: 16, color: PALETTE.down, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <TrendingDown size={15} />
@@ -1440,7 +1450,7 @@ export default function Page() {
             </div>
 
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>평균매매가격 추이 (한국부동산원)</h2>
               <div style={{ width: '100%', height: 280 }}>
                 <ResponsiveContainer>
@@ -1460,7 +1470,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>지역별 순위</h2>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1493,28 +1503,28 @@ export default function Page() {
         {status === 'done' && !isRone && !isRatio && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>조회된 거래 건수</div>
                 <div style={styles.kpiValue}>{kpis.totalCount.toLocaleString()}건</div>
               </div>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>선택 지역 평균 {unitLabel}</div>
                 <div style={styles.kpiValue}>{kpis.avgPyeongAll ? fmtWon(kpis.avgPyeongAll) : '-'}</div>
               </div>
               {isRent && (
-                <div style={styles.card}>
+                <div style={styles.card} className="ui-card">
                   <div style={styles.kpiLabel}>평균 월세 (월세 있는 거래)</div>
                   <div style={styles.kpiValue}>{kpis.avgMonthlyRent ? `${Math.round(kpis.avgMonthlyRent).toLocaleString()}만` : '-'}</div>
                 </div>
               )}
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>기간 내 최고 상승</div>
                 <div style={{ ...styles.kpiValue, fontSize: 16, color: PALETTE.up, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <TrendingUp size={15} />
                   {kpis.rising ? `${kpis.rising.name} ${fmtPct(kpis.rising.change)}` : '-'}
                 </div>
               </div>
-              <div style={styles.card}>
+              <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>기간 내 최고 하락</div>
                 <div style={{ ...styles.kpiValue, fontSize: 16, color: PALETTE.down, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <TrendingDown size={15} />
@@ -1524,7 +1534,7 @@ export default function Page() {
             </div>
 
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>
                 {unitLabel} 추이 (만원/3.3㎡{isRent ? ', 전세 거래 기준' : ''})
               </h2>
@@ -1546,7 +1556,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>지역별 순위</h2>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1574,7 +1584,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>단지별 비교</h2>
               <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
                 선택 지역·기간 내 단지들을 {isRent ? '전세보증금' : '매매'} 평당가 기준으로 정렬했어요.
@@ -1620,7 +1630,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div style={styles.card}>
+            <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>최근 거래 내역</h2>
               <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1674,8 +1684,21 @@ export default function Page() {
         )}
 
         {status === 'idle' && (
-          <div style={{ ...styles.card, textAlign: 'center', padding: '60px 20px', color: PALETTE.textMuted }}>
-            데이터가 아직 없습니다. 왼쪽 패널에서 조건을 설정하고 조회를 눌러주세요.
+          <div style={{ ...styles.card, textAlign: 'center', padding: '60px 20px', color: PALETTE.textMuted }} className="ui-card">
+            <Building2 size={28} color={PALETTE.border} style={{ marginBottom: 10 }} />
+            <div style={{ fontSize: 14 }}>아직 조회된 데이터가 없어요</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>왼쪽 패널에서 지역과 기간을 정하고 "데이터 조회"를 눌러주세요.</div>
+          </div>
+        )}
+
+        {status === 'loading' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} style={styles.card} className="ui-card">
+                <div className="skeleton" style={{ width: '60%', height: 11, marginBottom: 10 }} />
+                <div className="skeleton" style={{ width: '80%', height: 24 }} />
+              </div>
+            ))}
           </div>
         )}
       </main>
@@ -1772,6 +1795,18 @@ export default function Page() {
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+        .ui-card:hover { box-shadow: 0 6px 16px rgba(33,31,26,0.08); transform: translateY(-1px); }
+        .ui-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(178,58,46,0.32); }
+        .ui-btn:active:not(:disabled) { transform: translateY(0); opacity: 0.92; }
+        .ui-btn:disabled { opacity: 0.65; cursor: default; }
+        .skeleton {
+          background: linear-gradient(90deg, ${PALETTE.panelAlt} 25%, ${PALETTE.border} 50%, ${PALETTE.panelAlt} 75%);
+          background-size: 400px 100%;
+          animation: shimmer 1.3s infinite linear;
+          border-radius: 6px;
+        }
         .spin { animation: spin 1s linear infinite; }
         @media (max-width: 720px) {
           .hero-wrap { height: 60vh !important; }
