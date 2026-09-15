@@ -138,7 +138,9 @@ export default function Page() {
   const [selectedApt, setSelectedApt] = useState(null);
   const [aptBasicInfo, setAptBasicInfo] = useState(null);
   const [nearbySchools, setNearbySchools] = useState([]);
+  const [schoolsLoading, setSchoolsLoading] = useState(false);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
 
   const currentSidoShort = useMemo(() => {
     if (selected.length === 0) return null;
@@ -155,11 +157,13 @@ export default function Page() {
     setSubscriptions([]);
     if (!currentSidoShort) return undefined;
     let cancelled = false;
+    setSubscriptionsLoading(true);
     const fromDate = ymShift(ymNow(), -12).replace(/(\d{4})(\d{2})/, '$1-$2-01');
     fetch(`/api/subscriptions?sido=${encodeURIComponent(currentSidoShort)}&from=${fromDate}`)
       .then((res) => res.json())
       .then((json) => { if (!cancelled) setSubscriptions(json?.rows || []); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSubscriptionsLoading(false); });
     return () => { cancelled = true; };
   }, [currentSidoShort]);
 
@@ -169,10 +173,12 @@ export default function Page() {
     setNearbySchools([]);
     if (!selectedApt?.dong) return undefined;
     let cancelled = false;
+    setSchoolsLoading(true);
     fetch(`/api/schools?keyword=${encodeURIComponent(selectedApt.dong)}`)
       .then((res) => res.json())
       .then((json) => { if (!cancelled) setNearbySchools(json?.schools || []); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSchoolsLoading(false); });
     return () => { cancelled = true; };
   }, [selectedApt]);
 
@@ -330,6 +336,8 @@ export default function Page() {
     handleFetch(next);
   };
 
+  const fetchCacheRef = useRef({});
+
   const handleFetch = async (codesOverride) => {
     const codesToUse = codesOverride || selected;
     setErrorMsg('');
@@ -341,6 +349,18 @@ export default function Page() {
       setErrorMsg('시작월이 종료월보다 이후입니다.');
       return;
     }
+
+    const cacheKey = `${dealType}|${propertyType}|${[...codesToUse].sort().join(',')}|${startYm}|${endYm}`;
+    const cached = fetchCacheRef.current[cacheKey];
+    if (cached) {
+      // 같은 조건을 이미 조회한 적 있으면, 네트워크 요청 없이 그 결과를 그대로 다시 쓴다
+      // (재조회 버튼을 눌러도 즉시 반응하도록).
+      cached.apply();
+      setFetchedAt(new Date(cached.fetchedAt));
+      setStatus('done');
+      return;
+    }
+
     setStatus('loading');
     try {
       if (dealType === 'rone') {
@@ -357,6 +377,14 @@ export default function Page() {
         setFetchedAt(new Date(json.fetchedAt));
         if (json.error) setErrorMsg(`일부 항목에서 오류: ${json.error}`);
         setStatus('done');
+        fetchCacheRef.current[cacheKey] = {
+          fetchedAt: json.fetchedAt,
+          apply: () => {
+            setRoneSeries(json.data);
+            setRoneMonths(json.months);
+            setRoneUnmapped(json.unmapped || []);
+          },
+        };
         return;
       }
       if (dealType === 'ratio') {
@@ -375,10 +403,19 @@ export default function Page() {
         setSaleRaw(saleJson.data);
         setJeonseRaw(rentJson.data);
         setMonths(saleJson.months);
-        setFetchedAt(new Date());
+        const now = new Date();
+        setFetchedAt(now);
         const combinedError = saleJson.error || rentJson.error;
         if (combinedError) setErrorMsg(`일부 항목에서 오류: ${combinedError}`);
         setStatus('done');
+        fetchCacheRef.current[cacheKey] = {
+          fetchedAt: now.toISOString(),
+          apply: () => {
+            setSaleRaw(saleJson.data);
+            setJeonseRaw(rentJson.data);
+            setMonths(saleJson.months);
+          },
+        };
         return;
       }
       const endpoint = dealType === 'silv'
@@ -398,6 +435,13 @@ export default function Page() {
       setFetchedAt(new Date(json.fetchedAt));
       if (json.error) setErrorMsg(`일부 항목에서 오류: ${json.error}`);
       setStatus('done');
+      fetchCacheRef.current[cacheKey] = {
+        fetchedAt: json.fetchedAt,
+        apply: () => {
+          setRawByRegionMonth(json.data);
+          setMonths(json.months);
+        },
+      };
     } catch (e) {
       setErrorMsg('서버 요청 중 오류가 발생했습니다.');
       setStatus('error');
@@ -1423,6 +1467,11 @@ export default function Page() {
           </p>
         </div>
 
+        {subscriptionsLoading && subscriptions.length === 0 && (
+          <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }} className="ui-card">
+            분양(청약) 정보 불러오는 중...
+          </div>
+        )}
         {subscriptions.length > 0 && (
           <div style={styles.card} className="ui-card">
             <h2 style={styles.sectionTitle}>최근 분양(청약) 정보 · {currentSidoShort}</h2>
@@ -1872,6 +1921,9 @@ export default function Page() {
                   </span>
                 )}
               </div>
+            )}
+            {schoolsLoading && nearbySchools.length === 0 && (
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>인근 학교 찾는 중...</p>
             )}
             {nearbySchools.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
