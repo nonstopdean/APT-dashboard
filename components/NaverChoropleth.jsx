@@ -4,19 +4,63 @@ import { useEffect, useRef, useState } from 'react';
 
 // features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
-export default function NaverChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng }) {
+export default function NaverChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
+  const markersRef = useRef([]); // [{ marker, key }]
+  const geocodeCacheRef = useRef({}); // key -> {lat,lng} | null
+  const kakaoPlacesRef = useRef(null);
   const infoWindowRef = useRef(null);
   const valuesRef = useRef(values);
   const colorForRef = useRef(colorFor);
   const onSelectRef = useRef(onSelect);
+  const onComplexSelectRef = useRef(onComplexSelect);
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => { valuesRef.current = values; }, [values]);
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
+
+  const MARKER_ZOOM_LEVEL = 13; // 네이버 zoom: 숫자가 클수록 확대된 상태
+
+  const updateMarkerVisibility = () => {
+    if (!mapRef.current) return;
+    const show = mapRef.current.getZoom() >= MARKER_ZOOM_LEVEL;
+    markersRef.current.forEach(({ marker }) => marker.setMap(show ? mapRef.current : null));
+  };
+
+  // 네이버 지도 표시용으로는 좌표 검색(Geocoding) API에 별도 서버 키가 필요해서,
+  // 이미 설정된 카카오 JavaScript 키로 좌표만 조회하는 방식을 재사용한다 (지도 자체는 그대로 네이버).
+  const ensureKakaoGeocoder = () => new Promise((resolve) => {
+    const kakaoKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY;
+    if (!kakaoKey) return resolve(false);
+    if (window.kakao?.maps?.services) return resolve(true);
+    let script = document.getElementById('kakao-geocode-sdk');
+    if (!script) {
+      script = document.createElement('script');
+      script.id = 'kakao-geocode-sdk';
+      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false&libraries=services`;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    script.addEventListener('load', () => {
+      window.kakao.maps.load(() => resolve(true));
+    });
+    script.addEventListener('error', () => resolve(false));
+  });
+
+  const geocodeComplex = (query) => new Promise((resolve) => {
+    if (!kakaoPlacesRef.current) return resolve(null);
+    kakaoPlacesRef.current.keywordSearch(query, (result, status) => {
+      if (status === window.kakao.maps.services.Status.OK && result[0]) {
+        resolve({ lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) });
+      } else {
+        resolve(null);
+      }
+    });
+  });
 
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
@@ -50,6 +94,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
           center: new window.naver.maps.LatLng(37.5665, 126.978),
           zoom: 11,
         });
+        window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', updateMarkerVisibility);
       }
       if (!infoWindowRef.current) {
         infoWindowRef.current = new window.naver.maps.InfoWindow({
@@ -139,6 +184,48 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     if (!focusLatLng || !mapRef.current || !window.naver?.maps) return;
     mapRef.current.morph(new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng), 13);
   }, [focusLatLng]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function run() {
+      if (!complexes || !mapRef.current || !window.naver?.maps) return;
+      const ready = await ensureKakaoGeocoder();
+      if (cancelled || !ready) return;
+      if (!kakaoPlacesRef.current) kakaoPlacesRef.current = new window.kakao.maps.services.Places();
+
+      const existingKeys = new Set(markersRef.current.map((m) => m.key));
+      const wanted = new Set(complexes.map((c) => c.key));
+
+      markersRef.current = markersRef.current.filter((m) => {
+        if (wanted.has(m.key)) return true;
+        m.marker.setMap(null);
+        return false;
+      });
+
+      for (const c of complexes) {
+        if (cancelled) return;
+        if (existingKeys.has(c.key)) continue;
+        let coord = geocodeCacheRef.current[c.key];
+        if (coord === undefined) {
+          // eslint-disable-next-line no-await-in-loop
+          coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`);
+          geocodeCacheRef.current[c.key] = coord;
+        }
+        if (cancelled || !coord) continue;
+        const marker = new window.naver.maps.Marker({
+          position: new window.naver.maps.LatLng(coord.lat, coord.lng),
+        });
+        window.naver.maps.Event.addListener(marker, 'click', () => {
+          onComplexSelectRef.current?.(c);
+        });
+        markersRef.current.push({ marker, key: c.key });
+      }
+      if (!cancelled) updateMarkerVisibility();
+    }
+    run();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complexes]);
 
   if (!process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID) return null;
   if (loadFailed) {

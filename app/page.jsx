@@ -725,6 +725,8 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
             focusLatLng={focusLatLng}
+            complexes={mapComplexes}
+            onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
