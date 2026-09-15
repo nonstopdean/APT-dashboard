@@ -87,21 +87,32 @@ export default function Page() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [viewMode, setViewMode] = useState('normal'); // 'normal' | 'map'
   const [panelPos, setPanelPos] = useState({ top: 16, left: 16 });
+  const panelRef = useRef(null);
   const dragRef = useRef(null);
+  const rafRef = useRef(null);
 
+  const applyDragFrame = () => {
+    rafRef.current = null;
+    if (!dragRef.current || !panelRef.current) return;
+    panelRef.current.style.top = `${dragRef.current.curTop}px`;
+    panelRef.current.style.left = `${dragRef.current.curLeft}px`;
+  };
   const handleDragMove = (e) => {
     if (!dragRef.current) return;
     const point = e.touches ? e.touches[0] : e;
     const dx = point.clientX - dragRef.current.startX;
     const dy = point.clientY - dragRef.current.startY;
-    setPanelPos({
-      top: Math.max(0, dragRef.current.origTop + dy),
-      left: Math.max(0, dragRef.current.origLeft + dx),
-    });
+    dragRef.current.curTop = Math.max(0, dragRef.current.origTop + dy);
+    dragRef.current.curLeft = Math.max(0, dragRef.current.origLeft + dx);
+    if (rafRef.current == null) rafRef.current = requestAnimationFrame(applyDragFrame);
     if (e.touches) e.preventDefault();
   };
   const handleDragEnd = () => {
+    if (dragRef.current) {
+      setPanelPos({ top: dragRef.current.curTop, left: dragRef.current.curLeft });
+    }
     dragRef.current = null;
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     window.removeEventListener('mousemove', handleDragMove);
     window.removeEventListener('mouseup', handleDragEnd);
     window.removeEventListener('touchmove', handleDragMove);
@@ -109,7 +120,11 @@ export default function Page() {
   };
   const handleDragStart = (e) => {
     const point = e.touches ? e.touches[0] : e;
-    dragRef.current = { startX: point.clientX, startY: point.clientY, origTop: panelPos.top, origLeft: panelPos.left };
+    dragRef.current = {
+      startX: point.clientX, startY: point.clientY,
+      origTop: panelPos.top, origLeft: panelPos.left,
+      curTop: panelPos.top, curLeft: panelPos.left,
+    };
     window.addEventListener('mousemove', handleDragMove);
     window.addEventListener('mouseup', handleDragEnd);
     window.addEventListener('touchmove', handleDragMove, { passive: false });
@@ -897,8 +912,8 @@ export default function Page() {
           {renderSeoulMap()}
         </div>
 
-        <div style={{
-          position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 900,
+        <div className="drill-select-bar" style={{
+          position: 'fixed', top: 66, left: '50%', transform: 'translateX(-50%)', zIndex: 900,
           display: 'flex', gap: 6, background: PALETTE.panel, border: `1px solid ${PALETTE.border}`,
           borderRadius: 10, padding: 8, boxShadow: '0 6px 18px rgba(20,18,14,0.18)',
         }}>
@@ -939,6 +954,7 @@ export default function Page() {
 
         {panelOpen && (
         <aside
+          ref={panelRef}
           style={{
             ...styles.sidebar,
             position: 'fixed', top: panelPos.top, left: panelPos.left, width: 300,
@@ -1245,6 +1261,7 @@ export default function Page() {
                     <tr>
                       <th style={styles.th}>지역</th>
                       <th style={styles.th}>단지명</th>
+                      <th style={styles.th}>동</th>
                       <th style={styles.th}>전용면적</th>
                       <th style={styles.th}>평당가</th>
                       <th style={styles.th}>최근 {isRent ? '보증금' : '거래금액'}</th>
@@ -1260,8 +1277,9 @@ export default function Page() {
                           style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
                           onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
                         >
-                          {c.apt}{c.aptDong ? ` ${c.aptDong}동` : ''} ({c.dong})
+                          {c.apt} ({c.dong})
                         </td>
+                        <td style={styles.td}>{c.aptDong ? `${c.aptDong}동` : '-'}</td>
                         <td style={styles.td}>{c.area?.toFixed(1)}㎡</td>
                         <td style={styles.td}>{fmtWon(c.unitPrice)}</td>
                         <td style={styles.td}>{fmtWon(isRent ? c.deposit : c.amount)}</td>
@@ -1270,7 +1288,7 @@ export default function Page() {
                       </tr>
                     ))}
                     {complexCompare.length === 0 && (
-                      <tr><td style={styles.td} colSpan={7}>비교할 단지가 없습니다.</td></tr>
+                      <tr><td style={styles.td} colSpan={8}>비교할 단지가 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1285,6 +1303,7 @@ export default function Page() {
                     <tr>
                       <th style={styles.th}>지역</th>
                       <th style={styles.th}>단지명</th>
+                      <th style={styles.th}>동</th>
                       <th style={styles.th}>계약일</th>
                       <th style={styles.th}>전용면적</th>
                       <th style={styles.th}>층</th>
@@ -1305,8 +1324,9 @@ export default function Page() {
                         <td style={styles.td}>{regionLabel(t.regionCode)}</td>
                         <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
                           onClick={() => setSelectedApt({ apt: t.apt, dong: t.dong, regionCode: t.regionCode })}>
-                          {t.apt}{t.aptDong ? ` ${t.aptDong}동` : ''} ({t.dong})
+                          {t.apt} ({t.dong})
                         </td>
+                        <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
                         <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
                         <td style={styles.td}>{t.floor}층</td>
@@ -1412,9 +1432,15 @@ export default function Page() {
         @media (max-width: 720px) {
           .hero-wrap { height: 60vh !important; }
           .dash-sidebar-float {
-            position: fixed !important; top: 8px !important; left: 8px !important; right: 8px !important;
-            width: auto !important; max-height: 80vh !important;
+            max-height: 75vh !important;
+            width: min(300px, calc(100vw - 32px)) !important;
           }
+          .drill-select-bar {
+            top: 60px !important;
+            padding: 6px !important;
+            max-width: calc(100vw - 24px);
+          }
+          .drill-select-bar select { width: 108px !important; font-size: 11px !important; }
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
         }
