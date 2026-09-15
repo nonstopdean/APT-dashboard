@@ -449,6 +449,68 @@ export default function Page() {
       .sort((a, b) => a.unitPrice - b.unitPrice);
   }, [allTx, isRent]);
 
+  const compareOptions = useMemo(() => {
+    const regionOpts = selected.map((code) => ({
+      value: `region:${code}`, kind: 'region', code, label: labelFor(code),
+    }));
+    const seen = new Set();
+    const aptOpts = [];
+    allTx.forEach((t) => {
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      aptOpts.push({
+        value: `apt:${key}`, kind: 'apt', apt: t.apt, dong: t.dong, regionCode: t.regionCode,
+        label: `${t.apt} (${regionLabel(t.regionCode)} ${t.dong})`,
+      });
+    });
+    return [...regionOpts, ...aptOpts];
+  }, [selected, allTx]);
+
+  const getCompareResult = (key) => {
+    const opt = compareOptions.find((o) => o.value === key);
+    if (!opt) return { label: null, series: [] };
+    const series = months.map((ym) => {
+      let value = null;
+      if (opt.kind === 'region') {
+        const rows = rawByRegionMonth[`${opt.code}_${ym}`] || [];
+        const valid = rows
+          .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
+          .filter((v) => v != null);
+        value = valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
+      } else {
+        const rows = (rawByRegionMonth[`${opt.regionCode}_${ym}`] || [])
+          .filter((r) => r.apt === opt.apt && r.dong === opt.dong);
+        const valid = rows
+          .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
+          .filter((v) => v != null);
+        value = valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
+      }
+      return { ym, value };
+    });
+    const withData = series.filter((s) => s.value != null);
+    const first = withData[0];
+    const last = withData[withData.length - 1];
+    const changePct = first && last && first.value ? ((last.value - first.value) / first.value) * 100 : null;
+    return { label: opt.label, series, changePct };
+  };
+
+  const compareAResult = useMemo(() => getCompareResult(compareAKey), [compareAKey, compareOptions, months, rawByRegionMonth, isRent]);
+  const compareBResult = useMemo(() => getCompareResult(compareBKey), [compareBKey, compareOptions, months, rawByRegionMonth, isRent]);
+
+  const compareChartData = useMemo(() => {
+    return months.map((ym) => {
+      const row = { ym: monthLabel(ym) };
+      if (compareAResult.label) {
+        row[compareAResult.label] = compareAResult.series.find((s) => s.ym === ym)?.value ?? null;
+      }
+      if (compareBResult.label) {
+        row[compareBResult.label] = compareBResult.series.find((s) => s.ym === ym)?.value ?? null;
+      }
+      return row;
+    });
+  }, [months, compareAResult, compareBResult]);
+
   const roneChartData = useMemo(() => {
     return roneMonths.map((ym) => {
       const row = { ym: monthLabel(ym) };
@@ -545,6 +607,8 @@ export default function Page() {
   };
 
   const [drillSido, setDrillSido] = useState('');
+  const [compareAKey, setCompareAKey] = useState('');
+  const [compareBKey, setCompareBKey] = useState('');
   const [focusLatLng, setFocusLatLng] = useState(null);
 
   const codeToLatLng = useMemo(() => {
@@ -708,8 +772,8 @@ export default function Page() {
     kpiLabel: { fontSize: 12, color: PALETTE.textMuted, marginBottom: 6 },
     kpiValue: { fontSize: 24, fontWeight: 600, fontFamily: "'Noto Serif KR', serif" },
     sectionTitle: { fontFamily: "'Noto Serif KR', serif", fontSize: 18, fontWeight: 600, margin: '0 0 12px' },
-    th: { textAlign: 'left', fontSize: 11, color: PALETTE.textMuted, fontWeight: 500, padding: '6px 10px', borderBottom: `1px solid ${PALETTE.border}` },
-    td: { fontSize: 13, padding: '8px 10px', borderBottom: `1px solid ${PALETTE.border}`, color: PALETTE.textPrimary },
+    th: { textAlign: 'left', fontSize: 11, color: PALETTE.textMuted, fontWeight: 500, padding: '6px 10px', borderBottom: `1px solid ${PALETTE.border}`, whiteSpace: 'nowrap' },
+    td: { fontSize: 13, padding: '8px 10px', borderBottom: `1px solid ${PALETTE.border}`, color: PALETTE.textPrimary, whiteSpace: 'nowrap' },
   };
 
   const sidebarInner = (
@@ -930,11 +994,17 @@ export default function Page() {
         >
           지도
         </div>
+        <div
+          onClick={() => setViewMode('compare')}
+          style={{ ...styles.toggleBtn(viewMode === 'compare'), padding: '6px 16px', width: 'auto' }}
+        >
+          비교분석
+        </div>
       </div>
 
       {viewMode === 'map' ? (
       <div className="hero-wrap" style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0 }}>
+        <div style={{ position: 'absolute', inset: 0, touchAction: 'none' }}>
           {renderSeoulMap()}
         </div>
 
@@ -994,6 +1064,102 @@ export default function Page() {
       </aside>
         )}
       </div>
+      ) : viewMode === 'compare' ? (
+      <div style={{ padding: '20px 20px 0' }}>
+        <div style={styles.card}>
+          <h2 style={styles.sectionTitle}>비교분석</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            지역 두 곳, 단지 두 곳, 또는 지역과 단지를 하나씩 골라서 {isRent ? '전세보증금' : '매매가'} 평당가 추이를 나란히 비교해요.
+            (현재 "대시보드"에서 조회된 데이터 기준입니다.)
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
+            <div>
+              <label style={styles.label}>비교 대상 A</label>
+              <select
+                value={compareAKey}
+                onChange={(e) => setCompareAKey(e.target.value)}
+                style={{ ...styles.select, fontSize: 13 }}
+              >
+                <option value="">선택 안 함</option>
+                <optgroup label="지역">
+                  {compareOptions.filter((o) => o.kind === 'region').map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="단지">
+                  {compareOptions.filter((o) => o.kind === 'apt').map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+            <div>
+              <label style={styles.label}>비교 대상 B</label>
+              <select
+                value={compareBKey}
+                onChange={(e) => setCompareBKey(e.target.value)}
+                style={{ ...styles.select, fontSize: 13 }}
+              >
+                <option value="">선택 안 함</option>
+                <optgroup label="지역">
+                  {compareOptions.filter((o) => o.kind === 'region').map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="단지">
+                  {compareOptions.filter((o) => o.kind === 'apt').map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+          </div>
+
+          {compareOptions.length === 0 && (
+            <p style={{ fontSize: 12.5, color: PALETTE.textMuted }}>
+              먼저 "대시보드" 탭에서 지역을 선택하고 데이터 조회를 해주세요. 조회된 지역/단지가 여기 선택지로 나와요.
+            </p>
+          )}
+
+          {(compareAKey || compareBKey) && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+                <div style={{ ...styles.card, borderStyle: 'dashed' }}>
+                  <div style={styles.kpiLabel}>A 기간 등락률</div>
+                  <div style={{ ...styles.kpiValue, fontSize: 18, color: compareAResult.changePct > 0 ? PALETTE.up : compareAResult.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                    {compareAResult.label ? fmtPct(compareAResult.changePct) : '-'}
+                  </div>
+                </div>
+                <div style={{ ...styles.card, borderStyle: 'dashed' }}>
+                  <div style={styles.kpiLabel}>B 기간 등락률</div>
+                  <div style={{ ...styles.kpiValue, fontSize: 18, color: compareBResult.changePct > 0 ? PALETTE.up : compareBResult.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                    {compareBResult.label ? fmtPct(compareBResult.changePct) : '-'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <LineChart data={compareChartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    {compareAResult.label && (
+                      <Line type="monotone" dataKey={compareAResult.label} stroke={LINE_COLORS[0]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                    )}
+                    {compareBResult.label && (
+                      <Line type="monotone" dataKey={compareBResult.label} stroke={LINE_COLORS[1]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                    )}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
       ) : (
       <div style={{ padding: '20px 20px 0' }}>
         {panelOpen ? (
@@ -1021,6 +1187,7 @@ export default function Page() {
       </div>
       )}
 
+      {viewMode !== 'compare' && (
       <main style={styles.main} className="dash-main">
         <div>
           <h1 className="dash-title" style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 24, margin: '0 0 4px' }}>
@@ -1382,6 +1549,7 @@ export default function Page() {
           </div>
         )}
       </main>
+      )}
 
       {selectedApt && (
         <div
