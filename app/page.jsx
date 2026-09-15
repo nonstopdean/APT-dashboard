@@ -85,6 +85,7 @@ export default function Page() {
   const isRone = dealType === 'rone';
   const isRatio = dealType === 'ratio';
   const [panelOpen, setPanelOpen] = useState(true);
+  const [viewMode, setViewMode] = useState('normal'); // 'normal' | 'map'
   const [startYm, setStartYm] = useState(ymShift(ymNow(), -5));
   const [endYm, setEndYm] = useState(ymNow());
   const [selected, setSelected] = useState(DEFAULT_SELECTED);
@@ -116,6 +117,7 @@ export default function Page() {
   const [selectedApt, setSelectedApt] = useState(null);
 
   useEffect(() => {
+    if (viewMode !== 'map' || mapFeatures) return undefined;
     let cancelled = false;
     fetch('https://cdn.jsdelivr.net/gh/southkorea/southkorea-maps@master/kostat/2018/json/skorea-municipalities-2018-topo-simple.json')
       .then((r) => r.json())
@@ -147,7 +149,7 @@ export default function Page() {
       })
       .catch(() => { if (!cancelled) setMapError('지도 데이터를 불러오지 못했습니다.'); });
     return () => { cancelled = true; };
-  }, []);
+  }, [viewMode, mapFeatures]);
 
   useEffect(() => {
     try {
@@ -610,38 +612,8 @@ export default function Page() {
     td: { fontSize: 13, padding: '8px 10px', borderBottom: `1px solid ${PALETTE.border}`, color: PALETTE.textPrimary },
   };
 
-  return (
-    <div style={styles.page}>
-      <div className="hero-wrap" style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0 }}>
-          {renderSeoulMap()}
-        </div>
-
-        {!panelOpen && (
-          <button
-            onClick={() => setPanelOpen(true)}
-            style={{
-              position: 'fixed', top: 16, left: 16, width: 40, height: 40, borderRadius: '50%',
-              background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, boxShadow: '0 6px 18px rgba(20,18,14,0.22)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 1000,
-            }}
-            aria-label="패널 펼치기"
-          >
-            <ChevronRight size={18} color={PALETTE.textPrimary} />
-          </button>
-        )}
-
-        {panelOpen && (
-        <aside
-          style={{
-            ...styles.sidebar,
-            position: 'fixed', top: 16, left: 16, width: 300,
-            maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
-            borderRadius: 12, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
-            boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 1000,
-          }}
-          className="dash-sidebar-float"
-        >
+  const sidebarInner = (
+    <>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -828,9 +800,77 @@ export default function Page() {
             <span>{errorMsg}</span>
           </div>
         )}
+    </>
+  );
+
+  return (
+    <div style={styles.page}>
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 200, display: 'flex', gap: 8,
+        padding: '10px 16px', background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.border}`,
+      }}>
+        <div
+          onClick={() => setViewMode('normal')}
+          style={{ ...styles.toggleBtn(viewMode === 'normal'), padding: '6px 16px', width: 'auto' }}
+        >
+          대시보드
+        </div>
+        <div
+          onClick={() => setViewMode('map')}
+          style={{ ...styles.toggleBtn(viewMode === 'map'), padding: '6px 16px', width: 'auto' }}
+        >
+          지도
+        </div>
+      </div>
+
+      {viewMode === 'map' ? (
+      <div className="hero-wrap" style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0 }}>
+          {renderSeoulMap()}
+        </div>
+
+        {!panelOpen && (
+          <button
+            onClick={() => setPanelOpen(true)}
+            style={{
+              position: 'fixed', top: 16, left: 16, width: 40, height: 40, borderRadius: '50%',
+              background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, boxShadow: '0 6px 18px rgba(20,18,14,0.22)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 1000,
+            }}
+            aria-label="패널 펼치기"
+          >
+            <ChevronRight size={18} color={PALETTE.textPrimary} />
+          </button>
+        )}
+
+        {panelOpen && (
+        <aside
+          style={{
+            ...styles.sidebar,
+            position: 'fixed', top: 16, left: 16, width: 300,
+            maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
+            borderRadius: 12, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
+            boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 1000,
+          }}
+          className="dash-sidebar-float"
+        >
+          {sidebarInner}
       </aside>
         )}
       </div>
+      ) : (
+      <div style={{ padding: '20px 20px 0' }}>
+        <aside
+          style={{
+            ...styles.sidebar, maxWidth: 420, borderRadius: 12,
+            border: `1px solid ${PALETTE.border}`, borderRight: `1px solid ${PALETTE.border}`,
+          }}
+          className="dash-sidebar-static"
+        >
+          {sidebarInner}
+        </aside>
+      </div>
+      )}
 
       <main style={styles.main} className="dash-main">
         <div>
