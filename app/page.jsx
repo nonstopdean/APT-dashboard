@@ -9,7 +9,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate } from '../lib/regions';
+import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode } from '../lib/regions';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
@@ -50,6 +50,18 @@ function fmtPct(v) {
 function fmtPyeong(area) {
   if (area == null || Number.isNaN(area)) return '-';
   return `${Math.round(area / 3.3058)}평`;
+}
+
+// 전용면적을 ㎡와 평 두 단위로 같이 보여준다 (소수점 없이).
+function fmtArea(area) {
+  if (area == null || Number.isNaN(area)) return '-';
+  return `${Math.round(area)}㎡(${Math.round(area / 3.3058)}평)`;
+}
+
+// 억 단위로 안 바꾸고 항상 만원 단위 그대로 보여준다.
+function fmtManwon(manwon) {
+  if (manwon == null || Number.isNaN(manwon)) return '-';
+  return `${Math.round(manwon).toLocaleString()}만원`;
 }
 
 // KOSTAT 지도 데이터의 시/도 코드(앞 2자리) -> 시/도 이름. 우리 REGION_GROUPS와 이름이 다른
@@ -259,10 +271,20 @@ export default function Page() {
   const removeRegion = (code) => {
     setSelected((prev) => prev.filter((c) => c !== code));
   };
+  const [comparePickerValue, setComparePickerValue] = useState('');
+  const addRegionAndFetch = (code) => {
+    if (!code) return;
+    setComparePickerValue('');
+    if (selected.includes(code)) return;
+    const next = [...selected, code];
+    setSelected(next);
+    handleFetch(next);
+  };
 
-  const handleFetch = async () => {
+  const handleFetch = async (codesOverride) => {
+    const codesToUse = codesOverride || selected;
     setErrorMsg('');
-    if (selected.length === 0) {
+    if (codesToUse.length === 0) {
       setErrorMsg('지역을 하나 이상 선택해주세요.');
       return;
     }
@@ -273,7 +295,7 @@ export default function Page() {
     setStatus('loading');
     try {
       if (dealType === 'rone') {
-        const res = await fetch(`/api/rone?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`);
+        const res = await fetch(`/api/rone?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`);
         const json = await res.json();
         if (!res.ok) {
           setErrorMsg(json.error || `요청 실패 (HTTP ${res.status})`);
@@ -290,8 +312,8 @@ export default function Page() {
       }
       if (dealType === 'ratio') {
         const [saleRes, rentRes] = await Promise.all([
-          fetch(`/api/trades?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`),
-          fetch(`/api/rents?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`),
+          fetch(`/api/trades?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`),
+          fetch(`/api/rents?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`),
         ]);
         const [saleJson, rentJson] = await Promise.all([saleRes.json(), rentRes.json()]);
         if (!saleRes.ok || !rentRes.ok) {
@@ -309,7 +331,7 @@ export default function Page() {
         return;
       }
       const endpoint = dealType === 'rent' ? '/api/rents' : '/api/trades';
-      const res = await fetch(`${endpoint}?codes=${selected.join(',')}&start=${startYm}&end=${endYm}`);
+      const res = await fetch(`${endpoint}?codes=${codesToUse.join(',')}&start=${startYm}&end=${endYm}`);
       const json = await res.json();
       if (!res.ok) {
         setErrorMsg(json.error || `요청 실패 (HTTP ${res.status})`);
@@ -403,9 +425,12 @@ export default function Page() {
   const allTx = useMemo(() => {
     const all = [];
     selected.forEach((code) => {
-      months.forEach((ym) => {
-        const rows = rawByRegionMonth[`${code}_${ym}`] || [];
-        rows.forEach((r) => all.push({ ...r, regionCode: code }));
+      const memberCodes = expandRegionCode(code);
+      memberCodes.forEach((mc) => {
+        months.forEach((ym) => {
+          const rows = rawByRegionMonth[`${mc}_${ym}`] || [];
+          rows.forEach((r) => all.push({ ...r, regionCode: mc }));
+        });
       });
     });
     all.sort((a, b) => {
@@ -451,6 +476,7 @@ export default function Page() {
 
   const [compareAKey, setCompareAKey] = useState('');
   const [compareBKey, setCompareBKey] = useState('');
+  const [compareCKey, setCompareCKey] = useState('');
 
   const compareOptions = useMemo(() => {
     const regionOpts = selected.map((code) => ({
@@ -500,19 +526,17 @@ export default function Page() {
 
   const compareAResult = useMemo(() => getCompareResult(compareAKey), [compareAKey, compareOptions, months, rawByRegionMonth, isRent]);
   const compareBResult = useMemo(() => getCompareResult(compareBKey), [compareBKey, compareOptions, months, rawByRegionMonth, isRent]);
+  const compareCResult = useMemo(() => getCompareResult(compareCKey), [compareCKey, compareOptions, months, rawByRegionMonth, isRent]);
 
   const compareChartData = useMemo(() => {
     return months.map((ym) => {
       const row = { ym: monthLabel(ym) };
-      if (compareAResult.label) {
-        row[compareAResult.label] = compareAResult.series.find((s) => s.ym === ym)?.value ?? null;
-      }
-      if (compareBResult.label) {
-        row[compareBResult.label] = compareBResult.series.find((s) => s.ym === ym)?.value ?? null;
-      }
+      [compareAResult, compareBResult, compareCResult].forEach((r) => {
+        if (r.label) row[r.label] = r.series.find((s) => s.ym === ym)?.value ?? null;
+      });
       return row;
     });
-  }, [months, compareAResult, compareBResult]);
+  }, [months, compareAResult, compareBResult, compareCResult]);
 
   const roneChartData = useMemo(() => {
     return roneMonths.map((ym) => {
@@ -1070,73 +1094,85 @@ export default function Page() {
         <div style={styles.card}>
           <h2 style={styles.sectionTitle}>비교분석</h2>
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
-            지역 두 곳, 단지 두 곳, 또는 지역과 단지를 하나씩 골라서 {isRent ? '전세보증금' : '매매가'} 평당가 추이를 나란히 비교해요.
-            (현재 "대시보드"에서 조회된 데이터 기준입니다.)
+            지역이나 단지를 최대 3개까지 골라서 {isRent ? '전세보증금' : '매매가'} 평당가 추이를 나란히 비교해요.
           </p>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={styles.label}>비교할 지역 새로 추가 (여기서 바로 불러옵니다)</label>
+            <select
+              value={comparePickerValue}
+              onChange={(e) => addRegionAndFetch(e.target.value)}
+              style={{ ...styles.select, fontSize: 13 }}
+            >
+              <option value="">시/도 - 시/군/구 선택</option>
+              <optgroup label="시/도 전체 (합산)">
+                {SIDO_AGGREGATES.map((it) => (
+                  <option key={it.code} value={it.code}>{it.name}</option>
+                ))}
+              </optgroup>
+              {REGION_GROUPS.map((g) => (
+                <optgroup key={g.sido} label={g.sido}>
+                  {g.items.map((it) => (
+                    <option key={it.code} value={it.code}>{it.name}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {status === 'loading' && (
+              <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 4 }}>불러오는 중...</p>
+            )}
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
-            <div>
-              <label style={styles.label}>비교 대상 A</label>
-              <select
-                value={compareAKey}
-                onChange={(e) => setCompareAKey(e.target.value)}
-                style={{ ...styles.select, fontSize: 13 }}
-              >
-                <option value="">선택 안 함</option>
-                <optgroup label="지역">
-                  {compareOptions.filter((o) => o.kind === 'region').map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="단지">
-                  {compareOptions.filter((o) => o.kind === 'apt').map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
-            <div>
-              <label style={styles.label}>비교 대상 B</label>
-              <select
-                value={compareBKey}
-                onChange={(e) => setCompareBKey(e.target.value)}
-                style={{ ...styles.select, fontSize: 13 }}
-              >
-                <option value="">선택 안 함</option>
-                <optgroup label="지역">
-                  {compareOptions.filter((o) => o.kind === 'region').map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </optgroup>
-                <optgroup label="단지">
-                  {compareOptions.filter((o) => o.kind === 'apt').map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </optgroup>
-              </select>
-            </div>
+            {[
+              { key: compareAKey, set: setCompareAKey, label: 'A' },
+              { key: compareBKey, set: setCompareBKey, label: 'B' },
+              { key: compareCKey, set: setCompareCKey, label: 'C' },
+            ].map((slot) => (
+              <div key={slot.label}>
+                <label style={styles.label}>비교 대상 {slot.label}</label>
+                <select
+                  value={slot.key}
+                  onChange={(e) => slot.set(e.target.value)}
+                  style={{ ...styles.select, fontSize: 13 }}
+                >
+                  <option value="">선택 안 함</option>
+                  <optgroup label="지역">
+                    {compareOptions.filter((o) => o.kind === 'region').map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="단지">
+                    {compareOptions.filter((o) => o.kind === 'apt').map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            ))}
           </div>
 
           {compareOptions.length === 0 && (
             <p style={{ fontSize: 12.5, color: PALETTE.textMuted }}>
-              먼저 "대시보드" 탭에서 지역을 선택하고 데이터 조회를 해주세요. 조회된 지역/단지가 여기 선택지로 나와요.
+              위에서 지역을 하나 추가해보세요. 불러온 지역과 그 안의 단지들이 비교 대상 선택지로 나와요.
             </p>
           )}
 
-          {(compareAKey || compareBKey) && (
+          {(compareAKey || compareBKey || compareCKey) && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-                <div style={{ ...styles.card, borderStyle: 'dashed' }}>
-                  <div style={styles.kpiLabel}>A 기간 등락률</div>
-                  <div style={{ ...styles.kpiValue, fontSize: 18, color: compareAResult.changePct > 0 ? PALETTE.up : compareAResult.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
-                    {compareAResult.label ? fmtPct(compareAResult.changePct) : '-'}
+                {[
+                  { result: compareAResult, label: 'A' },
+                  { result: compareBResult, label: 'B' },
+                  { result: compareCResult, label: 'C' },
+                ].map((slot) => (
+                  <div key={slot.label} style={{ ...styles.card, borderStyle: 'dashed' }}>
+                    <div style={styles.kpiLabel}>{slot.label} 기간 등락률</div>
+                    <div style={{ ...styles.kpiValue, fontSize: 18, color: slot.result.changePct > 0 ? PALETTE.up : slot.result.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                      {slot.result.label ? fmtPct(slot.result.changePct) : '-'}
+                    </div>
                   </div>
-                </div>
-                <div style={{ ...styles.card, borderStyle: 'dashed' }}>
-                  <div style={styles.kpiLabel}>B 기간 등락률</div>
-                  <div style={{ ...styles.kpiValue, fontSize: 18, color: compareBResult.changePct > 0 ? PALETTE.up : compareBResult.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
-                    {compareBResult.label ? fmtPct(compareBResult.changePct) : '-'}
-                  </div>
-                </div>
+                ))}
               </div>
 
               <div style={{ width: '100%', height: 300 }}>
@@ -1148,12 +1184,11 @@ export default function Page() {
                     <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
                       labelStyle={{ color: PALETTE.textPrimary }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    {compareAResult.label && (
-                      <Line type="monotone" dataKey={compareAResult.label} stroke={LINE_COLORS[0]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                    )}
-                    {compareBResult.label && (
-                      <Line type="monotone" dataKey={compareBResult.label} stroke={LINE_COLORS[1]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                    )}
+                    {[compareAResult, compareBResult, compareCResult].map((r, i) => (
+                      r.label && (
+                        <Line key={r.label} type="monotone" dataKey={r.label} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                      )
+                    ))}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -1453,21 +1488,20 @@ export default function Page() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={styles.th}>지역</th>
-                      <th style={styles.th}>단지명</th>
-                      <th style={styles.th}>동</th>
-                      <th style={styles.th}>층</th>
-                      <th style={styles.th}>전용면적(평)</th>
-                      <th style={styles.th}>평당가</th>
-                      <th style={styles.th}>최근 {isRent ? '보증금' : '거래금액'}</th>
-                      <th style={styles.th}>최근 계약일</th>
-                      <th style={styles.th}>거래건수</th>
+                      <th style={{ ...styles.th, width: 70 }}>지역</th>
+                      <th style={{ ...styles.th, width: 200 }}>단지명</th>
+                      <th style={{ ...styles.th, width: 60 }}>동</th>
+                      <th style={{ ...styles.th, width: 50 }}>층</th>
+                      <th style={{ ...styles.th, width: 130 }}>전용면적</th>
+                      <th style={{ ...styles.th, width: 120 }}>최근 {isRent ? '보증금' : '거래금액'}</th>
+                      <th style={{ ...styles.th, width: 90 }}>최근 계약일</th>
+                      <th style={{ ...styles.th, width: 70 }}>거래건수</th>
                     </tr>
                   </thead>
                   <tbody>
                     {complexCompare.map((c, i) => (
                       <tr key={i}>
-                        <td style={styles.td}>{regionLabel(c.regionCode)}</td>
+                        <td style={styles.td}>{labelFor(c.regionCode)}</td>
                         <td
                           style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
                           onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
@@ -1476,15 +1510,14 @@ export default function Page() {
                         </td>
                         <td style={styles.td}>{c.aptDong ? `${c.aptDong}동` : '-'}</td>
                         <td style={styles.td}>{c.floor}층</td>
-                        <td style={styles.td}>{fmtPyeong(c.area)}</td>
-                        <td style={styles.td}>{fmtWon(c.unitPrice)}</td>
-                        <td style={styles.td}>{fmtWon(isRent ? c.deposit : c.amount)}</td>
+                        <td style={styles.td}>{fmtArea(c.area)}</td>
+                        <td style={styles.td}>{fmtManwon(isRent ? c.deposit : c.amount)}</td>
                         <td style={styles.td}>{c.year}.{c.month}.{c.day}</td>
                         <td style={styles.td}>{c.count}</td>
                       </tr>
                     ))}
                     {complexCompare.length === 0 && (
-                      <tr><td style={styles.td} colSpan={9}>비교할 단지가 없습니다.</td></tr>
+                      <tr><td style={styles.td} colSpan={8}>비교할 단지가 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1497,43 +1530,43 @@ export default function Page() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={styles.th}>지역</th>
-                      <th style={styles.th}>단지명</th>
-                      <th style={styles.th}>동</th>
-                      <th style={styles.th}>계약일</th>
-                      <th style={styles.th}>전용면적(평)</th>
-                      <th style={styles.th}>층</th>
+                      <th style={{ ...styles.th, width: 70 }}>지역</th>
+                      <th style={{ ...styles.th, width: 200 }}>단지명</th>
+                      <th style={{ ...styles.th, width: 60 }}>동</th>
+                      <th style={{ ...styles.th, width: 90 }}>계약일</th>
+                      <th style={{ ...styles.th, width: 130 }}>전용면적</th>
+                      <th style={{ ...styles.th, width: 50 }}>층</th>
                       {isRent ? (
                         <>
-                          <th style={styles.th}>구분</th>
-                          <th style={styles.th}>보증금</th>
-                          <th style={styles.th}>월세</th>
+                          <th style={{ ...styles.th, width: 55 }}>구분</th>
+                          <th style={{ ...styles.th, width: 110 }}>보증금</th>
+                          <th style={{ ...styles.th, width: 90 }}>월세</th>
                         </>
                       ) : (
-                        <th style={styles.th}>거래금액</th>
+                        <th style={{ ...styles.th, width: 120 }}>거래금액</th>
                       )}
                     </tr>
                   </thead>
                   <tbody>
                     {recentTx.map((t, i) => (
                       <tr key={i}>
-                        <td style={styles.td}>{regionLabel(t.regionCode)}</td>
+                        <td style={styles.td}>{labelFor(t.regionCode)}</td>
                         <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer', textDecoration: 'underline' }}
                           onClick={() => setSelectedApt({ apt: t.apt, dong: t.dong, regionCode: t.regionCode })}>
                           {t.apt} ({t.dong})
                         </td>
                         <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
-                        <td style={styles.td}>{fmtPyeong(t.area)}</td>
+                        <td style={styles.td}>{fmtArea(t.area)}</td>
                         <td style={styles.td}>{t.floor}층</td>
                         {isRent ? (
                           <>
                             <td style={styles.td}>{t.isJeonse ? '전세' : '월세'}</td>
-                            <td style={styles.td}>{fmtWon(t.deposit)}</td>
-                            <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만`}</td>
+                            <td style={styles.td}>{fmtManwon(t.deposit)}</td>
+                            <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만원`}</td>
                           </>
                         ) : (
-                          <td style={styles.td}>{fmtWon(t.amount)}</td>
+                          <td style={styles.td}>{fmtManwon(t.amount)}</td>
                         )}
                       </tr>
                     ))}
@@ -1574,24 +1607,24 @@ export default function Page() {
               <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
             </div>
             <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
-              {regionLabel(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
+              {labelFor(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
             </p>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={styles.th}>동</th>
-                    <th style={styles.th}>계약일</th>
-                    <th style={styles.th}>전용면적(평)</th>
-                    <th style={styles.th}>층</th>
+                    <th style={{ ...styles.th, width: 60 }}>동</th>
+                    <th style={{ ...styles.th, width: 90 }}>계약일</th>
+                    <th style={{ ...styles.th, width: 130 }}>전용면적</th>
+                    <th style={{ ...styles.th, width: 50 }}>층</th>
                     {isRent ? (
                       <>
-                        <th style={styles.th}>구분</th>
-                        <th style={styles.th}>보증금</th>
-                        <th style={styles.th}>월세</th>
+                        <th style={{ ...styles.th, width: 55 }}>구분</th>
+                        <th style={{ ...styles.th, width: 110 }}>보증금</th>
+                        <th style={{ ...styles.th, width: 90 }}>월세</th>
                       </>
                     ) : (
-                      <th style={styles.th}>거래금액</th>
+                      <th style={{ ...styles.th, width: 120 }}>거래금액</th>
                     )}
                   </tr>
                 </thead>
@@ -1600,16 +1633,16 @@ export default function Page() {
                     <tr key={i}>
                       <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                       <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
-                      <td style={styles.td}>{fmtPyeong(t.area)}</td>
+                      <td style={styles.td}>{fmtArea(t.area)}</td>
                       <td style={styles.td}>{t.floor}층</td>
                       {isRent ? (
                         <>
                           <td style={styles.td}>{t.isJeonse ? '전세' : '월세'}</td>
-                          <td style={styles.td}>{fmtWon(t.deposit)}</td>
-                          <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만`}</td>
+                          <td style={styles.td}>{fmtManwon(t.deposit)}</td>
+                          <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만원`}</td>
                         </>
                       ) : (
-                        <td style={styles.td}>{fmtWon(t.amount)}</td>
+                        <td style={styles.td}>{fmtManwon(t.amount)}</td>
                       )}
                     </tr>
                   ))}
