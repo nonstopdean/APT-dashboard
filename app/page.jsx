@@ -17,6 +17,7 @@ const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].i
 
 const DEFAULT_SELECTED = [];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
+const SIDO_SHORT_NAMES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'];
 
 const PALETTE = {
   bg: '#F5F5F3',
@@ -140,6 +141,9 @@ export default function Page() {
   const [nearbySchools, setNearbySchools] = useState([]);
   const [schoolsLoading, setSchoolsLoading] = useState(false);
   const [subscriptions, setSubscriptions] = useState([]);
+  const [subsTabSido, setSubsTabSido] = useState('서울');
+  const [subsTabRows, setSubsTabRows] = useState([]);
+  const [subsTabLoading, setSubsTabLoading] = useState(false);
   const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
 
   const currentSidoShort = useMemo(() => {
@@ -166,6 +170,19 @@ export default function Page() {
       .finally(() => { if (!cancelled) setSubscriptionsLoading(false); });
     return () => { cancelled = true; };
   }, [currentSidoShort]);
+
+  useEffect(() => {
+    if (viewMode !== 'subscriptions') return undefined;
+    let cancelled = false;
+    setSubsTabLoading(true);
+    const fromDate = ymShift(ymNow(), -12).replace(/(\d{4})(\d{2})/, '$1-$2-01');
+    fetch(`/api/subscriptions?sido=${encodeURIComponent(subsTabSido)}&from=${fromDate}`)
+      .then((res) => res.json())
+      .then((json) => { if (!cancelled) setSubsTabRows(json?.rows || []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSubsTabLoading(false); });
+    return () => { cancelled = true; };
+  }, [viewMode, subsTabSido]);
 
   const aptListCacheRef = useRef({}); // regionCode -> [{kaptCode, kaptName}]
 
@@ -593,17 +610,41 @@ export default function Page() {
       .sort((a, b) => a.unitPrice - b.unitPrice);
   }, [allTx, isRent]);
 
+  const [fullComplexList, setFullComplexList] = useState([]);
+
+  useEffect(() => {
+    if (selected.length === 0) { setFullComplexList([]); return undefined; }
+    let cancelled = false;
+    fetch(`/api/apt-list?codes=${selected.join(',')}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const list = [];
+        Object.entries(json?.data || {}).forEach(([code, items]) => {
+          (items || []).forEach((it) => {
+            list.push({ apt: it.kaptName, dong: it.dong, regionCode: code });
+          });
+        });
+        setFullComplexList(list);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selected]);
+
   const mapComplexes = useMemo(() => {
     const seen = new Set();
     const list = [];
-    allTx.forEach((t) => {
-      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+    const addItem = (apt, dong, regionCode) => {
+      if (!apt || !dong || !regionCode) return;
+      const key = `${regionCode}|${dong}|${apt}`;
       if (seen.has(key)) return;
       seen.add(key);
-      list.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, regionName: regionLabel(t.regionCode) });
-    });
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode) });
+    };
+    allTx.forEach((t) => addItem(t.apt, t.dong, t.regionCode));
+    fullComplexList.forEach((c) => addItem(c.apt, c.dong, c.regionCode));
     return list;
-  }, [allTx]);
+  }, [allTx, fullComplexList]);
 
   const [compareAKey, setCompareAKey] = useState('');
   const [compareBKey, setCompareBKey] = useState('');
@@ -1214,28 +1255,37 @@ export default function Page() {
   return (
     <div style={styles.page}>
       <div style={{
-        position: 'sticky', top: 0, zIndex: 200, display: 'flex', gap: 8,
-        padding: '10px 16px', background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.border}`,
+        position: 'sticky', top: 0, zIndex: 200,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 20px', height: 58, background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.border}`,
         boxShadow: '0 2px 8px rgba(33,31,26,0.05)',
       }}>
-        <div
-          onClick={() => setViewMode('normal')}
-          style={{ ...styles.toggleBtn(viewMode === 'normal'), padding: '6px 16px', width: 'auto' }}
-        >
-          대시보드
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Building2 size={20} color={PALETTE.accent} />
+          <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>실거래가</span>
         </div>
-        <div
-          onClick={() => setViewMode('map')}
-          style={{ ...styles.toggleBtn(viewMode === 'map'), padding: '6px 16px', width: 'auto' }}
-        >
-          지도
-        </div>
-        <div
-          onClick={() => setViewMode('compare')}
-          style={{ ...styles.toggleBtn(viewMode === 'compare'), padding: '6px 16px', width: 'auto' }}
-        >
-          비교분석
-        </div>
+        <nav style={{ display: 'flex', gap: 2, height: '100%', overflowX: 'auto' }} className="main-nav">
+          {[
+            { key: 'normal', label: '대시보드' },
+            { key: 'map', label: '지도' },
+            { key: 'compare', label: '비교분석' },
+            { key: 'subscriptions', label: '분양정보' },
+          ].map((t) => (
+            <div
+              key={t.key}
+              onClick={() => setViewMode(t.key)}
+              style={{
+                display: 'flex', alignItems: 'center', height: '100%', padding: '0 14px', cursor: 'pointer',
+                fontSize: 13.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
+                color: viewMode === t.key ? PALETTE.textPrimary : PALETTE.textMuted,
+                borderBottom: viewMode === t.key ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
+                transition: 'color 0.15s ease, border-color 0.15s ease',
+              }}
+            >
+              {t.label}
+            </div>
+          ))}
+        </nav>
       </div>
 
       {viewMode === 'map' ? (
@@ -1427,6 +1477,70 @@ export default function Page() {
           )}
         </div>
       </div>
+      ) : viewMode === 'subscriptions' ? (
+      <div style={{ padding: '20px 20px 0' }}>
+        <div style={styles.card} className="ui-card">
+          <h2 style={styles.sectionTitle}>분양(청약) 정보</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            한국부동산원 청약홈 기준, 최근 1년 내 아파트 모집공고예요. 지역을 골라서 확인하세요.
+          </p>
+          <div style={{ marginBottom: 14, maxWidth: 220 }}>
+            <select
+              value={subsTabSido}
+              onChange={(e) => setSubsTabSido(e.target.value)}
+              style={{ ...styles.select, fontSize: 13 }}
+            >
+              {SIDO_SHORT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          {subsTabLoading && (
+            <p style={{ fontSize: 12, color: PALETTE.textMuted }}>불러오는 중...</p>
+          )}
+          {!subsTabLoading && subsTabRows.length === 0 && (
+            <p style={{ fontSize: 12, color: PALETTE.textMuted }}>최근 1년 내 모집공고가 없어요.</p>
+          )}
+          {subsTabRows.length > 0 && (
+            <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>주택명</th>
+                    <th style={styles.th}>위치</th>
+                    <th style={styles.th}>공급규모</th>
+                    <th style={styles.th}>모집공고일</th>
+                    <th style={styles.th}>청약접수</th>
+                    <th style={styles.th}>입주예정</th>
+                    <th style={styles.th}>시공사</th>
+                    <th style={styles.th}>규제</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subsTabRows.map((s, i) => (
+                    <tr key={i}>
+                      <td style={styles.td}>
+                        {s.url ? (
+                          <a href={s.url} target="_blank" rel="noreferrer" style={{ color: PALETTE.accent }}>{s.houseName}</a>
+                        ) : s.houseName}
+                      </td>
+                      <td style={styles.td}>{s.address}</td>
+                      <td style={styles.td}>{s.totalUnits}세대</td>
+                      <td style={styles.td}>{s.announceDate}</td>
+                      <td style={styles.td}>{s.receiptStart} ~ {s.receiptEnd}</td>
+                      <td style={styles.td}>{s.moveInMonth}</td>
+                      <td style={styles.td}>{s.builder}</td>
+                      <td style={styles.td}>
+                        {(s.isSpeculationOverheated || s.isAdjustmentTarget) && (
+                          <span style={{ ...styles.chip, padding: '2px 8px', fontSize: 11 }}>규제</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
       ) : (
       <div style={{ padding: '20px 20px 0' }}>
         {panelOpen ? (
@@ -1454,7 +1568,7 @@ export default function Page() {
       </div>
       )}
 
-      {viewMode !== 'compare' && (
+      {viewMode !== 'compare' && viewMode !== 'subscriptions' && (
       <main style={styles.main} className="dash-main">
         <div>
           <h1 className="dash-title" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
@@ -2019,6 +2133,7 @@ export default function Page() {
           }
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
+          .main-nav { gap: 0 !important; }
         }
       `}</style>
     </div>
