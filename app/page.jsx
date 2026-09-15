@@ -105,54 +105,9 @@ export default function Page() {
   const isRatio = dealType === 'ratio';
   const [panelOpen, setPanelOpen] = useState(true);
   const [viewMode, setViewMode] = useState('normal'); // 'normal' | 'map'
-  const [panelPos, setPanelPos] = useState({ top: 16, left: 16 });
-  const panelRef = useRef(null);
-  const dragRef = useRef(null);
-  const rafRef = useRef(null);
-
-  const applyDragFrame = () => {
-    rafRef.current = null;
-    if (!dragRef.current || !panelRef.current) return;
-    panelRef.current.style.top = `${dragRef.current.curTop}px`;
-    panelRef.current.style.left = `${dragRef.current.curLeft}px`;
-  };
-  const handleDragMove = (e) => {
-    if (!dragRef.current) return;
-    const point = e.touches ? e.touches[0] : e;
-    const dx = point.clientX - dragRef.current.startX;
-    const dy = point.clientY - dragRef.current.startY;
-    dragRef.current.curTop = Math.max(0, dragRef.current.origTop + dy);
-    dragRef.current.curLeft = Math.max(0, dragRef.current.origLeft + dx);
-    if (rafRef.current == null) rafRef.current = requestAnimationFrame(applyDragFrame);
-    if (e.touches) e.preventDefault();
-  };
-  const handleDragEnd = () => {
-    if (dragRef.current) {
-      setPanelPos({ top: dragRef.current.curTop, left: dragRef.current.curLeft });
-    }
-    dragRef.current = null;
-    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    window.removeEventListener('mousemove', handleDragMove);
-    window.removeEventListener('mouseup', handleDragEnd);
-    window.removeEventListener('touchmove', handleDragMove);
-    window.removeEventListener('touchend', handleDragEnd);
-  };
-  const handleDragStart = (e) => {
-    const point = e.touches ? e.touches[0] : e;
-    dragRef.current = {
-      startX: point.clientX, startY: point.clientY,
-      origTop: panelPos.top, origLeft: panelPos.left,
-      curTop: panelPos.top, curLeft: panelPos.left,
-    };
-    window.addEventListener('mousemove', handleDragMove);
-    window.addEventListener('mouseup', handleDragEnd);
-    window.addEventListener('touchmove', handleDragMove, { passive: false });
-    window.addEventListener('touchend', handleDragEnd);
-  };
   const [startYm, setStartYm] = useState(ymShift(ymNow(), -5));
   const [endYm, setEndYm] = useState(ymNow());
   const [selected, setSelected] = useState(DEFAULT_SELECTED);
-  const [pickerValue, setPickerValue] = useState('');
   const [status, setStatus] = useState('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [rawByRegionMonth, setRawByRegionMonth] = useState({});
@@ -266,7 +221,6 @@ export default function Page() {
   const addRegion = (code) => {
     if (!code) return;
     setSelected((prev) => (prev.includes(code) ? prev : [...prev, code]));
-    setPickerValue('');
   };
   const removeRegion = (code) => {
     setSelected((prev) => prev.filter((c) => c !== code));
@@ -275,6 +229,7 @@ export default function Page() {
   const addRegionAndFetch = (code) => {
     if (!code) return;
     setComparePickerValue('');
+    if (codeToLatLng[code]) setFocusLatLng(codeToLatLng[code]);
     if (selected.includes(code)) return;
     const next = [...selected, code];
     setSelected(next);
@@ -675,7 +630,8 @@ export default function Page() {
     return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
   };
 
-  const [drillSido, setDrillSido] = useState('');
+  const [sidebarDrillSido, setSidebarDrillSido] = useState(null);
+  const [regionSearch, setRegionSearch] = useState('');
   const [focusLatLng, setFocusLatLng] = useState(null);
 
   const codeToLatLng = useMemo(() => {
@@ -696,11 +652,6 @@ export default function Page() {
     return map;
   }, [mapFeatures]);
 
-  const handleDrillSelectRegion = (code) => {
-    if (!code) return;
-    addRegion(code);
-    if (codeToLatLng[code]) setFocusLatLng(codeToLatLng[code]);
-  };
 
   const mapDisplayFeatures = useMemo(() => {
     if (!mapFeatures) return null;
@@ -859,10 +810,7 @@ export default function Page() {
           <div
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4,
-              cursor: viewMode === 'map' ? 'move' : 'default', userSelect: 'none',
             }}
-            onMouseDown={viewMode === 'map' ? handleDragStart : undefined}
-            onTouchStart={viewMode === 'map' ? handleDragStart : undefined}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Building2 size={18} color={PALETTE.accent} />
@@ -951,31 +899,77 @@ export default function Page() {
         </div>
 
         <div>
-          <label style={styles.label}>지역 추가 (전국)</label>
-          <select style={styles.select} value={pickerValue} onChange={(e) => addRegion(e.target.value)}>
-            <option value="">시/도 - 시/군/구 선택</option>
-            <optgroup label="시/도 전체 (합산)">
-              {SIDO_AGGREGATES.map((it) => (
-                <option key={it.code} value={it.code}>{it.name}</option>
-              ))}
-            </optgroup>
-            {isRone && (
-              <optgroup label="광역 통계 (한국부동산원)">
-                {RONE_ONLY_EXTRA.map((it) => (
-                  <option key={it.code} value={it.code}>{it.name}</option>
-                ))}
-              </optgroup>
-            )}
-            {REGION_GROUPS.map((g) => (
-              <optgroup key={g.sido} label={g.sido}>
-                {g.items.map((it) => (
-                  <option key={it.code} value={it.code}>{it.name}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <label style={styles.label}>지역 선택</label>
+          <input
+            type="text"
+            placeholder="지역명 검색 (예: 강남, 분당)"
+            value={regionSearch}
+            onChange={(e) => setRegionSearch(e.target.value)}
+            style={{ ...styles.select, marginBottom: 8 }}
+          />
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, maxHeight: 180, overflowY: 'auto' }}>
+          {!sidebarDrillSido ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {SIDO_AGGREGATES
+                .filter((it) => !regionSearch || it.name.includes(regionSearch))
+                .map((it) => (
+                  <div
+                    key={it.code}
+                    onClick={() => addRegionAndFetch(it.code)}
+                    style={{
+                      ...styles.toggleBtn(selected.includes(it.code)), padding: '8px 2px', fontSize: 11.5,
+                    }}
+                  >
+                    {it.name}
+                  </div>
+                ))}
+              {REGION_GROUPS
+                .filter((g) => !regionSearch || g.sido.includes(regionSearch))
+                .map((g) => (
+                  <div
+                    key={g.sido}
+                    onClick={() => setSidebarDrillSido(g.sido)}
+                    style={{ ...styles.toggleBtn(false), padding: '8px 2px', fontSize: 12.5 }}
+                  >
+                    {g.sido.replace(/특별자치시|특별자치도|광역시|특별시|도$/, '')}
+                  </div>
+                ))}
+              {isRone && RONE_ONLY_EXTRA.map((it) => (
+                <div
+                  key={it.code}
+                  onClick={() => addRegionAndFetch(it.code)}
+                  style={{ ...styles.toggleBtn(selected.includes(it.code)), padding: '8px 2px', fontSize: 11.5 }}
+                >
+                  {it.name}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
+              <div
+                onClick={() => setSidebarDrillSido(null)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', marginBottom: 8 }}
+              >
+                <ChevronLeft size={14} color={PALETTE.textSecondary} />
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{sidebarDrillSido}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                {(REGION_GROUPS.find((g) => g.sido === sidebarDrillSido)?.items || [])
+                  .filter((it) => !regionSearch || it.name.includes(regionSearch))
+                  .map((it) => (
+                    <div
+                      key={it.code}
+                      onClick={() => addRegionAndFetch(it.code)}
+                      style={{ ...styles.toggleBtn(selected.includes(it.code)), padding: '7px 2px', fontSize: 11.5 }}
+                    >
+                      {it.name}
+                    </div>
+                  ))}
+              </div>
+            </>
+          )}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, maxHeight: 140, overflowY: 'auto' }}>
             {selected.map((code) => (
               <span key={code} style={styles.chip}>
                 {labelFor(code)}
@@ -1082,66 +1076,34 @@ export default function Page() {
       </div>
 
       {viewMode === 'map' ? (
-      <div className="hero-wrap" style={{ position: 'relative', width: '100%', height: '100vh', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, touchAction: 'none' }}>
-          {renderSeoulMap()}
-        </div>
-
-        <div className="drill-select-bar" style={{
-          position: 'fixed', top: 66, left: '50%', transform: 'translateX(-50%)', zIndex: 900,
-          display: 'flex', gap: 6, background: PALETTE.panel, border: `1px solid ${PALETTE.border}`,
-          borderRadius: 10, padding: 8, boxShadow: '0 6px 18px rgba(20,18,14,0.18)',
-        }}>
-          <select
-            value={drillSido}
-            onChange={(e) => setDrillSido(e.target.value)}
-            style={{ ...styles.select, padding: '6px 8px', fontSize: 12, width: 140 }}
+      <div className="hero-wrap" style={{ display: 'flex', width: '100%', height: '100vh', overflow: 'hidden' }}>
+        {panelOpen ? (
+          <aside
+            style={{
+              ...styles.sidebar,
+              width: 300, flexShrink: 0, height: '100%', overflowY: 'auto',
+              borderRight: `1px solid ${PALETTE.border}`,
+            }}
+            className="dash-sidebar-fixed"
           >
-            <option value="">시/도 선택</option>
-            {REGION_GROUPS.map((g) => <option key={g.sido} value={g.sido}>{g.sido}</option>)}
-          </select>
-          <select
-            value=""
-            onChange={(e) => handleDrillSelectRegion(e.target.value)}
-            disabled={!drillSido}
-            style={{ ...styles.select, padding: '6px 8px', fontSize: 12, width: 140 }}
-          >
-            <option value="">시/군/구 선택</option>
-            {(REGION_GROUPS.find((g) => g.sido === drillSido)?.items || []).map((it) => (
-              <option key={it.code} value={it.code}>{it.name}</option>
-            ))}
-          </select>
-        </div>
-
-        {!panelOpen && (
+            {sidebarInner}
+          </aside>
+        ) : (
           <button
             onClick={() => setPanelOpen(true)}
             style={{
-              position: 'fixed', top: panelPos.top, left: panelPos.left, width: 40, height: 40, borderRadius: '50%',
-              background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, boxShadow: '0 6px 18px rgba(20,18,14,0.22)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 1000,
+              width: 28, flexShrink: 0, height: '100%', border: 'none', borderRight: `1px solid ${PALETTE.border}`,
+              background: PALETTE.panel, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
             aria-label="패널 펼치기"
           >
-            <ChevronRight size={18} color={PALETTE.textPrimary} />
+            <ChevronRight size={16} color={PALETTE.textMuted} />
           </button>
         )}
 
-        {panelOpen && (
-        <aside
-          ref={panelRef}
-          style={{
-            ...styles.sidebar,
-            position: 'fixed', top: panelPos.top, left: panelPos.left, width: 300,
-            maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
-            borderRadius: 16, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
-            boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 1000,
-          }}
-          className="dash-sidebar-float"
-        >
-          {sidebarInner}
-      </aside>
-        )}
+        <div style={{ position: 'relative', flex: 1, touchAction: 'none' }}>
+          {renderSeoulMap()}
+        </div>
       </div>
       ) : viewMode === 'compare' ? (
       <div style={{ padding: '20px 20px 0' }}>
@@ -1809,17 +1771,11 @@ export default function Page() {
         }
         .spin { animation: spin 1s linear infinite; }
         @media (max-width: 720px) {
-          .hero-wrap { height: 60vh !important; }
-          .dash-sidebar-float {
-            max-height: 75vh !important;
-            width: min(300px, calc(100vw - 32px)) !important;
+          .hero-wrap { flex-direction: column !important; height: 90vh !important; }
+          .dash-sidebar-fixed {
+            width: 100% !important; height: 45vh !important; border-right: none !important;
+            border-bottom: 1px solid ${PALETTE.border};
           }
-          .drill-select-bar {
-            top: 60px !important;
-            padding: 6px !important;
-            max-width: calc(100vw - 24px);
-          }
-          .drill-select-bar select { width: 108px !important; font-size: 11px !important; }
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
         }
