@@ -9,6 +9,8 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
   const [caption, setCaption] = useState('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
   const [loadFailed, setLoadFailed] = useState(false);
 
+  const infoWindowRef = useRef(null);
+
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID;
     if (!key) return undefined;
@@ -24,6 +26,15 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
           zoom: 11,
         });
       }
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new window.naver.maps.InfoWindow({
+          content: '',
+          borderWidth: 0,
+          backgroundColor: 'rgba(33,31,26,0.92)',
+          disableAnchor: true,
+          pixelOffset: new window.naver.maps.Point(0, -6),
+        });
+      }
 
       polygonsRef.current.forEach((p) => p.setMap(null));
       polygonsRef.current = [];
@@ -36,28 +47,42 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
         polygons.forEach((rings) => {
           const path = rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng));
           const hasValue = value != null;
+          const baseFillColor = colorFor(value);
           const baseFillOpacity = hasValue ? 0.55 : 0;
+          const hoverFillColor = '#F2B441';
           const polygon = new window.naver.maps.Polygon({
             map: mapRef.current,
             paths: [path],
             strokeWeight: hasValue ? 1.5 : 0.5,
             strokeColor: borderColor || '#DEDBCF',
             strokeOpacity: hasValue ? 0.9 : 0.15,
-            fillColor: colorFor(value),
+            fillColor: baseFillColor,
             fillOpacity: baseFillOpacity,
             clickable: true,
           });
+          const label = hasValue ? `${name}: ${Math.round(value).toLocaleString()}` : `${name} (검색되지 않은 지역)`;
           window.naver.maps.Event.addListener(polygon, 'click', () => {
-            setCaption(value != null ? `${name}: ${Math.round(value).toLocaleString()}` : `${name}: 검색되지 않은 지역 (클릭하면 추가됩니다)`);
+            setCaption(label);
             if (code) onSelect?.(code);
           });
-          window.naver.maps.Event.addListener(polygon, 'mouseover', () => {
-            polygon.setOptions({ fillOpacity: hasValue ? 0.7 : 0.12 });
-            setCaption(hasValue ? `${name}: ${Math.round(value).toLocaleString()}` : `${name} (검색되지 않은 지역)`);
+          window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+            polygon.setOptions({ fillColor: hoverFillColor, fillOpacity: 0.75, strokeColor: '#B23A2E', strokeWeight: 2 });
+            setCaption(label);
+            infoWindowRef.current.setContent(
+              `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${label}</div>`,
+            );
+            infoWindowRef.current.open(mapRef.current, e.coord);
+          });
+          window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
+            infoWindowRef.current.setPosition(e.coord);
           });
           window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions({ fillOpacity: baseFillOpacity });
+            polygon.setOptions({
+              fillColor: baseFillColor, fillOpacity: baseFillOpacity,
+              strokeColor: borderColor || '#DEDBCF', strokeWeight: hasValue ? 1.5 : 0.5,
+            });
             setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
+            infoWindowRef.current.close();
           });
           polygonsRef.current.push(polygon);
         });
