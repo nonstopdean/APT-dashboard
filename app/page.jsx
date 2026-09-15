@@ -135,6 +135,38 @@ export default function Page() {
   const [mapFeatures, setMapFeatures] = useState(null);
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
+  const [aptBasicInfo, setAptBasicInfo] = useState(null);
+  const aptListCacheRef = useRef({}); // regionCode -> [{kaptCode, kaptName}]
+
+  useEffect(() => {
+    let cancelled = false;
+    setAptBasicInfo(null);
+    if (!selectedApt) return undefined;
+
+    async function run() {
+      try {
+        let list = aptListCacheRef.current[selectedApt.regionCode];
+        if (!list) {
+          const res = await fetch(`/api/apt-list?codes=${selectedApt.regionCode}`);
+          const json = await res.json();
+          list = json?.data?.[selectedApt.regionCode] || [];
+          aptListCacheRef.current[selectedApt.regionCode] = list;
+        }
+        if (cancelled) return;
+        const match = list.find((it) => it.kaptName === selectedApt.apt)
+          || list.find((it) => it.kaptName?.replace(/\s/g, '') === selectedApt.apt.replace(/\s/g, ''));
+        if (!match) return;
+        const infoRes = await fetch(`/api/apt-basic?kaptCode=${match.kaptCode}`);
+        const infoJson = await infoRes.json();
+        if (!cancelled) setAptBasicInfo(infoJson?.info || null);
+      } catch (e) {
+        // 조용히 실패 — 모달의 나머지 정보는 그대로 보여준다
+      }
+    }
+    run();
+    return () => { cancelled = true; };
+  }, [selectedApt]);
+
 
   useEffect(() => {
     if (viewMode !== 'map' || mapFeatures) return undefined;
@@ -1713,6 +1745,14 @@ export default function Page() {
               {labelFor(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
+            {aptBasicInfo && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {aptBasicInfo.households && <span style={styles.chip}>세대수 {aptBasicInfo.households}</span>}
+                {aptBasicInfo.dongCount && <span style={styles.chip}>{aptBasicInfo.dongCount}개동</span>}
+                {aptBasicInfo.useDate && <span style={styles.chip}>준공 {String(aptBasicInfo.useDate).slice(0, 4)}년</span>}
+                {aptBasicInfo.builder && <span style={styles.chip}>시공 {aptBasicInfo.builder}</span>}
+              </div>
+            )}
             {aptTrendData.length > 1 && (
               <div style={{ width: '100%', height: 160, marginBottom: 16 }}>
                 <ResponsiveContainer>
