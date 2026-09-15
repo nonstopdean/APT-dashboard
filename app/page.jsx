@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import * as topojson from 'topojson-client';
 import { geoMercator, geoPath } from 'd3-geo';
 import KakaoChoropleth from '../components/KakaoChoropleth';
@@ -86,6 +86,35 @@ export default function Page() {
   const isRatio = dealType === 'ratio';
   const [panelOpen, setPanelOpen] = useState(true);
   const [viewMode, setViewMode] = useState('normal'); // 'normal' | 'map'
+  const [panelPos, setPanelPos] = useState({ top: 16, left: 16 });
+  const dragRef = useRef(null);
+
+  const handleDragMove = (e) => {
+    if (!dragRef.current) return;
+    const point = e.touches ? e.touches[0] : e;
+    const dx = point.clientX - dragRef.current.startX;
+    const dy = point.clientY - dragRef.current.startY;
+    setPanelPos({
+      top: Math.max(0, dragRef.current.origTop + dy),
+      left: Math.max(0, dragRef.current.origLeft + dx),
+    });
+    if (e.touches) e.preventDefault();
+  };
+  const handleDragEnd = () => {
+    dragRef.current = null;
+    window.removeEventListener('mousemove', handleDragMove);
+    window.removeEventListener('mouseup', handleDragEnd);
+    window.removeEventListener('touchmove', handleDragMove);
+    window.removeEventListener('touchend', handleDragEnd);
+  };
+  const handleDragStart = (e) => {
+    const point = e.touches ? e.touches[0] : e;
+    dragRef.current = { startX: point.clientX, startY: point.clientY, origTop: panelPos.top, origLeft: panelPos.left };
+    window.addEventListener('mousemove', handleDragMove);
+    window.addEventListener('mouseup', handleDragEnd);
+    window.addEventListener('touchmove', handleDragMove, { passive: false });
+    window.addEventListener('touchend', handleDragEnd);
+  };
   const [startYm, setStartYm] = useState(ymShift(ymNow(), -5));
   const [endYm, setEndYm] = useState(ymNow());
   const [selected, setSelected] = useState(DEFAULT_SELECTED);
@@ -129,21 +158,22 @@ export default function Page() {
         // 이름 -> 코드 조회를 시/도별로 나눠서, 같은 이름의 구(중구/서구/남구 등)가 다른
         // 도시에 있어도 헷갈리지 않게 한다.
         const matched = geo.features.map((f) => {
+          const featureName = (f.properties.name || '').trim();
           const kostatCode = f.properties.code || '';
           const rawSidoName = KOSTAT_SIDO_CODE_TO_NAME[kostatCode.slice(0, 2)];
           const sidoName = SIDO_NAME_ALIAS[rawSidoName] || rawSidoName;
           const group = sidoName ? REGION_GROUPS.find((g) => g.sido === sidoName) : null;
           const codes = [];
           if (group) {
-            const exact = group.items.find((it) => it.name === f.properties.name);
+            const exact = group.items.find((it) => it.name.trim() === featureName);
             if (exact) codes.push(exact.code);
             // 이 지도 데이터는 2018년 기준이라, 그 이후 구로 나뉜 도시(예: 화성시 동탄구)는
             // 지도엔 통합된 폴리곤 하나만 있다. 그런 하위 지역 코드도 같이 묶어둔다.
             group.items
-              .filter((it) => it.name.startsWith(`${f.properties.name} `))
+              .filter((it) => it.name.trim().startsWith(`${featureName} `))
               .forEach((it) => codes.push(it.code));
           }
-          return { feature: f, name: f.properties.name, codes };
+          return { feature: f, name: featureName, codes };
         });
         setMapFeatures(matched);
       })
@@ -485,6 +515,33 @@ export default function Page() {
     return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
   };
 
+  const [drillSido, setDrillSido] = useState('');
+  const [focusLatLng, setFocusLatLng] = useState(null);
+
+  const codeToLatLng = useMemo(() => {
+    if (!mapFeatures) return {};
+    const map = {};
+    mapFeatures.forEach((f) => {
+      const geomType = f.feature.geometry.type;
+      const ring = geomType === 'Polygon'
+        ? f.feature.geometry.coordinates[0]
+        : f.feature.geometry.coordinates[0][0];
+      let sx = 0;
+      let sy = 0;
+      ring.forEach(([x, y]) => { sx += x; sy += y; });
+      const lat = sy / ring.length;
+      const lng = sx / ring.length;
+      (f.codes || []).forEach((c) => { map[c] = { lat, lng }; });
+    });
+    return map;
+  }, [mapFeatures]);
+
+  const handleDrillSelectRegion = (code) => {
+    if (!code) return;
+    addRegion(code);
+    if (codeToLatLng[code]) setFocusLatLng(codeToLatLng[code]);
+  };
+
   const seoulMapData = useMemo(() => {
     if (!mapFeatures) return null;
     const values = mapFeatures.map((f) => {
@@ -540,6 +597,7 @@ export default function Page() {
             colorFor={colorFor}
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
+            focusLatLng={focusLatLng}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -548,6 +606,7 @@ export default function Page() {
             colorFor={colorFor}
             borderColor={PALETTE.border}
             onSelect={(code) => addRegion(code)}
+            focusLatLng={focusLatLng}
             height="100%"
           />
         ) : (
@@ -615,7 +674,14 @@ export default function Page() {
   const sidebarInner = (
     <>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4,
+              cursor: viewMode === 'map' ? 'move' : 'default', userSelect: 'none',
+            }}
+            onMouseDown={viewMode === 'map' ? handleDragStart : undefined}
+            onTouchStart={viewMode === 'map' ? handleDragStart : undefined}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Building2 size={18} color={PALETTE.accent} />
               <span style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 16, fontWeight: 600 }}>
@@ -626,6 +692,8 @@ export default function Page() {
               size={18}
               color={PALETTE.textMuted}
               style={{ cursor: 'pointer', flexShrink: 0 }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
               onClick={() => setPanelOpen(false)}
             />
           </div>
@@ -829,11 +897,37 @@ export default function Page() {
           {renderSeoulMap()}
         </div>
 
+        <div style={{
+          position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 900,
+          display: 'flex', gap: 6, background: PALETTE.panel, border: `1px solid ${PALETTE.border}`,
+          borderRadius: 10, padding: 8, boxShadow: '0 6px 18px rgba(20,18,14,0.18)',
+        }}>
+          <select
+            value={drillSido}
+            onChange={(e) => setDrillSido(e.target.value)}
+            style={{ ...styles.select, padding: '6px 8px', fontSize: 12, width: 140 }}
+          >
+            <option value="">시/도 선택</option>
+            {REGION_GROUPS.map((g) => <option key={g.sido} value={g.sido}>{g.sido}</option>)}
+          </select>
+          <select
+            value=""
+            onChange={(e) => handleDrillSelectRegion(e.target.value)}
+            disabled={!drillSido}
+            style={{ ...styles.select, padding: '6px 8px', fontSize: 12, width: 140 }}
+          >
+            <option value="">시/군/구 선택</option>
+            {(REGION_GROUPS.find((g) => g.sido === drillSido)?.items || []).map((it) => (
+              <option key={it.code} value={it.code}>{it.name}</option>
+            ))}
+          </select>
+        </div>
+
         {!panelOpen && (
           <button
             onClick={() => setPanelOpen(true)}
             style={{
-              position: 'fixed', top: 16, left: 16, width: 40, height: 40, borderRadius: '50%',
+              position: 'fixed', top: panelPos.top, left: panelPos.left, width: 40, height: 40, borderRadius: '50%',
               background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, boxShadow: '0 6px 18px rgba(20,18,14,0.22)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 1000,
             }}
@@ -847,7 +941,7 @@ export default function Page() {
         <aside
           style={{
             ...styles.sidebar,
-            position: 'fixed', top: 16, left: 16, width: 300,
+            position: 'fixed', top: panelPos.top, left: panelPos.left, width: 300,
             maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
             borderRadius: 12, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
             boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 1000,
@@ -860,6 +954,7 @@ export default function Page() {
       </div>
       ) : (
       <div style={{ padding: '20px 20px 0' }}>
+        {panelOpen ? (
         <aside
           style={{
             ...styles.sidebar, maxWidth: 420, borderRadius: 12,
@@ -869,6 +964,18 @@ export default function Page() {
         >
           {sidebarInner}
         </aside>
+        ) : (
+        <button
+          onClick={() => setPanelOpen(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, background: PALETTE.panel,
+            border: `1px solid ${PALETTE.border}`, borderRadius: 8, padding: '8px 14px',
+            cursor: 'pointer', fontSize: 13, color: PALETTE.textPrimary,
+          }}
+        >
+          <ChevronRight size={16} /> 조건 패널 펼치기
+        </button>
+        )}
       </div>
       )}
 

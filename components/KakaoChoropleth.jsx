@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function KakaoChoropleth({ features, colorFor, borderColor, onSelect, height }) {
+export default function KakaoChoropleth({ features, colorFor, borderColor, onSelect, height, focusLatLng }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]);
@@ -87,6 +87,13 @@ export default function KakaoChoropleth({ features, colorFor, borderColor, onSel
       polygonsRef.current.forEach((p) => p.setMap(null));
     };
   }, [features, colorFor, borderColor, onSelect]);
+
+  useEffect(() => {
+    if (!focusLatLng || !mapRef.current || !window.kakao?.maps) return;
+    const latlng = new window.kakao.maps.LatLng(focusLatLng.lat, focusLatLng.lng);
+    mapRef.current.panTo(latlng);
+    mapRef.current.setLevel(5);
+  }, [focusLatLng]);
 
   if (!process.env.NEXT_PUBLIC_KAKAO_MAP_KEY) return null;
   if (loadFailed) {

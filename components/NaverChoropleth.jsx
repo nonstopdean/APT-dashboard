@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export default function NaverChoropleth({ features, colorFor, borderColor, onSelect, height }) {
+export default function NaverChoropleth({ features, colorFor, borderColor, onSelect, height, focusLatLng }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]);
@@ -112,6 +112,11 @@ export default function NaverChoropleth({ features, colorFor, borderColor, onSel
       polygonsRef.current.forEach((p) => p.setMap(null));
     };
   }, [features, colorFor, borderColor, onSelect]);
+
+  useEffect(() => {
+    if (!focusLatLng || !mapRef.current || !window.naver?.maps) return;
+    mapRef.current.morph(new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng), 13);
+  }, [focusLatLng]);
 
   if (!process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID) return null;
   if (loadFailed) {
