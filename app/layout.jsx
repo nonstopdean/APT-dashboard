@@ -6,7 +6,14 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="ko">
-      <body style={{ margin: 0, background: '#EFEEE8' }}>{children}</body>
+      <head>
+        <link
+          rel="stylesheet"
+          as="style"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css"
+        />
+      </head>
+      <body style={{ margin: 0, background: '#F5F5F3' }}>{children}</body>
     </html>
   );
 }

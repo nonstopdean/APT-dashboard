@@ -18,19 +18,19 @@ const DEFAULT_SELECTED = [];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 
 const PALETTE = {
-  bg: '#EFEEE8',
+  bg: '#F5F5F3',
   panel: '#FFFFFF',
-  panelAlt: '#F5F4EF',
-  border: '#DEDBCF',
-  borderStrong: '#C6C2B2',
-  textPrimary: '#211F1A',
-  textSecondary: '#5C594E',
-  textMuted: '#8B8775',
-  up: '#B23A2E',
-  down: '#2F5FA0',
-  accent: '#B23A2E',
+  panelAlt: '#F1F1EF',
+  border: '#E6E5E1',
+  borderStrong: '#D2D0CA',
+  textPrimary: '#18181B',
+  textSecondary: '#6B6B67',
+  textMuted: '#9C9B96',
+  up: '#EF4444',
+  down: '#3B6FE0',
+  accent: '#EF4444',
 };
-const ACCENT_TEXT = '#FDF6F3';
+const ACCENT_TEXT = '#FFFFFF';
 
 function fmtWon(manwon) {
   if (manwon == null || Number.isNaN(manwon)) return '-';
@@ -808,7 +808,7 @@ export default function Page() {
   const styles = {
     page: {
       background: PALETTE.bg, color: PALETTE.textPrimary,
-      fontFamily: "'Pretendard', 'Noto Sans KR', system-ui, sans-serif",
+      fontFamily: "'Pretendard', -apple-system, BlinkMacSystemFont, 'Noto Sans KR', system-ui, sans-serif",
       minHeight: '100vh',
     },
     sidebar: {
@@ -819,36 +819,36 @@ export default function Page() {
     label: { fontSize: 12, color: PALETTE.textSecondary, marginBottom: 6, display: 'block' },
     select: {
       width: '100%', background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`,
-      borderRadius: 6, padding: '8px 10px', color: PALETTE.textPrimary, fontSize: 13,
+      borderRadius: 10, padding: '8px 10px', color: PALETTE.textPrimary, fontSize: 13,
       transition: 'border-color 0.15s ease',
     },
     btn: {
-      background: PALETTE.accent, color: ACCENT_TEXT, border: 'none', borderRadius: 6,
+      background: PALETTE.accent, color: ACCENT_TEXT, border: 'none', borderRadius: 10,
       padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
       transition: 'transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease',
       boxShadow: '0 2px 6px rgba(178,58,46,0.25)',
     },
     toggleBtn: (active) => ({
-      flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+      flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 10, fontSize: 13, cursor: 'pointer',
       border: `1px solid ${active ? PALETTE.accent : PALETTE.border}`,
       background: active ? 'rgba(178,58,46,0.10)' : 'transparent',
       color: active ? PALETTE.up : PALETTE.textSecondary,
       transition: 'all 0.15s ease',
     }),
     chip: {
-      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 14,
+      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 16,
       border: `1px solid ${PALETTE.accent}`, background: 'rgba(178,58,46,0.10)',
       color: PALETTE.up, fontSize: 12, transition: 'all 0.15s ease',
     },
     card: {
-      background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: '16px 18px',
+      background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 14, padding: '16px 18px',
       boxShadow: '0 1px 3px rgba(33,31,26,0.04)', transition: 'box-shadow 0.2s ease, transform 0.2s ease',
       animation: 'fadeInUp 0.35s ease both',
     },
     kpiLabel: { fontSize: 12, color: PALETTE.textMuted, marginBottom: 6 },
-    kpiValue: { fontSize: 24, fontWeight: 600, fontFamily: "'Noto Serif KR', serif" },
-    sectionTitle: { fontFamily: "'Noto Serif KR', serif", fontSize: 18, fontWeight: 600, margin: '0 0 12px' },
+    kpiValue: { fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em' },
+    sectionTitle: { fontSize: 17, fontWeight: 700, letterSpacing: '-0.01em', margin: '0 0 12px' },
     th: { textAlign: 'left', fontSize: 11, color: PALETTE.textMuted, fontWeight: 500, padding: '6px 10px', borderBottom: `1px solid ${PALETTE.border}`, whiteSpace: 'nowrap' },
     td: { fontSize: 13, padding: '8px 10px', borderBottom: `1px solid ${PALETTE.border}`, color: PALETTE.textPrimary, whiteSpace: 'nowrap' },
   };
@@ -866,7 +866,7 @@ export default function Page() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Building2 size={18} color={PALETTE.accent} />
-              <span style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 16, fontWeight: 600 }}>
+              <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em' }}>
                 아파트 실거래가 대시보드
               </span>
             </div>
@@ -1015,7 +1015,7 @@ export default function Page() {
               {favorites.map((fav) => (
                 <div key={fav.name} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: '6px 8px',
+                  border: `1px solid ${PALETTE.border}`, borderRadius: 10, padding: '6px 8px',
                 }}>
                   <span
                     style={{ fontSize: 12.5, cursor: 'pointer', color: PALETTE.textPrimary }}
@@ -1045,7 +1045,7 @@ export default function Page() {
         {errorMsg && (
           <div style={{
             display: 'flex', gap: 8, fontSize: 12, color: PALETTE.down,
-            background: 'rgba(196,119,106,0.1)', border: `1px solid ${PALETTE.down}`, borderRadius: 6, padding: 10,
+            background: 'rgba(239,68,68,0.08)', border: `1px solid ${PALETTE.accent}`, borderRadius: 10, padding: 10,
           }}>
             <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>{errorMsg}</span>
@@ -1134,7 +1134,7 @@ export default function Page() {
             ...styles.sidebar,
             position: 'fixed', top: panelPos.top, left: panelPos.left, width: 300,
             maxHeight: 'calc(100vh - 32px)', overflowY: 'auto',
-            borderRadius: 12, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
+            borderRadius: 16, borderRight: 'none', border: `1px solid ${PALETTE.border}`,
             boxShadow: '0 10px 34px rgba(20,18,14,0.22)', zIndex: 1000,
           }}
           className="dash-sidebar-float"
@@ -1307,7 +1307,7 @@ export default function Page() {
         {panelOpen ? (
         <aside
           style={{
-            ...styles.sidebar, maxWidth: 420, borderRadius: 12,
+            ...styles.sidebar, maxWidth: 420, borderRadius: 16,
             border: `1px solid ${PALETTE.border}`, borderRight: `1px solid ${PALETTE.border}`,
           }}
           className="dash-sidebar-static"
@@ -1332,7 +1332,7 @@ export default function Page() {
       {viewMode !== 'compare' && (
       <main style={styles.main} className="dash-main">
         <div>
-          <h1 className="dash-title" style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 24, margin: '0 0 4px' }}>
+          <h1 className="dash-title" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
             선택 지역 아파트 {isRatio ? '전세가율' : isRone ? '시세동향' : isRent ? '전월세' : '매매'} 시황
           </h1>
           <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>
@@ -1420,7 +1420,7 @@ export default function Page() {
             {roneUnmapped.length > 0 && (
               <div style={{
                 display: 'flex', gap: 8, fontSize: 12, color: PALETTE.down,
-                background: 'rgba(196,119,106,0.1)', border: `1px solid ${PALETTE.down}`, borderRadius: 6, padding: 10,
+                background: 'rgba(239,68,68,0.08)', border: `1px solid ${PALETTE.accent}`, borderRadius: 10, padding: 10,
               }}>
                 <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>이 통계를 아직 지원하지 않는 지역: {roneUnmapped.map(labelFor).join(', ')}</span>
@@ -1714,13 +1714,13 @@ export default function Page() {
         >
           <div
             style={{
-              background: PALETTE.panel, borderRadius: 12, padding: 20, width: '100%', maxWidth: 640,
+              background: PALETTE.panel, borderRadius: 18, padding: 20, width: '100%', maxWidth: 640,
               maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${PALETTE.border}`,
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <h2 style={{ fontFamily: "'Noto Serif KR', serif", fontSize: 18, margin: 0 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
                 {selectedApt.apt} ({selectedApt.dong})
               </h2>
               <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
