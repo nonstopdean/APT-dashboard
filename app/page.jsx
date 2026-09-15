@@ -45,6 +45,13 @@ function fmtPct(v) {
   return `${s}${v.toFixed(1)}%`;
 }
 
+// 국토부 API는 전용면적(㎡)만 제공하고 공급면적은 주지 않아서 (건물마다 비율이 달라 정확한
+// 환산이 불가능), 평 단위 전용면적만 정수로 보여준다.
+function fmtPyeong(area) {
+  if (area == null || Number.isNaN(area)) return '-';
+  return `${Math.round(area / 3.3058)}평`;
+}
+
 // KOSTAT 지도 데이터의 시/도 코드(앞 2자리) -> 시/도 이름. 우리 REGION_GROUPS와 이름이 다른
 // (개편된) 시/도는 별칭으로 연결한다.
 const KOSTAT_SIDO_CODE_TO_NAME = {
@@ -181,7 +188,14 @@ export default function Page() {
           const codes = [];
           if (group) {
             const exact = group.items.find((it) => it.name.trim() === featureName);
-            if (exact) codes.push(exact.code);
+            if (exact) {
+              codes.push(exact.code);
+            } else {
+              // 일부 구 지도 데이터는 상위 시 이름 없이 구 이름만 붙어 있다
+              // (예: "성남시 분당구"가 아니라 "분당구"). 그런 경우를 대비한 보조 매칭.
+              const suffixMatch = group.items.find((it) => it.name.trim().endsWith(` ${featureName}`));
+              if (suffixMatch) codes.push(suffixMatch.code);
+            }
             // 이 지도 데이터는 2018년 기준이라, 그 이후 구로 나뉜 도시(예: 화성시 동탄구)는
             // 지도엔 통합된 폴리곤 하나만 있다. 그런 하위 지역 코드도 같이 묶어둔다.
             group.items
@@ -1274,7 +1288,8 @@ export default function Page() {
                       <th style={styles.th}>지역</th>
                       <th style={styles.th}>단지명</th>
                       <th style={styles.th}>동</th>
-                      <th style={styles.th}>전용면적</th>
+                      <th style={styles.th}>층</th>
+                      <th style={styles.th}>전용면적(평)</th>
                       <th style={styles.th}>평당가</th>
                       <th style={styles.th}>최근 {isRent ? '보증금' : '거래금액'}</th>
                       <th style={styles.th}>최근 계약일</th>
@@ -1292,7 +1307,8 @@ export default function Page() {
                           {c.apt} ({c.dong})
                         </td>
                         <td style={styles.td}>{c.aptDong ? `${c.aptDong}동` : '-'}</td>
-                        <td style={styles.td}>{c.area?.toFixed(1)}㎡</td>
+                        <td style={styles.td}>{c.floor}층</td>
+                        <td style={styles.td}>{fmtPyeong(c.area)}</td>
                         <td style={styles.td}>{fmtWon(c.unitPrice)}</td>
                         <td style={styles.td}>{fmtWon(isRent ? c.deposit : c.amount)}</td>
                         <td style={styles.td}>{c.year}.{c.month}.{c.day}</td>
@@ -1300,7 +1316,7 @@ export default function Page() {
                       </tr>
                     ))}
                     {complexCompare.length === 0 && (
-                      <tr><td style={styles.td} colSpan={8}>비교할 단지가 없습니다.</td></tr>
+                      <tr><td style={styles.td} colSpan={9}>비교할 단지가 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1317,7 +1333,7 @@ export default function Page() {
                       <th style={styles.th}>단지명</th>
                       <th style={styles.th}>동</th>
                       <th style={styles.th}>계약일</th>
-                      <th style={styles.th}>전용면적</th>
+                      <th style={styles.th}>전용면적(평)</th>
                       <th style={styles.th}>층</th>
                       {isRent ? (
                         <>
@@ -1340,7 +1356,7 @@ export default function Page() {
                         </td>
                         <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                         <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
-                        <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
+                        <td style={styles.td}>{fmtPyeong(t.area)}</td>
                         <td style={styles.td}>{t.floor}층</td>
                         {isRent ? (
                           <>
@@ -1397,7 +1413,7 @@ export default function Page() {
                   <tr>
                     <th style={styles.th}>동</th>
                     <th style={styles.th}>계약일</th>
-                    <th style={styles.th}>전용면적</th>
+                    <th style={styles.th}>전용면적(평)</th>
                     <th style={styles.th}>층</th>
                     {isRent ? (
                       <>
@@ -1415,7 +1431,7 @@ export default function Page() {
                     <tr key={i}>
                       <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                       <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
-                      <td style={styles.td}>{t.area?.toFixed(1)}㎡</td>
+                      <td style={styles.td}>{fmtPyeong(t.area)}</td>
                       <td style={styles.td}>{t.floor}층</td>
                       {isRent ? (
                         <>

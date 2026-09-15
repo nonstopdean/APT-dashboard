@@ -79,7 +79,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
           });
           const labelFor = () => {
             const value = valuesRef.current?.[idx];
-            return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (검색되지 않은 지역)`;
+            return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
           };
           window.naver.maps.Event.addListener(polygon, 'click', () => {
             if (f.code) onSelectRef.current?.(f.code);

@@ -68,14 +68,14 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
           polygon.setMap(mapRef.current);
           window.kakao.maps.event.addListener(polygon, 'click', () => {
             const value = valuesRef.current?.[idx];
-            setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name}: 검색되지 않은 지역 (클릭하면 추가됩니다)`);
+            setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (클릭하면 비교 목록에 추가됩니다)`);
             if (f.code) onSelectRef.current?.(f.code);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
             const value = valuesRef.current?.[idx];
             const hasValue = value != null;
             polygon.setOptions({ fillOpacity: hasValue ? 0.7 : 0.12 });
-            setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (검색되지 않은 지역)`);
+            setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
           });
           window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
             polygon.setOptions(styleFor(idx));
