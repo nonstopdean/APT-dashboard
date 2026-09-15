@@ -449,6 +449,9 @@ export default function Page() {
       .sort((a, b) => a.unitPrice - b.unitPrice);
   }, [allTx, isRent]);
 
+  const [compareAKey, setCompareAKey] = useState('');
+  const [compareBKey, setCompareBKey] = useState('');
+
   const compareOptions = useMemo(() => {
     const regionOpts = selected.map((code) => ({
       value: `region:${code}`, kind: 'region', code, label: labelFor(code),
@@ -607,8 +610,6 @@ export default function Page() {
   };
 
   const [drillSido, setDrillSido] = useState('');
-  const [compareAKey, setCompareAKey] = useState('');
-  const [compareBKey, setCompareBKey] = useState('');
   const [focusLatLng, setFocusLatLng] = useState(null);
 
   const codeToLatLng = useMemo(() => {
