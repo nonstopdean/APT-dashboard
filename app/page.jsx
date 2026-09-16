@@ -2241,7 +2241,7 @@ export default function Page() {
               <div style={styles.card} className="ui-card">
                 <div style={styles.kpiLabel}>선택 지역 평균매매가격 평균</div>
                 <div style={styles.kpiValue}>
-                  {roneKpis.avg != null ? `${Math.round(roneKpis.avg).toLocaleString()}${roneKpis.unit || '만원'}` : '-'}
+                  {roneKpis.avg != null ? `${Math.round(roneKpis.avg).toLocaleString()}만원` : '-'}
                 </div>
               </div>
               <div style={styles.card} className="ui-card">
@@ -2262,15 +2262,20 @@ export default function Page() {
 
 
             <div style={styles.card} className="ui-card">
-              <h2 style={styles.sectionTitle}>평균매매가격 추이 (한국부동산원)</h2>
+              <h2 style={styles.sectionTitle}>평균매매가격 추이 (한국부동산원, 만원)</h2>
               <div style={{ width: '100%', height: 280 }}>
                 <ResponsiveContainer>
                   <LineChart data={roneChartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={PALETTE.border} vertical={false} />
                     <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} />
+                    <YAxis
+                      stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={60}
+                      tickFormatter={(v) => v.toLocaleString()}
+                      domain={['auto', 'auto']}
+                    />
                     <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                      labelStyle={{ color: PALETTE.textPrimary }} />
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => (v == null ? '-' : `${Math.round(v).toLocaleString()}만원`)} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     {selected.filter((c) => !roneUnmapped.includes(c)).map((code, i) => (
                       <Line key={code} type="monotone" dataKey={labelFor(code)}
@@ -2297,7 +2302,7 @@ export default function Page() {
                     <tr key={r.code}>
                       <td style={styles.td}>{r.name}</td>
                       <td style={styles.td}>
-                        {r.unsupported ? '미지원' : r.latest != null ? `${Math.round(r.latest).toLocaleString()}${r.unit || '만원'}` : '-'}
+                        {r.unsupported ? '미지원' : r.latest != null ? `${Math.round(r.latest).toLocaleString()}만원` : '-'}
                       </td>
                       <td style={{ ...styles.td, color: r.change > 0 ? PALETTE.up : r.change < 0 ? PALETTE.down : PALETTE.textSecondary }}>
                         {r.unsupported ? '-' : fmtPct(r.change)}
