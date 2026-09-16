@@ -1,4 +1,4 @@
-import { kvReady, kvGet, kvSet } from '../../../lib/kv';
+import { kvReady, kvMGet, kvMSet } from '../../../lib/kv';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,29 +12,33 @@ export async function GET(request) {
   const keys = (searchParams.get('keys') || '').split(',').map((k) => k.trim()).filter(Boolean);
   if (keys.length === 0) return Response.json({ data: {} });
 
-  const data = {};
-  await Promise.all(keys.map(async (key) => {
-    try {
-      const coord = await kvGet(PREFIX + key);
-      if (coord) data[key] = coord;
-    } catch (e) {
-      // 조회 실패는 조용히 넘어간다 — 클라이언트가 다시 검색하면 그만이다.
-    }
-  }));
-  return Response.json({ data });
+  try {
+    const prefixed = keys.map((k) => PREFIX + k);
+    const hits = await kvMGet(prefixed);
+    const data = {};
+    keys.forEach((k) => {
+      const v = hits[PREFIX + k];
+      if (v) data[k] = v;
+    });
+    return Response.json({ data });
+  } catch (e) {
+    // 서버 캐시 조회가 실패해도 지도 자체는 계속 동작해야 하므로 빈 결과로 넘어간다.
+    return Response.json({ data: {} });
+  }
 }
 
 export async function POST(request) {
   if (!kvReady()) return Response.json({ ok: false });
   const body = await request.json();
   const entries = Array.isArray(body?.entries) ? body.entries : [];
-  await Promise.all(entries.slice(0, 300).map(async (e) => {
-    if (!e?.key || e.lat == null || e.lng == null) return;
-    try {
-      await kvSet(PREFIX + e.key, { lat: e.lat, lng: e.lng });
-    } catch (err) {
-      // 저장 실패해도 다음 요청 때 다시 시도하면 되므로 조용히 넘어간다.
-    }
-  }));
+  const valid = entries
+    .slice(0, 300)
+    .filter((e) => e?.key && e.lat != null && e.lng != null)
+    .map((e) => [PREFIX + e.key, { lat: e.lat, lng: e.lng }]);
+  try {
+    await kvMSet(valid);
+  } catch (e) {
+    // 저장 실패해도 다음 요청 때 다시 시도하면 되므로 조용히 넘어간다.
+  }
   return Response.json({ ok: true });
 }
