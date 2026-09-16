@@ -6,25 +6,32 @@ import { geocodeCache, runPool } from '../lib/geocodeCache';
 // features: [{ feature, name, code }] - 지오메트리는 안정적으로 유지되는 배열(선택 상태가 바뀌어도
 // 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
 // 색상만 자주 바뀔 수 있음. 이렇게 나눠서, 클릭할 때마다 도형을 전부 새로 그리지 않고 색만 바꾼다.
-export default function KakaoChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect }) {
+// dongFeatures/dongValues: 같은 모양이지만 "동" 단위 — 중간 확대 단계에서 구 대신 보여준다.
+export default function KakaoChoropleth({
+  features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
+  dongFeatures, dongValues,
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
+  const polygonsRef = useRef([]); // [{ polygon, featureIndex }] - 구 단위
+  const dongPolygonsRef = useRef([]); // [{ polygon, featureIndex }] - 동 단위
   const markersRef = useRef([]); // [{ marker, key }]
   const placesRef = useRef(null);
   const onComplexSelectRef = useRef(onComplexSelect);
   const valuesRef = useRef(values);
+  const dongValuesRef = useRef(dongValues);
   const colorForRef = useRef(colorFor);
   const onSelectRef = useRef(onSelect);
   const [caption, setCaption] = useState('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => { valuesRef.current = values; }, [values]);
+  useEffect(() => { dongValuesRef.current = dongValues; }, [dongValues]);
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
 
-  const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
+  const zoomTierRef = useRef('far'); // 'far'(구) | 'mid'(동) | 'near'(동, 연하게 + 마커)
 
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
@@ -32,20 +39,20 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     const tier = zoomTierRef.current;
     if (tier === 'near') {
       return {
-        strokeWeight: hasValue ? 1.5 : 0.5,
+        strokeWeight: hasValue ? 1 : 0.4,
         strokeColor: borderColor || '#B8AFA0',
-        strokeOpacity: hasValue ? 0.55 : 0.08,
+        strokeOpacity: hasValue ? 0.35 : 0.06,
         fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.12 : 0,
+        fillOpacity: hasValue ? 0.06 : 0,
       };
     }
     if (tier === 'mid') {
       return {
-        strokeWeight: hasValue ? 2 : 0.5,
+        strokeWeight: hasValue ? 1.2 : 0.4,
         strokeColor: borderColor || '#8A8172',
-        strokeOpacity: hasValue ? 0.85 : 0.12,
+        strokeOpacity: hasValue ? 0.5 : 0.08,
         fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.22 : 0,
+        fillOpacity: hasValue ? 0.1 : 0,
       };
     }
     return {
@@ -57,16 +64,41 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     };
   };
 
+  const dongStyleFor = (idx) => {
+    const value = dongValuesRef.current?.[idx];
+    const hasValue = value != null;
+    const near = zoomTierRef.current === 'near';
+    return {
+      strokeWeight: hasValue ? 1.5 : 0.4,
+      strokeColor: borderColor || '#8A8172',
+      strokeOpacity: near ? (hasValue ? 0.5 : 0.08) : (hasValue ? 0.9 : 0.12),
+      fillColor: colorForRef.current(value),
+      fillOpacity: near ? (hasValue ? 0.12 : 0) : (hasValue ? 0.3 : 0),
+    };
+  };
+
   const applyAllStyles = () => {
     polygonsRef.current.forEach(({ polygon, featureIndex }) => {
       polygon.setOptions(styleFor(featureIndex));
     });
+    dongPolygonsRef.current.forEach(({ polygon, featureIndex }) => {
+      polygon.setOptions(dongStyleFor(featureIndex));
+    });
   };
 
-  // 카카오 레벨: 숫자가 작을수록 확대된 상태. 대략 far~5레벨 이상(3km+), mid 3~4레벨(1km 안팎),
-  // near 2레벨 이하(약 300m 이내)에 대응하도록 잡았다.
+  // 카카오 레벨: 숫자가 작을수록 확대된 상태. far(구)는 5레벨 이상(3km+), mid(동)는 3~4레벨(1km 안팎),
+  // near(동, 연하게+마커)는 2레벨 이하(약 300m 이내)에 대응하도록 잡았다.
   const FAR_ZOOM_LEVEL = 5;
   const NEAR_ZOOM_LEVEL = 2;
+
+  const updateLayerVisibility = () => {
+    if (!mapRef.current) return;
+    // 구 색칠은 언제나 유지한다(투명도만 tier에 따라 바뀜) — "동" 데이터가 아직 없거나
+    // 실패해도 지역 선택/클릭이 항상 되도록 하는 안전장치. "동" 데이터가 있으면 그 위에 덧그린다.
+    polygonsRef.current.forEach(({ polygon }) => polygon.setMap(mapRef.current));
+    const tier = zoomTierRef.current;
+    dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(tier !== 'far' ? mapRef.current : null));
+  };
 
   const updateMarkerVisibility = () => {
     if (!mapRef.current) return;
@@ -74,8 +106,8 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     markersRef.current.forEach(({ marker }) => marker.setMap(show ? mapRef.current : null));
   };
 
-  // 확대(구/단지 단위)하면 색칠은 옅어지다 빠지고 마커가 나타나고, 축소(전체 구역 단위)하면
-  // 반대로 색칠은 진해지고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
+  // 확대하면 구 색칠 -> 동 색칠(진하게) -> 동 색칠(연하게)+마커 순서로 바뀌고,
+  // 축소하면 반대로 바뀐다 — 실제 부동산 사이트들과 같은 방식.
   const handleZoomChanged = () => {
     if (!mapRef.current) return;
     const level = mapRef.current.getLevel();
@@ -83,6 +115,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     if (tier !== zoomTierRef.current) {
       zoomTierRef.current = tier;
       applyAllStyles();
+      updateLayerVisibility();
     }
     updateMarkerVisibility();
   };
@@ -151,6 +184,7 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
       });
 
       applyAllStyles();
+      updateLayerVisibility();
     }
 
     if (window.kakao && window.kakao.maps) {
@@ -177,6 +211,49 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [features, borderColor]);
+
+  // "동" 단위 도형 생성 — dongFeatures는 선택된 지역의 시/도가 바뀔 때만 갱신되므로 별도 effect로 둔다.
+  useEffect(() => {
+    if (!mapRef.current || !window.kakao?.maps) return undefined;
+    dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+    dongPolygonsRef.current = [];
+    if (!dongFeatures || dongFeatures.length === 0) return undefined;
+
+    dongFeatures.forEach((f, idx) => {
+      if (!f.feature) return;
+      const geomType = f.feature.geometry.type;
+      const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
+
+      polys.forEach((rings) => {
+        const path = rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
+        const polygon = new window.kakao.maps.Polygon({ path, ...dongStyleFor(idx) });
+        polygon.setMap(zoomTierRef.current !== 'far' ? mapRef.current : null);
+        window.kakao.maps.event.addListener(polygon, 'click', () => {
+          const value = dongValuesRef.current?.[idx];
+          setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
+          if (f.code) onSelectRef.current?.(f.code);
+        });
+        window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
+          const value = dongValuesRef.current?.[idx];
+          const hasValue = value != null;
+          if (zoomTierRef.current === 'mid') {
+            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+          }
+          setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
+        });
+        window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
+          polygon.setOptions(dongStyleFor(idx));
+          setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
+        });
+        dongPolygonsRef.current.push({ polygon, featureIndex: idx });
+      });
+    });
+
+    return () => {
+      dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dongFeatures, borderColor]);
 
   // 값(색상)만 바뀔 때는 기존 도형의 옵션만 갱신한다 (재생성 없음 -> 클릭/선택이 즉각 반응).
   useEffect(() => {

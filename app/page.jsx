@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode, isRegulatedByCode } from '../lib/regions';
+import { fetchDongGeoForSido, normalizeDongName } from '../lib/dong-geo';
 import { nearestStation } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
@@ -649,6 +650,66 @@ export default function Page() {
     return filtered.sort((a, b) => a.unitPrice - b.unitPrice);
   }, [allTx, isRent, complexSort]);
 
+  const [analyticsMetric, setAnalyticsMetric] = useState('change');
+  const [analyticsScope, setAnalyticsScope] = useState('region');
+
+  const analyticsRows = useMemo(() => {
+    const rows = [];
+    if (analyticsScope === 'region') {
+      selected.forEach((code) => {
+        const series = monthlyByRegion[code] || [];
+        const valid = series.filter((m) => m.avgPyeong != null);
+        const first = valid[0]; const last = valid[valid.length - 1];
+        const change = first?.avgPyeong ? ((last.avgPyeong - first.avgPyeong) / first.avgPyeong) * 100 : null;
+        const volume = series.reduce((sum, m) => sum + (m.count || 0), 0);
+        const prices = [];
+        series.forEach((m) => (rawByRegionMonth[`${code}_${m.ym}`] || []).forEach((t) => {
+          const v = isRent ? (t.isJeonse ? t.deposit : null) : t.amount; if (v != null) prices.push(v);
+        }));
+        rows.push({
+          key: code, name: labelFor(code), latest: last?.avgPyeong ?? null, change, volume,
+          min: prices.length ? Math.min(...prices) : null, max: prices.length ? Math.max(...prices) : null,
+        });
+      });
+    } else {
+      const groups = {};
+      allTx.forEach((t) => {
+        const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+        (groups[key] ||= []).push(t);
+      });
+      Object.entries(groups).forEach(([key, txs]) => {
+        const ordered = [...txs].sort((a, b) => `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`.localeCompare(`${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`));
+        const latest = ordered[0]; const oldest = ordered[ordered.length - 1];
+        const lp = isRent ? (latest.isJeonse ? latest.depositPerPyeong : null) : latest.pricePerPyeong;
+        const op = isRent ? (oldest.isJeonse ? oldest.depositPerPyeong : null) : oldest.pricePerPyeong;
+        const prices = txs.map((t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount)).filter((v) => v != null);
+        rows.push({
+          key, name: latest.apt, sub: `${labelFor(latest.regionCode)} · ${latest.dong}`,
+          latest: lp, change: lp != null && op ? ((lp - op) / op) * 100 : null, volume: txs.length,
+          min: prices.length ? Math.min(...prices) : null, max: prices.length ? Math.max(...prices) : null,
+          apt: latest.apt, dong: latest.dong, regionCode: latest.regionCode,
+        });
+      });
+    }
+    return rows.filter((r) => r.latest != null || r.volume > 0);
+  }, [analyticsScope, selected, monthlyByRegion, rawByRegionMonth, allTx, isRent]);
+
+  const analyticsSorted = useMemo(() => {
+    const arr = [...analyticsRows];
+    if (analyticsMetric === 'price') return arr.sort((a, b) => (b.latest ?? -Infinity) - (a.latest ?? -Infinity));
+    if (analyticsMetric === 'volume') return arr.sort((a, b) => b.volume - a.volume);
+    if (analyticsMetric === 'range') return arr.sort((a, b) => ((b.max - b.min) || 0) - ((a.max - a.min) || 0));
+    return arr.sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
+  }, [analyticsRows, analyticsMetric]);
+
+  const analyticsKpis = useMemo(() => {
+    const withPrice = analyticsRows.filter((r) => r.latest != null);
+    const avg = withPrice.length ? withPrice.reduce((s, r) => s + r.latest, 0) / withPrice.length : null;
+    const volume = analyticsRows.reduce((s, r) => s + r.volume, 0);
+    const changes = analyticsRows.map((r) => r.change).filter((v) => v != null).sort((a, b) => a - b);
+    return { avg, volume, median: changes.length ? changes[Math.floor(changes.length / 2)] : null, count: analyticsRows.length };
+  }, [analyticsRows]);
+
   const [fullComplexList, setFullComplexList] = useState([]);
 
   useEffect(() => {
@@ -950,6 +1011,69 @@ export default function Page() {
     return { features: mapDisplayFeatures, values: mapValues, min, max };
   }, [mapDisplayFeatures, mapValues]);
 
+  // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
+  const [dongRawFeatures, setDongRawFeatures] = useState([]);
+  const loadedSidosRef = useRef(new Set());
+
+  useEffect(() => {
+    const neededSidos = new Set();
+    selected.forEach((code) => {
+      for (const g of REGION_GROUPS) {
+        if (g.items.some((it) => it.code === code) || (SIDO_AGGREGATES.find((a) => a.code === code)?.sido === g.sido)) {
+          neededSidos.add(g.sido);
+        }
+      }
+    });
+    const toLoad = [...neededSidos].filter((s) => !loadedSidosRef.current.has(s));
+    if (toLoad.length === 0) return undefined;
+    let cancelled = false;
+    Promise.all(toLoad.map(async (sido) => {
+      const feats = await fetchDongGeoForSido(sido);
+      loadedSidosRef.current.add(sido);
+      const group = REGION_GROUPS.find((g) => g.sido === sido);
+      return feats.map((f) => {
+        const parts = (f.properties.adm_nm || '').trim().split(/\s+/);
+        const dongName = parts[parts.length - 1];
+        const guName = parts.slice(1, -1).join(' ');
+        let code;
+        if (group) {
+          if (parts.length === 2) {
+            // 세종처럼 구가 없는 경우: 시/도 자체가 바로 상위 지역
+            code = group.items[0]?.code;
+          } else {
+            code = group.items.find((it) => it.name === guName)?.code;
+          }
+        }
+        return { feature: f, name: dongName, regionCode: code };
+      }).filter((f) => f.regionCode);
+    })).then((results) => {
+      if (cancelled) return;
+      setDongRawFeatures((prev) => [...prev, ...results.flat()]);
+    });
+    return () => { cancelled = true; };
+  }, [selected]);
+
+  const dongMapData = useMemo(() => {
+    if (dongRawFeatures.length === 0) return null;
+    const relevant = dongRawFeatures.filter((f) => selected.some((code) => expandRegionCode(code).includes(f.regionCode)));
+    const values = relevant.map((f) => {
+      const rows = allTx.filter((t) => t.regionCode === f.regionCode && normalizeDongName(t.dong) === normalizeDongName(f.name));
+      const vals = rows
+        .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
+        .filter((v) => v != null);
+      return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+    });
+    const available = values.filter((v) => v != null);
+    const min = available.length ? Math.min(...available) : 0;
+    const max = available.length ? Math.max(...available) : 1;
+    return {
+      features: relevant.map((f) => ({ feature: f.feature, name: f.name, code: f.regionCode })),
+      values,
+      min,
+      max,
+    };
+  }, [dongRawFeatures, selected, allTx, isRent]);
+
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>{content}</div>
@@ -987,10 +1111,12 @@ export default function Page() {
             values={seoulMapData.values}
             colorFor={colorFor}
             borderColor={PALETTE.border}
-            onSelect={(code) => addRegion(code)}
+            onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
             complexes={mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
+            dongFeatures={dongMapData?.features}
+            dongValues={dongMapData?.values}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -999,10 +1125,12 @@ export default function Page() {
             values={seoulMapData.values}
             colorFor={colorFor}
             borderColor={PALETTE.border}
-            onSelect={(code) => addRegion(code)}
+            onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
             complexes={mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
+            dongFeatures={dongMapData?.features}
+            dongValues={dongMapData?.values}
             height="100%"
           />
         ) : (
@@ -1017,7 +1145,7 @@ export default function Page() {
                   stroke={PALETTE.border}
                   strokeWidth={0.75}
                   style={{ cursor: f.code ? 'pointer' : 'default' }}
-                  onClick={() => f.code && addRegion(f.code)}
+                  onClick={() => f.code && addRegionAndFetch(f.code)}
                 >
                   <title>{f.name}{value != null ? `: ${Math.round(value).toLocaleString()}` : ' (데이터 없음)'}</title>
                 </path>
@@ -1367,6 +1495,7 @@ export default function Page() {
             { key: 'map', label: '지도' },
             { key: 'compare', label: '비교분석' },
             { key: 'subscriptions', label: '분양정보' },
+            { key: 'analytics', label: '순위·통계' },
             { key: 'favorites', label: '즐겨찾기' },
           ].map((t) => (
             <div
@@ -1434,8 +1563,86 @@ export default function Page() {
           </button>
         )}
 
-        <div style={{ position: 'relative', flex: 1, touchAction: 'none' }}>
+        <div style={{ position: 'relative', flex: 1, touchAction: 'none', minWidth: 0 }}>
           {renderSeoulMap()}
+
+          {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
+          <div className="map-portal-toolbar" style={{
+            position: 'absolute', top: 14, left: 14, right: 14, zIndex: 20,
+            display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none',
+          }}>
+            <div style={{
+              pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 4,
+              background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
+              borderRadius: 12, padding: 5, boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+              backdropFilter: 'blur(8px)', overflowX: 'auto', maxWidth: 'calc(100% - 10px)',
+            }}>
+              {[['trade', '매매'], ['rent', '전월세'], ['silv', '분양권'], ['rone', '시세동향'], ['ratio', '전세가율']].map(([key, label]) => (
+                <button key={key} className="portal-pill" onClick={() => setDealTypeSafe(key)} style={{
+                  border: 'none', borderRadius: 9, padding: '8px 12px', whiteSpace: 'nowrap',
+                  background: dealType === key ? PALETTE.accent : 'transparent',
+                  color: dealType === key ? '#fff' : PALETTE.textSecondary,
+                  fontSize: 12, fontWeight: dealType === key ? 700 : 500, cursor: 'pointer',
+                }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="map-status-card" style={{
+              marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
+              border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
+              boxShadow: '0 4px 18px rgba(0,0,0,0.10)', fontSize: 11.5, whiteSpace: 'nowrap',
+            }}>
+              <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
+            </div>
+          </div>
+
+          {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
+          {allTx.length > 0 && (
+            <div className="map-complex-panel" style={{
+              position: 'absolute', top: 72, right: 14, bottom: 18, width: 292, zIndex: 19,
+              background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`,
+              borderRadius: 14, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', overflow: 'hidden',
+              backdropFilter: 'blur(10px)',
+            }}
+            >
+              <div style={{ padding: '14px 14px 10px', borderBottom: `1px solid ${PALETTE.border}` }}>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>단지 탐색</div>
+                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 3 }}>
+                  최근 거래가 있는 단지를 선택하면 상세정보를 확인할 수 있어요.
+                </div>
+              </div>
+              <div style={{ overflowY: 'auto', height: 'calc(100% - 64px)' }}>
+                {complexCompare.slice(0, 40).map((c, i) => {
+                  const coord = codeToLatLng[c.regionCode];
+                  return (
+                    <button
+                      key={`${c.regionCode}|${c.dong}|${c.apt}|${i}`}
+                      onClick={() => {
+                        setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: coord?.lat, lng: coord?.lng });
+                      }}
+                      style={{
+                        width: '100%', textAlign: 'left', border: 'none', borderBottom: `1px solid ${PALETTE.border}`,
+                        background: 'transparent', padding: '11px 14px', cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</div>
+                          <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong} · {c.count}건</div>
+                        </div>
+                        <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 800 }}>{fmtWon(isRent ? c.deposit : c.amount)}</div>
+                          <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>{fmtArea(c.area)}</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
       ) : viewMode === 'compare' ? (
@@ -1661,6 +1868,72 @@ export default function Page() {
           )}
         </div>
       </div>
+      ) : viewMode === 'analytics' ? (
+        <div style={{ padding: '20px 20px 40px', maxWidth: 1400, margin: '0 auto' }}>
+          <div style={{ marginBottom: 18 }}>
+            <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>순위·통계 분석</h1>
+            <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래 데이터를 기준으로 가격수준·변동률·거래량·가격범위를 비교합니다.</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
+            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>분석 대상</div><div style={styles.kpiValue}>{analyticsKpis.count.toLocaleString()}개</div></div>
+            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>최근 평균 {unitLabel}</div><div style={styles.kpiValue}>{analyticsKpis.avg != null ? fmtWon(analyticsKpis.avg) : '-'}</div></div>
+            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>조회 거래량</div><div style={styles.kpiValue}>{analyticsKpis.volume.toLocaleString()}건</div></div>
+            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>변동률 중앙값</div><div style={styles.kpiValue}>{fmtPct(analyticsKpis.median)}</div></div>
+          </div>
+          <div style={{ ...styles.card, marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['region', '지역 분석'], ['complex', '단지 분석']].map(([k, l]) => (
+                <button key={k} className="portal-pill" style={{ background: analyticsScope === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsScope === k ? '#fff' : PALETTE.textPrimary }} onClick={() => setAnalyticsScope(k)}>{l}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[['change', '기간 변동률'], ['price', '가격수준'], ['volume', '거래량'], ['range', '가격범위']].map(([k, l]) => (
+                <button key={k} className="portal-pill" style={{ background: analyticsMetric === k ? PALETTE.accent : PALETTE.panelAlt, color: analyticsMetric === k ? '#fff' : PALETTE.textPrimary }} onClick={() => setAnalyticsMetric(k)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div style={styles.card} className="ui-card">
+            <h2 style={styles.sectionTitle}>{analyticsScope === 'region' ? '지역별' : '단지별'} 분석 순위</h2>
+            <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>선택한 지표를 기준으로 정렬한 수치 비교입니다.</p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>순번</th>
+                    <th style={styles.th}>{analyticsScope === 'region' ? '지역' : '단지'}</th>
+                    <th style={styles.th}>최근 {unitLabel}</th>
+                    <th style={styles.th}>기간 변동률</th>
+                    <th style={styles.th}>거래량</th>
+                    <th style={styles.th}>최저 거래가</th>
+                    <th style={styles.th}>최고 거래가</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analyticsSorted.map((r, i) => (
+                    <tr key={r.key}>
+                      <td style={styles.td}>{i + 1}</td>
+                      <td
+                        style={{ ...styles.td, color: analyticsScope === 'complex' ? PALETTE.accent : PALETTE.textPrimary, cursor: analyticsScope === 'complex' ? 'pointer' : 'default' }}
+                        onClick={() => analyticsScope === 'complex' && setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}
+                      >
+                        {r.name}
+                        {r.sub && <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{r.sub}</div>}
+                      </td>
+                      <td style={styles.td}>{r.latest != null ? fmtWon(r.latest) : '-'}</td>
+                      <td style={{ ...styles.td, color: r.change > 0 ? PALETTE.up : r.change < 0 ? PALETTE.down : PALETTE.textSecondary }}>{fmtPct(r.change)}</td>
+                      <td style={styles.td}>{r.volume.toLocaleString()}건</td>
+                      <td style={styles.td}>{r.min != null ? fmtManwon(r.min) : '-'}</td>
+                      <td style={styles.td}>{r.max != null ? fmtManwon(r.max) : '-'}</td>
+                    </tr>
+                  ))}
+                  {analyticsSorted.length === 0 && (
+                    <tr><td style={styles.td} colSpan={7}>분석할 데이터가 없습니다. 먼저 지역을 선택하고 조회해주세요.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       ) : viewMode === 'favorites' ? (
       <div style={{ padding: '20px 20px 0' }}>
         <div style={styles.card} className="ui-card">
@@ -1738,7 +2011,7 @@ export default function Page() {
       </div>
       )}
 
-      {viewMode !== 'compare' && viewMode !== 'subscriptions' && viewMode !== 'favorites' && (
+      {viewMode !== 'compare' && viewMode !== 'subscriptions' && viewMode !== 'favorites' && viewMode !== 'analytics' && (
       <main style={styles.main} className="dash-main">
         <div>
           <h1 className="dash-title" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
@@ -2339,6 +2612,14 @@ export default function Page() {
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
           .main-nav { gap: 0 !important; }
+          .map-complex-panel { width: 240px !important; top: 68px !important; bottom: 12px !important; }
+          .map-status-card { display: none !important; }
+          .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }
+        }
+        @media (max-width: 520px) {
+          .map-complex-panel { left: 8px !important; right: 8px !important; width: auto !important; top: auto !important; height: 34vh !important; bottom: 8px !important; }
+          .map-portal-toolbar { right: 8px !important; }
+          .portal-pill { padding: 7px 9px !important; }
         }
       `}</style>
     </div>

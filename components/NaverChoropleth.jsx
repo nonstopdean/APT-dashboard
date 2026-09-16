@@ -5,20 +5,26 @@ import { geocodeCache, runPool } from '../lib/geocodeCache';
 
 // features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
-export default function NaverChoropleth({ features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect }) {
+export default function NaverChoropleth({
+  features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
+  dongFeatures, dongValues,
+}) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  const polygonsRef = useRef([]); // [{ polygon, featureIndex }]
+  const polygonsRef = useRef([]); // [{ polygon, featureIndex }] - 구 단위
+  const dongPolygonsRef = useRef([]); // [{ polygon, featureIndex }] - 동 단위
   const markersRef = useRef([]); // [{ marker, key }]
   const kakaoPlacesRef = useRef(null);
   const infoWindowRef = useRef(null);
   const valuesRef = useRef(values);
+  const dongValuesRef = useRef(dongValues);
   const colorForRef = useRef(colorFor);
   const onSelectRef = useRef(onSelect);
   const onComplexSelectRef = useRef(onComplexSelect);
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => { valuesRef.current = values; }, [values]);
+  useEffect(() => { dongValuesRef.current = dongValues; }, [dongValues]);
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
@@ -72,20 +78,20 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     const tier = zoomTierRef.current;
     if (tier === 'near') {
       return {
-        strokeWeight: hasValue ? 1.5 : 0.5,
+        strokeWeight: hasValue ? 1 : 0.4,
         strokeColor: borderColor || '#B8AFA0',
-        strokeOpacity: hasValue ? 0.55 : 0.08,
+        strokeOpacity: hasValue ? 0.35 : 0.06,
         fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.12 : 0,
+        fillOpacity: hasValue ? 0.06 : 0,
       };
     }
     if (tier === 'mid') {
       return {
-        strokeWeight: hasValue ? 2 : 0.5,
+        strokeWeight: hasValue ? 1.2 : 0.4,
         strokeColor: borderColor || '#8A8172',
-        strokeOpacity: hasValue ? 0.85 : 0.12,
+        strokeOpacity: hasValue ? 0.5 : 0.08,
         fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.22 : 0,
+        fillOpacity: hasValue ? 0.1 : 0,
       };
     }
     return {
@@ -97,10 +103,34 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     };
   };
 
+  const dongStyleFor = (idx) => {
+    const value = dongValuesRef.current?.[idx];
+    const hasValue = value != null;
+    const near = zoomTierRef.current === 'near';
+    return {
+      strokeWeight: hasValue ? 1.5 : 0.4,
+      strokeColor: borderColor || '#8A8172',
+      strokeOpacity: near ? (hasValue ? 0.5 : 0.08) : (hasValue ? 0.9 : 0.12),
+      fillColor: colorForRef.current(value),
+      fillOpacity: near ? (hasValue ? 0.12 : 0) : (hasValue ? 0.3 : 0),
+    };
+  };
+
   const applyAllStyles = () => {
     polygonsRef.current.forEach(({ polygon, featureIndex }) => {
       polygon.setOptions(styleFor(featureIndex));
     });
+    dongPolygonsRef.current.forEach(({ polygon, featureIndex }) => {
+      polygon.setOptions(dongStyleFor(featureIndex));
+    });
+  };
+
+  const updateLayerVisibility = () => {
+    if (!mapRef.current) return;
+    // 구 색칠은 언제나 유지한다 — "동" 데이터가 없거나 실패해도 지역 선택이 항상 되도록 하는 안전장치.
+    polygonsRef.current.forEach(({ polygon }) => polygon.setMap(mapRef.current));
+    const tier = zoomTierRef.current;
+    dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(tier !== 'far' ? mapRef.current : null));
   };
 
   // 확대(구/단지 단위)하면 색칠은 옅어지다 빠지고 마커가 나타나고, 축소(전체 구역 단위)하면
@@ -112,6 +142,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     if (tier !== zoomTierRef.current) {
       zoomTierRef.current = tier;
       applyAllStyles();
+      updateLayerVisibility();
     }
     updateMarkerVisibility();
   };
@@ -188,6 +219,7 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
       });
 
       applyAllStyles();
+      updateLayerVisibility();
     }
 
     if (window.naver && window.naver.maps) {
@@ -214,6 +246,61 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [features, borderColor]);
+
+  // "동" 단위 도형 생성 — dongFeatures는 선택된 지역의 시/도가 바뀔 때만 갱신되므로 별도 effect로 둔다.
+  useEffect(() => {
+    if (!mapRef.current || !window.naver?.maps) return undefined;
+    dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+    dongPolygonsRef.current = [];
+    if (!dongFeatures || dongFeatures.length === 0) return undefined;
+
+    dongFeatures.forEach((f, idx) => {
+      if (!f.feature) return;
+      const geomType = f.feature.geometry.type;
+      const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
+
+      polys.forEach((rings) => {
+        const path = rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng));
+        const polygon = new window.naver.maps.Polygon({
+          map: zoomTierRef.current !== 'far' ? mapRef.current : null,
+          paths: [path],
+          clickable: true,
+          ...dongStyleFor(idx),
+        });
+        const labelFor = () => {
+          const value = dongValuesRef.current?.[idx];
+          return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
+        };
+        window.naver.maps.Event.addListener(polygon, 'click', () => {
+          if (f.code) onSelectRef.current?.(f.code);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+          const value = dongValuesRef.current?.[idx];
+          const hasValue = value != null;
+          if (zoomTierRef.current === 'mid') {
+            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+          }
+          infoWindowRef.current?.setContent(
+            `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
+          );
+          infoWindowRef.current?.open(mapRef.current, e.coord);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
+          infoWindowRef.current?.setPosition(e.coord);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
+          polygon.setOptions(dongStyleFor(idx));
+          infoWindowRef.current?.close();
+        });
+        dongPolygonsRef.current.push({ polygon, featureIndex: idx });
+      });
+    });
+
+    return () => {
+      dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dongFeatures, borderColor]);
 
   useEffect(() => {
     applyAllStyles();
