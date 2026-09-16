@@ -37,22 +37,11 @@ export default function KakaoChoropleth({
     const value = valuesRef.current?.[idx];
     const hasValue = value != null;
     const tier = zoomTierRef.current;
-    if (tier === 'near') {
+    if (tier !== 'far') {
+      // 확대된 상태에서는 구 색칠을 완전히 숨긴다("동" 레이어와 겹쳐서 진해지는 걸 막기 위함).
+      // 다만 도형 자체는 지도에 남겨둬서(투명해도) 클릭으로 지역을 고를 수 있게 한다.
       return {
-        strokeWeight: hasValue ? 1 : 0.4,
-        strokeColor: borderColor || '#B8AFA0',
-        strokeOpacity: hasValue ? 0.35 : 0.06,
-        fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.06 : 0,
-      };
-    }
-    if (tier === 'mid') {
-      return {
-        strokeWeight: hasValue ? 1.2 : 0.4,
-        strokeColor: borderColor || '#8A8172',
-        strokeOpacity: hasValue ? 0.5 : 0.08,
-        fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.1 : 0,
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0,
       };
     }
     return {
@@ -71,9 +60,9 @@ export default function KakaoChoropleth({
     return {
       strokeWeight: hasValue ? 1.5 : 0.4,
       strokeColor: borderColor || '#8A8172',
-      strokeOpacity: near ? (hasValue ? 0.5 : 0.08) : (hasValue ? 0.9 : 0.12),
+      strokeOpacity: near ? (hasValue ? 0.35 : 0.06) : (hasValue ? 0.9 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.12 : 0) : (hasValue ? 0.3 : 0),
+      fillOpacity: near ? (hasValue ? 0.07 : 0) : (hasValue ? 0.3 : 0),
     };
   };
 
@@ -88,8 +77,8 @@ export default function KakaoChoropleth({
 
   // 카카오 레벨: 숫자가 작을수록 확대된 상태. far(구)는 5레벨 이상(3km+), mid(동)는 3~4레벨(1km 안팎),
   // near(동, 연하게+마커)는 2레벨 이하(약 300m 이내)에 대응하도록 잡았다.
-  const FAR_ZOOM_LEVEL = 5;
-  const NEAR_ZOOM_LEVEL = 2;
+  const FAR_ZOOM_LEVEL = 6;
+  const NEAR_ZOOM_LEVEL = 3;
 
   const updateLayerVisibility = () => {
     if (!mapRef.current) return;

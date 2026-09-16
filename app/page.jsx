@@ -1481,15 +1481,15 @@ export default function Page() {
     <div style={styles.page}>
       <div style={{
         position: 'sticky', top: 0, zIndex: 200,
-        display: 'flex', alignItems: 'center', gap: 28,
-        padding: '0 20px', height: 58, background: '#1A1A1A',
+        display: 'flex', alignItems: 'center', gap: 18,
+        padding: '0 16px', height: 58, background: '#1A1A1A',
         boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <Building2 size={20} color={PALETTE.accent} />
           <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>도갱노노</span>
         </div>
-        <nav style={{ display: 'flex', gap: 10, height: '100%', overflowX: 'auto' }} className="main-nav">
+        <nav style={{ display: 'flex', gap: 2, height: '100%', flex: 1, minWidth: 0 }} className="main-nav">
           {[
             { key: 'normal', label: '대시보드' },
             { key: 'map', label: '지도' },
@@ -1502,8 +1502,8 @@ export default function Page() {
               key={t.key}
               onClick={() => setViewMode(t.key)}
               style={{
-                display: 'flex', alignItems: 'center', height: '100%', padding: '0 14px', cursor: 'pointer',
-                fontSize: 13.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'center', height: '100%', padding: '0 9px', cursor: 'pointer',
+                fontSize: 12.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
                 color: viewMode === t.key ? '#fff' : 'rgba(255,255,255,0.55)',
                 borderBottom: viewMode === t.key ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
                 transition: 'color 0.15s ease, border-color 0.15s ease',
@@ -1513,7 +1513,7 @@ export default function Page() {
             </div>
           ))}
         </nav>
-        <div style={{ marginLeft: 'auto', position: 'relative', flexShrink: 0 }}>
+        <div className="header-search" style={{ marginLeft: 'auto', position: 'relative', flexShrink: 0 }}>
           <input
             type="text"
             value={globalSearch}
@@ -1521,7 +1521,7 @@ export default function Page() {
             onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
             placeholder="지역 또는 단지명 검색"
             style={{
-              width: 180, padding: '7px 12px', borderRadius: 8, border: 'none', outline: 'none',
+              width: 150, padding: '7px 10px', borderRadius: 8, border: 'none', outline: 'none',
               background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 12.5,
             }}
           />
@@ -2612,6 +2612,8 @@ export default function Page() {
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
           .main-nav { gap: 0 !important; }
+          .main-nav > div { padding: 0 6px !important; font-size: 11px !important; }
+          .header-search { display: none !important; }
           .map-complex-panel { width: 240px !important; top: 68px !important; bottom: 12px !important; }
           .map-status-card { display: none !important; }
           .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }

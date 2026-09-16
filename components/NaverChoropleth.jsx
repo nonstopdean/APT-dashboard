@@ -31,8 +31,8 @@ export default function NaverChoropleth({
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
   // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
-  const FAR_ZOOM_LEVEL = 12;
-  const NEAR_ZOOM_LEVEL = 16;
+  const FAR_ZOOM_LEVEL = 11;
+  const NEAR_ZOOM_LEVEL = 15;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
   const updateMarkerVisibility = () => {
@@ -76,22 +76,9 @@ export default function NaverChoropleth({
     const value = valuesRef.current?.[idx];
     const hasValue = value != null;
     const tier = zoomTierRef.current;
-    if (tier === 'near') {
+    if (tier !== 'far') {
       return {
-        strokeWeight: hasValue ? 1 : 0.4,
-        strokeColor: borderColor || '#B8AFA0',
-        strokeOpacity: hasValue ? 0.35 : 0.06,
-        fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.06 : 0,
-      };
-    }
-    if (tier === 'mid') {
-      return {
-        strokeWeight: hasValue ? 1.2 : 0.4,
-        strokeColor: borderColor || '#8A8172',
-        strokeOpacity: hasValue ? 0.5 : 0.08,
-        fillColor: colorForRef.current(value),
-        fillOpacity: hasValue ? 0.1 : 0,
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0,
       };
     }
     return {
@@ -110,9 +97,9 @@ export default function NaverChoropleth({
     return {
       strokeWeight: hasValue ? 1.5 : 0.4,
       strokeColor: borderColor || '#8A8172',
-      strokeOpacity: near ? (hasValue ? 0.5 : 0.08) : (hasValue ? 0.9 : 0.12),
+      strokeOpacity: near ? (hasValue ? 0.35 : 0.06) : (hasValue ? 0.9 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.12 : 0) : (hasValue ? 0.3 : 0),
+      fillOpacity: near ? (hasValue ? 0.07 : 0) : (hasValue ? 0.3 : 0),
     };
   };
 
