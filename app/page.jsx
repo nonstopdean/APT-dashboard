@@ -595,10 +595,44 @@ export default function Page() {
 
   const recentTx = useMemo(() => allTx.slice(0, 30), [allTx]);
 
-  const aptHistory = useMemo(() => {
-    if (!selectedApt) return [];
-    return allTx.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.regionCode === selectedApt.regionCode);
-  }, [allTx, selectedApt]);
+  const [aptHistory, setAptHistory] = useState([]);
+  const [aptHistoryLoading, setAptHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    setAptHistory([]);
+    if (!selectedApt) return undefined;
+    let cancelled = false;
+    setAptHistoryLoading(true);
+    const endYmH = ymNow();
+    const startYmH = ymShift(endYmH, -35); // 최근 3년(36개월)치 — 아실처럼 "쭉" 나오는 추이를 위해
+    const endpointH = isSilv
+      ? '/api/silv-trades'
+      : propertyType === 'offi'
+        ? (isRent ? '/api/offi-rents' : '/api/offi-trades')
+        : (isRent ? '/api/rents' : '/api/trades');
+    fetch(`${endpointH}?codes=${selectedApt.regionCode}&start=${startYmH}&end=${endYmH}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const months2 = json?.months || [];
+        const rows = [];
+        months2.forEach((ym) => {
+          (json?.data?.[`${selectedApt.regionCode}_${ym}`] || []).forEach((r) => {
+            rows.push({ ...r, regionCode: selectedApt.regionCode });
+          });
+        });
+        const filtered = rows.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong);
+        filtered.sort((a, b) => {
+          const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
+          const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
+          return db.localeCompare(da);
+        });
+        setAptHistory(filtered);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setAptHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedApt, isSilv, propertyType, isRent]);
 
   const nearestStationInfo = useMemo(() => {
     if (!selectedApt?.lat || !selectedApt?.lng) return null;
@@ -2521,7 +2555,7 @@ export default function Page() {
               <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
             </div>
             <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
-              {labelFor(selectedApt.regionCode)} · 현재 조회된 기간 내 실거래 내역 {aptHistory.length}건
+              {labelFor(selectedApt.regionCode)} · 최근 3년 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
             {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
