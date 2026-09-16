@@ -103,6 +103,8 @@ function labelFor(code) {
 
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
+  const [unitSizeFilter, setUnitSizeFilter] = useState('all');
+  const [buildYearFilter, setBuildYearFilter] = useState('all');
   const [propertyType, setPropertyType] = useState('apt'); // 'apt' | 'offi' (매매/전월세에만 적용)
   const isRent = dealType === 'rent';
   const isRone = dealType === 'rone';
@@ -567,8 +569,29 @@ export default function Page() {
       const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
       return db.localeCompare(da);
     });
-    return all;
-  }, [selected, months, rawByRegionMonth]);
+    const currentYear = new Date().getFullYear();
+    return all.filter((t) => {
+      if (unitSizeFilter !== 'all') {
+        const p = t.pyeong;
+        if (p == null) return false;
+        if (unitSizeFilter === 'u20' && !(p < 20)) return false;
+        if (unitSizeFilter === '20s' && !(p >= 20 && p < 30)) return false;
+        if (unitSizeFilter === '30s' && !(p >= 30 && p < 40)) return false;
+        if (unitSizeFilter === '40s' && !(p >= 40 && p < 50)) return false;
+        if (unitSizeFilter === '50p' && !(p >= 50)) return false;
+      }
+      if (buildYearFilter !== 'all') {
+        if (!t.buildYear) return false;
+        const age = currentYear - t.buildYear;
+        if (buildYearFilter === '5' && !(age <= 5)) return false;
+        if (buildYearFilter === '10' && !(age <= 10)) return false;
+        if (buildYearFilter === '15' && !(age <= 15)) return false;
+        if (buildYearFilter === '20' && !(age <= 20)) return false;
+        if (buildYearFilter === '20p' && !(age > 20)) return false;
+      }
+      return true;
+    });
+  }, [selected, months, rawByRegionMonth, unitSizeFilter, buildYearFilter]);
 
   const recentTx = useMemo(() => allTx.slice(0, 30), [allTx]);
 
@@ -1271,6 +1294,28 @@ export default function Page() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             <div style={styles.toggleBtn(propertyType === 'apt')} onClick={() => setPropertyType('apt')}>아파트</div>
             <div style={styles.toggleBtn(propertyType === 'offi')} onClick={() => setPropertyType('offi')}>오피스텔</div>
+          </div>
+        </div>
+        )}
+
+        {!isRone && !isRatio && (
+        <div>
+          <label style={styles.label}>평형 (전용면적 기준)</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            {[['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상']].map(([k, l]) => (
+              <div key={k} style={{ ...styles.toggleBtn(unitSizeFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setUnitSizeFilter(k)}>{l}</div>
+            ))}
+          </div>
+        </div>
+        )}
+
+        {(dealType === 'trade' || isSilv) && (
+        <div>
+          <label style={styles.label}>입주년차 (준공연도 기준)</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            {[['all', '전체'], ['5', '5년 이내'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내'], ['20p', '20년 초과']].map(([k, l]) => (
+              <div key={k} style={{ ...styles.toggleBtn(buildYearFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setBuildYearFilter(k)}>{l}</div>
+            ))}
           </div>
         </div>
         )}
