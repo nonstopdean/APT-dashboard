@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { geocodeCache, runPool } from '../lib/geocodeCache';
+import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave } from '../lib/geocodeCache';
 
 // features: [{ feature, name, code }] - 지오메트리는 안정적으로 유지되는 배열(선택 상태가 바뀌어도
 // 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
@@ -275,6 +275,15 @@ export default function KakaoChoropleth({
 
       const todo = complexes.filter((c) => !existingKeys.has(c.key));
 
+      // 아직 메모리 캐시에 없는 것들은 서버(Vercel KV)에 이미 저장된 좌표가 있는지 먼저 물어본다 —
+      // 다른 방문자가 이미 찾아둔 단지라면 카카오에 다시 검색하지 않고 바로 쓸 수 있다.
+      const needServerLookup = todo.filter((c) => geocodeCache[c.key] === undefined).map((c) => c.key);
+      if (needServerLookup.length > 0) {
+        const serverHits = await fetchServerGeocodeCache(needServerLookup);
+        Object.entries(serverHits).forEach(([key, coord]) => { geocodeCache[key] = coord; });
+      }
+
+      const newlyFound = [];
       await runPool(todo, async (c) => {
         if (cancelled) return;
         let coord = geocodeCache[c.key];
@@ -283,6 +292,7 @@ export default function KakaoChoropleth({
             || await geocodeComplex(`${c.dong} ${c.apt}`)
             || await geocodeComplex(c.apt);
           geocodeCache[c.key] = coord;
+          if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
         }
         if (cancelled || !coord) return;
         const marker = new window.kakao.maps.Marker({
@@ -296,6 +306,7 @@ export default function KakaoChoropleth({
         marker.setMap(mapRef.current.getLevel() <= NEAR_ZOOM_LEVEL ? mapRef.current : null);
         markersRef.current.push({ marker, key: c.key });
       }, 6);
+      queueServerGeocodeSave(newlyFound);
 
       if (!cancelled) updateMarkerVisibility();
     }

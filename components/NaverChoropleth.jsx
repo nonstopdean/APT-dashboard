@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { geocodeCache, runPool } from '../lib/geocodeCache';
+import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave } from '../lib/geocodeCache';
 
 // features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
@@ -318,6 +318,13 @@ export default function NaverChoropleth({
 
       const todo = complexes.filter((c) => !existingKeys.has(c.key));
 
+      const needServerLookup = todo.filter((c) => geocodeCache[c.key] === undefined).map((c) => c.key);
+      if (needServerLookup.length > 0) {
+        const serverHits = await fetchServerGeocodeCache(needServerLookup);
+        Object.entries(serverHits).forEach(([key, coord]) => { geocodeCache[key] = coord; });
+      }
+
+      const newlyFound = [];
       await runPool(todo, async (c) => {
         if (cancelled) return;
         let coord = geocodeCache[c.key];
@@ -326,6 +333,7 @@ export default function NaverChoropleth({
             || await geocodeComplex(`${c.dong} ${c.apt}`)
             || await geocodeComplex(c.apt);
           geocodeCache[c.key] = coord;
+          if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
         }
         if (cancelled || !coord) return;
         const marker = new window.naver.maps.Marker({
@@ -337,6 +345,7 @@ export default function NaverChoropleth({
         marker.setMap(mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL ? mapRef.current : null);
         markersRef.current.push({ marker, key: c.key });
       }, 6);
+      queueServerGeocodeSave(newlyFound);
 
       if (!cancelled) updateMarkerVisibility();
     }
