@@ -596,6 +596,15 @@ export default function Page() {
     }));
   }, [aptHistory, isRent]);
 
+  const aptVolumeData = useMemo(() => {
+    const byMonth = {};
+    aptHistory.forEach((t) => {
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      byMonth[ym] = (byMonth[ym] || 0) + 1;
+    });
+    return Object.keys(byMonth).sort().map((ym) => ({ ym: monthLabel(ym), 건수: byMonth[ym] }));
+  }, [aptHistory]);
+
   // 단지별로 묶어서, 가장 최근 거래 기준으로 여러 단지를 한눈에 비교할 수 있는 목록.
   // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
   const complexCompare = useMemo(() => {
@@ -664,6 +673,42 @@ export default function Page() {
     }
     return list.slice(0, MAX_MAP_COMPLEXES);
   }, [allTx, fullComplexList]);
+
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [globalSearchMsg, setGlobalSearchMsg] = useState('');
+
+  const handleGlobalSearch = () => {
+    const q = globalSearch.trim();
+    if (!q) return;
+
+    const aggMatch = SIDO_AGGREGATES.find((a) => a.name.includes(q) || q.includes(a.name.replace(' 전체', '')));
+    if (aggMatch) {
+      addRegionAndFetch(aggMatch.code);
+      setViewMode('map');
+      setGlobalSearchMsg('');
+      return;
+    }
+    for (const g of REGION_GROUPS) {
+      const item = g.items.find((it) => it.name.includes(q) || q.includes(it.name));
+      if (item) {
+        addRegionAndFetch(item.code);
+        setViewMode('map');
+        setGlobalSearchMsg('');
+        return;
+      }
+    }
+    const complexMatch = mapComplexes.find((c) => c.apt.includes(q) || q.includes(c.apt));
+    if (complexMatch) {
+      const coord = codeToLatLng[complexMatch.regionCode];
+      setSelectedApt({
+        apt: complexMatch.apt, dong: complexMatch.dong, regionCode: complexMatch.regionCode,
+        lat: coord?.lat, lng: coord?.lng,
+      });
+      setGlobalSearchMsg('');
+      return;
+    }
+    setGlobalSearchMsg('찾을 수 없어요. 지도에서 지역을 먼저 선택해보세요.');
+  };
 
   const [compareAKey, setCompareAKey] = useState('');
   const [compareBKey, setCompareBKey] = useState('');
@@ -1283,7 +1328,7 @@ export default function Page() {
           <Building2 size={20} color={PALETTE.accent} />
           <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>도갱노노</span>
         </div>
-        <nav style={{ display: 'flex', gap: 2, height: '100%', overflowX: 'auto' }} className="main-nav">
+        <nav style={{ display: 'flex', gap: 10, height: '100%', overflowX: 'auto' }} className="main-nav">
           {[
             { key: 'normal', label: '대시보드' },
             { key: 'map', label: '지도' },
@@ -1306,6 +1351,28 @@ export default function Page() {
             </div>
           ))}
         </nav>
+        <div style={{ marginLeft: 'auto', position: 'relative', flexShrink: 0 }}>
+          <input
+            type="text"
+            value={globalSearch}
+            onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
+            placeholder="지역 또는 단지명 검색"
+            style={{
+              width: 180, padding: '7px 12px', borderRadius: 8, border: 'none', outline: 'none',
+              background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 12.5,
+            }}
+          />
+          {globalSearchMsg && (
+            <div style={{
+              position: 'absolute', top: '110%', right: 0, background: PALETTE.panel, color: PALETTE.textPrimary,
+              border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 11.5,
+              whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 300,
+            }}>
+              {globalSearchMsg}
+            </div>
+          )}
+        </div>
       </div>
 
       {viewMode === 'map' ? (
@@ -2131,6 +2198,23 @@ export default function Page() {
                     <Line type="monotone" dataKey="가격" stroke={PALETTE.accent} strokeWidth={2} dot={{ r: 3 }} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+            )}
+            {aptVolumeData.length > 1 && (
+              <div style={{ width: '100%', height: 90, marginBottom: 16 }}>
+                <ResponsiveContainer>
+                  <BarChart data={aptVolumeData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={30} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => `${v}건`}
+                    />
+                    <Bar dataKey="건수" fill={PALETTE.down} radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '2px 0 0', textAlign: 'center' }}>월별 거래건수</p>
               </div>
             )}
             <div style={{ overflowX: 'auto' }}>
