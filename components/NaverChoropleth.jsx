@@ -260,8 +260,8 @@ export default function NaverChoropleth({ features, values, colorFor, borderColo
         window.naver.maps.Event.addListener(marker, 'click', () => {
           onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
         });
+        marker.setMap(mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL ? mapRef.current : null);
         markersRef.current.push({ marker, key: c.key });
-        if (!cancelled) updateMarkerVisibility();
       }, 6);
 
       if (!cancelled) updateMarkerVisibility();

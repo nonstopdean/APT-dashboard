@@ -607,6 +607,8 @@ export default function Page() {
 
   // 단지별로 묶어서, 가장 최근 거래 기준으로 여러 단지를 한눈에 비교할 수 있는 목록.
   // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
+  const [complexSort, setComplexSort] = useState('price'); // 'price' | 'change' | 'recent'
+
   const complexCompare = useMemo(() => {
     const groups = {};
     allTx.forEach((t) => {
@@ -621,15 +623,31 @@ export default function Page() {
         return db.localeCompare(da);
       });
       const latest = rows[0];
+      const earliest = rows[rows.length - 1];
       const unitPrice = isRent
         ? (latest.isJeonse ? latest.depositPerPyeong : null)
         : latest.pricePerPyeong;
-      return { ...latest, count: rows.length, unitPrice };
+      const earliestUnitPrice = isRent
+        ? (earliest.isJeonse ? earliest.depositPerPyeong : null)
+        : earliest.pricePerPyeong;
+      const change = unitPrice && earliestUnitPrice
+        ? ((unitPrice - earliestUnitPrice) / earliestUnitPrice) * 100
+        : null;
+      return { ...latest, count: rows.length, unitPrice, change };
     });
-    return list
-      .filter((r) => r.unitPrice != null)
-      .sort((a, b) => a.unitPrice - b.unitPrice);
-  }, [allTx, isRent]);
+    const filtered = list.filter((r) => r.unitPrice != null);
+    if (complexSort === 'change') {
+      return filtered.sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
+    }
+    if (complexSort === 'recent') {
+      return filtered.sort((a, b) => {
+        const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
+        const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
+        return db.localeCompare(da);
+      });
+    }
+    return filtered.sort((a, b) => a.unitPrice - b.unitPrice);
+  }, [allTx, isRent, complexSort]);
 
   const [fullComplexList, setFullComplexList] = useState([]);
 
@@ -1007,6 +1025,21 @@ export default function Page() {
             })}
           </svg>
         )}
+        {seoulMapData.max > seoulMapData.min && (
+          <div style={{
+            position: 'absolute', left: 16, bottom: 16, zIndex: 20,
+            background: 'rgba(255,255,255,0.94)', border: `1px solid ${PALETTE.border}`, borderRadius: 8,
+            padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 10.5, color: PALETTE.textSecondary, boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+          }}>
+            <span>낮음</span>
+            <div style={{
+              width: 90, height: 8, borderRadius: 4,
+              background: `linear-gradient(90deg, rgb(245,244,239), ${PALETTE.accent})`,
+            }} />
+            <span>높음</span>
+          </div>
+        )}
       </>,
     );
   };
@@ -1381,7 +1414,7 @@ export default function Page() {
           <aside
             style={{
               ...styles.sidebar,
-              width: 300, flexShrink: 0, height: '100%', overflowY: 'auto',
+              width: 300, flexShrink: 0, height: '100%', minHeight: 0, overflowY: 'auto',
               borderRight: `1px solid ${PALETTE.border}`,
             }}
             className="dash-sidebar-fixed"
@@ -2011,10 +2044,24 @@ export default function Page() {
             </div>
 
             <div style={styles.card} className="ui-card">
-              <h2 style={styles.sectionTitle}>단지별 비교</h2>
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-                선택 지역·기간 내 단지들을 {isRent ? '전세보증금' : '매매'} 평당가 기준으로 정렬했어요.
-                값이 비슷한 단지끼리 가까이 있어서 한눈에 비교하기 좋아요. 단지명을 누르면 상세 내역이 열립니다.
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <h2 style={{ ...styles.sectionTitle, margin: 0 }}>단지별 비교</h2>
+                <select
+                  value={complexSort}
+                  onChange={(e) => setComplexSort(e.target.value)}
+                  style={{ ...styles.select, width: 'auto', fontSize: 12, padding: '6px 8px' }}
+                >
+                  <option value="price">평당가 낮은순</option>
+                  <option value="change">상승률 높은순</option>
+                  <option value="recent">최근 거래순</option>
+                </select>
+              </div>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '8px 0 12px' }}>
+                {{
+                  price: '값이 비슷한 단지끼리 가까이 있어서 한눈에 비교하기 좋아요.',
+                  change: '조회 기간 내 가격이 많이 오른 단지부터 보여드려요.',
+                  recent: '가장 최근에 거래된 단지부터 보여드려요.',
+                }[complexSort]} 단지명을 누르면 상세 내역이 열립니다.
               </p>
               <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -2026,6 +2073,7 @@ export default function Page() {
                       <th style={{ ...styles.th, width: 50 }}>층</th>
                       <th style={{ ...styles.th, width: 130 }}>전용면적</th>
                       <th style={{ ...styles.th, width: 120 }}>최근 {isRent ? '보증금' : '거래금액'}</th>
+                      <th style={{ ...styles.th, width: 80 }}>등락률</th>
                       <th style={{ ...styles.th, width: 90 }}>최근 계약일</th>
                       <th style={{ ...styles.th, width: 70 }}>거래건수</th>
                     </tr>
@@ -2044,12 +2092,15 @@ export default function Page() {
                         <td style={styles.td}>{c.floor}층</td>
                         <td style={styles.td}>{fmtArea(c.area)}</td>
                         <td style={styles.td}>{fmtManwon(isRent ? c.deposit : c.amount)}</td>
+                        <td style={{ ...styles.td, color: c.change > 0 ? PALETTE.up : c.change < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                          {fmtPct(c.change)}
+                        </td>
                         <td style={styles.td}>{c.year}.{c.month}.{c.day}</td>
                         <td style={styles.td}>{c.count}</td>
                       </tr>
                     ))}
                     {complexCompare.length === 0 && (
-                      <tr><td style={styles.td} colSpan={8}>비교할 단지가 없습니다.</td></tr>
+                      <tr><td style={styles.td} colSpan={9}>비교할 단지가 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>

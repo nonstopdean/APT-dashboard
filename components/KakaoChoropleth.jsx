@@ -225,8 +225,10 @@ export default function KakaoChoropleth({ features, values, colorFor, borderColo
         window.kakao.maps.event.addListener(marker, 'click', () => {
           onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
         });
+        // 새로 생긴 마커는 현재 확대 상태에 맞춰 바로 보이거나 숨겨지게만 설정하고,
+        // 전체 마커를 다시 훑는 건 다 끝난 뒤 한 번만 한다 (그렇지 않으면 개수가 많을 때 버벅인다).
+        marker.setMap(mapRef.current.getLevel() <= NEAR_ZOOM_LEVEL ? mapRef.current : null);
         markersRef.current.push({ marker, key: c.key });
-        if (!cancelled) updateMarkerVisibility();
       }, 6);
 
       if (!cancelled) updateMarkerVisibility();
