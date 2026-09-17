@@ -343,7 +343,7 @@ export default function NaverChoropleth({
       const newlyFound = [];
       await runPool(todo, async (c) => {
         if (cancelled) return;
-        let coord = geocodeCache[c.key];
+        let coord = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : geocodeCache[c.key];
         if (coord === undefined) {
           coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
             || await geocodeComplex(`${c.dong} ${c.apt}`)

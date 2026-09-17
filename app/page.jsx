@@ -788,7 +788,24 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [selected]);
 
-  const MAX_MAP_COMPLEXES = 60;
+  const [dongRawFeatures, setDongRawFeatures] = useState([]);
+
+  // "동" 경계 도형의 중심점을 좌표로 재사용한다 — 이미 "동" 색칠 기능을 위해 받아둔 데이터라서,
+  // 단지 하나하나를 카카오에 검색하지 않고도 즉시 대략적인 위치를 알 수 있다(동 단위 정밀도).
+  const dongCentroids = useMemo(() => {
+    const out = {};
+    dongRawFeatures.forEach((f) => {
+      const geom = f.feature?.geometry;
+      const ring = geom?.type === 'Polygon' ? geom.coordinates?.[0] : geom?.coordinates?.[0]?.[0];
+      if (!ring?.length) return;
+      let sx = 0; let sy = 0;
+      ring.forEach(([lng, lat]) => { sx += lng; sy += lat; });
+      out[`${f.regionCode}|${normalizeDongName(f.name)}`] = { lat: sy / ring.length, lng: sx / ring.length };
+    });
+    return out;
+  }, [dongRawFeatures]);
+
+  const MAX_MAP_COMPLEXES = 300;
 
   const mapComplexes = useMemo(() => {
     const seen = new Set();
@@ -798,17 +815,18 @@ export default function Page() {
       const key = `${regionCode}|${dong}|${apt}`;
       if (seen.has(key)) return;
       seen.add(key);
-      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode) });
+      const coord = dongCentroids[`${regionCode}|${normalizeDongName(dong)}`];
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng });
     };
-    // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다
-    // (지역이 크면 좌표 검색량이 너무 많아져 느려지므로 상한을 둔다).
+    // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
+    // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
     allTx.forEach((t) => addItem(t.apt, t.dong, t.regionCode));
     for (const c of fullComplexList) {
       if (list.length >= MAX_MAP_COMPLEXES) break;
       addItem(c.apt, c.dong, c.regionCode);
     }
     return list.slice(0, MAX_MAP_COMPLEXES);
-  }, [allTx, fullComplexList]);
+  }, [allTx, fullComplexList, dongCentroids]);
 
   const [globalSearch, setGlobalSearch] = useState('');
   const [globalSearchMsg, setGlobalSearchMsg] = useState('');
@@ -1069,7 +1087,6 @@ export default function Page() {
   }, [mapDisplayFeatures, mapValues]);
 
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
-  const [dongRawFeatures, setDongRawFeatures] = useState([]);
   const [mapZoomTier, setMapZoomTier] = useState('far');
   const loadedSidosRef = useRef(new Set());
 

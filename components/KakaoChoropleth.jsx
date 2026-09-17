@@ -301,7 +301,8 @@ export default function KakaoChoropleth({
       const newlyFound = [];
       await runPool(todo, async (c) => {
         if (cancelled) return;
-        let coord = geocodeCache[c.key];
+        // 이미 "동" 중심점 좌표가 있으면(page.jsx에서 넘겨줌) 카카오 검색 자체를 건너뛴다 — 이게 훨씬 빠르다.
+        let coord = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : geocodeCache[c.key];
         if (coord === undefined) {
           coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
             || await geocodeComplex(`${c.dong} ${c.apt}`)
