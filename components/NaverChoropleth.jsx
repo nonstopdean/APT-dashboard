@@ -7,7 +7,7 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues,
+  dongFeatures, dongValues, onZoomTierChange,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -21,6 +21,7 @@ export default function NaverChoropleth({
   const colorForRef = useRef(colorFor);
   const onSelectRef = useRef(onSelect);
   const onComplexSelectRef = useRef(onComplexSelect);
+  const onZoomTierChangeRef = useRef(onZoomTierChange);
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => { valuesRef.current = values; }, [values]);
@@ -28,6 +29,7 @@ export default function NaverChoropleth({
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
+  useEffect(() => { onZoomTierChangeRef.current = onZoomTierChange; }, [onZoomTierChange]);
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
   // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
@@ -130,6 +132,7 @@ export default function NaverChoropleth({
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
+      onZoomTierChangeRef.current?.(tier);
     }
     updateMarkerVisibility();
   };

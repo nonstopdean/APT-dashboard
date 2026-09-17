@@ -9,7 +9,7 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // dongFeatures/dongValues: 같은 모양이지만 "동" 단위 — 중간 확대 단계에서 구 대신 보여준다.
 export default function KakaoChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues,
+  dongFeatures, dongValues, onZoomTierChange,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -18,6 +18,7 @@ export default function KakaoChoropleth({
   const markersRef = useRef([]); // [{ marker, key }]
   const placesRef = useRef(null);
   const onComplexSelectRef = useRef(onComplexSelect);
+  const onZoomTierChangeRef = useRef(onZoomTierChange);
   const valuesRef = useRef(values);
   const dongValuesRef = useRef(dongValues);
   const colorForRef = useRef(colorFor);
@@ -27,6 +28,7 @@ export default function KakaoChoropleth({
 
   useEffect(() => { valuesRef.current = values; }, [values]);
   useEffect(() => { dongValuesRef.current = dongValues; }, [dongValues]);
+  useEffect(() => { onZoomTierChangeRef.current = onZoomTierChange; }, [onZoomTierChange]);
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
@@ -105,6 +107,7 @@ export default function KakaoChoropleth({
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
+      onZoomTierChangeRef.current?.(tier);
     }
     updateMarkerVisibility();
   };

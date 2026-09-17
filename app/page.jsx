@@ -1070,9 +1070,13 @@ export default function Page() {
 
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [dongRawFeatures, setDongRawFeatures] = useState([]);
+  const [mapZoomTier, setMapZoomTier] = useState('far');
   const loadedSidosRef = useRef(new Set());
 
   useEffect(() => {
+    // 확대를 많이 안 하면(구 단위로만 보고 있으면) "동" 데이터는 아예 필요 없으므로,
+    // 실제로 확대했을 때만 받아온다 — 안 그러면 지역 선택할 때마다 큰 파일을 미리 받아와서 느려진다.
+    if (mapZoomTier === 'far') return undefined;
     const neededSidos = new Set();
     selected.forEach((code) => {
       for (const g of REGION_GROUPS) {
@@ -1108,7 +1112,7 @@ export default function Page() {
       setDongRawFeatures((prev) => [...prev, ...results.flat()]);
     });
     return () => { cancelled = true; };
-  }, [selected]);
+  }, [selected, mapZoomTier]);
 
   const dongMapData = useMemo(() => {
     if (dongRawFeatures.length === 0) return null;
@@ -1174,6 +1178,7 @@ export default function Page() {
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
+            onZoomTierChange={setMapZoomTier}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -1188,6 +1193,7 @@ export default function Page() {
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
+            onZoomTierChange={setMapZoomTier}
             height="100%"
           />
         ) : (
