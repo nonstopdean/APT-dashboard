@@ -124,7 +124,9 @@ export default function NaverChoropleth({
 
   // 확대(구/단지 단위)하면 색칠은 옅어지다 빠지고 마커가 나타나고, 축소(전체 구역 단위)하면
   // 반대로 색칠은 진해지고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
-  const handleZoomChanged = () => {
+  const zoomDebounceRef = useRef(null);
+
+  const handleZoomChangedImmediate = () => {
     if (!mapRef.current) return;
     const level = mapRef.current.getZoom();
     const tier = level <= FAR_ZOOM_LEVEL ? 'far' : (level >= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
@@ -135,6 +137,11 @@ export default function NaverChoropleth({
       onZoomTierChangeRef.current?.(tier);
     }
     updateMarkerVisibility();
+  };
+
+  const handleZoomChanged = () => {
+    if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
+    zoomDebounceRef.current = setTimeout(handleZoomChangedImmediate, 150);
   };
 
   useEffect(() => {

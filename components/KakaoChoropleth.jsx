@@ -99,7 +99,9 @@ export default function KakaoChoropleth({
 
   // 확대하면 구 색칠 -> 동 색칠(진하게) -> 동 색칠(연하게)+마커 순서로 바뀌고,
   // 축소하면 반대로 바뀐다 — 실제 부동산 사이트들과 같은 방식.
-  const handleZoomChanged = () => {
+  const zoomDebounceRef = useRef(null);
+
+  const handleZoomChangedImmediate = () => {
     if (!mapRef.current) return;
     const level = mapRef.current.getLevel();
     const tier = level >= FAR_ZOOM_LEVEL ? 'far' : (level <= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
@@ -110,6 +112,13 @@ export default function KakaoChoropleth({
       onZoomTierChangeRef.current?.(tier);
     }
     updateMarkerVisibility();
+  };
+
+  // 줌 도중(스크롤/핀치 중) 매 프레임마다 도형 수백 개를 다시 그리면 버벅이므로,
+  // 줌이 실제로 멈춘 뒤 한 번만 무거운 재계산을 하도록 살짝 지연시킨다.
+  const handleZoomChanged = () => {
+    if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
+    zoomDebounceRef.current = setTimeout(handleZoomChangedImmediate, 150);
   };
 
   const geocodeComplex = (query) => new Promise((resolve) => {
