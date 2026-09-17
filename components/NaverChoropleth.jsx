@@ -180,42 +180,45 @@ export default function NaverChoropleth({
         if (!f.feature) return;
         const geomType = f.feature.geometry.type;
         const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
+        // 섬이 많은 지역(전남/경남/인천 등)은 하나의 시/군/구가 수십~수백 개의 조각(섬)으로
+        // 이루어져 있다. 조각마다 별개의 Polygon 객체를 만들면 전국 기준 250개가 아니라
+        // 수만 개가 생겨서 줌마다 다시 칠하는 비용이 폭발한다 — 조각들을 한 Polygon의
+        // 여러 paths로 합쳐서 "지역당 객체 1개"를 유지한다.
+        const allPaths = polys.map((rings) => rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng)));
+        if (allPaths.length === 0) return;
 
-        polys.forEach((rings) => {
-          const path = rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng));
-          const polygon = new window.naver.maps.Polygon({
-            map: mapRef.current,
-            paths: [path],
-            clickable: true,
-            ...styleFor(idx),
-          });
-          const labelFor = () => {
-            const value = valuesRef.current?.[idx];
-            return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
-          };
-          window.naver.maps.Event.addListener(polygon, 'click', () => {
-            if (f.code) onSelectRef.current?.(f.code);
-          });
-          window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
-            const value = valuesRef.current?.[idx];
-            const hasValue = value != null;
-            if (zoomTierRef.current === 'far') {
-              polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
-            }
-            infoWindowRef.current.setContent(
-              `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
-            );
-            infoWindowRef.current.open(mapRef.current, e.coord);
-          });
-          window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
-            infoWindowRef.current.setPosition(e.coord);
-          });
-          window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions(styleFor(idx));
-            infoWindowRef.current.close();
-          });
-          polygonsRef.current.push({ polygon, featureIndex: idx });
+        const polygon = new window.naver.maps.Polygon({
+          map: mapRef.current,
+          paths: allPaths,
+          clickable: true,
+          ...styleFor(idx),
         });
+        const labelFor = () => {
+          const value = valuesRef.current?.[idx];
+          return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
+        };
+        window.naver.maps.Event.addListener(polygon, 'click', () => {
+          if (f.code) onSelectRef.current?.(f.code);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+          const value = valuesRef.current?.[idx];
+          const hasValue = value != null;
+          if (zoomTierRef.current === 'far') {
+            polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
+          }
+          infoWindowRef.current.setContent(
+            `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
+          );
+          infoWindowRef.current.open(mapRef.current, e.coord);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
+          infoWindowRef.current.setPosition(e.coord);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
+          polygon.setOptions(styleFor(idx));
+          infoWindowRef.current.close();
+        });
+        polygonsRef.current.push({ polygon, featureIndex: idx });
       });
 
       applyAllStyles();
@@ -261,41 +264,41 @@ export default function NaverChoropleth({
       const geomType = f.feature.geometry.type;
       const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
 
-      polys.forEach((rings) => {
-        const path = rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng));
-        const polygon = new window.naver.maps.Polygon({
-          map: zoomTierRef.current !== 'far' ? mapRef.current : null,
-          paths: [path],
-          clickable: true,
-          ...dongStyleFor(idx),
-        });
-        const labelFor = () => {
-          const value = dongValuesRef.current?.[idx];
-          return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
-        };
-        window.naver.maps.Event.addListener(polygon, 'click', () => {
-          if (f.code) onSelectRef.current?.(f.code);
-        });
-        window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
-          const value = dongValuesRef.current?.[idx];
-          const hasValue = value != null;
-          if (zoomTierRef.current === 'mid') {
-            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
-          }
-          infoWindowRef.current?.setContent(
-            `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
-          );
-          infoWindowRef.current?.open(mapRef.current, e.coord);
-        });
-        window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
-          infoWindowRef.current?.setPosition(e.coord);
-        });
-        window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
-          polygon.setOptions(dongStyleFor(idx));
-          infoWindowRef.current?.close();
-        });
-        dongPolygonsRef.current.push({ polygon, featureIndex: idx });
+      const allPaths = polys.map((rings) => rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng)));
+      if (allPaths.length === 0) return;
+
+      const polygon = new window.naver.maps.Polygon({
+        map: zoomTierRef.current !== 'far' ? mapRef.current : null,
+        paths: allPaths,
+        clickable: true,
+        ...dongStyleFor(idx),
       });
+      const labelFor = () => {
+        const value = dongValuesRef.current?.[idx];
+        return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
+      };
+      window.naver.maps.Event.addListener(polygon, 'click', () => {
+        if (f.code) onSelectRef.current?.(f.code);
+      });
+      window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+        const value = dongValuesRef.current?.[idx];
+        const hasValue = value != null;
+        if (zoomTierRef.current === 'mid') {
+          polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+        }
+        infoWindowRef.current?.setContent(
+          `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
+        );
+        infoWindowRef.current?.open(mapRef.current, e.coord);
+      });
+      window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
+        infoWindowRef.current?.setPosition(e.coord);
+      });
+      window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
+        polygon.setOptions(dongStyleFor(idx));
+        infoWindowRef.current?.close();
+      });
+      dongPolygonsRef.current.push({ polygon, featureIndex: idx });
     });
     console.timeEnd('[지도] 동 도형 생성');
 

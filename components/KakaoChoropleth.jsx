@@ -161,30 +161,33 @@ export default function KakaoChoropleth({
         if (!f.feature) return;
         const geomType = f.feature.geometry.type;
         const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
+        // 섬이 많은 지역(전남/경남/인천 등)은 하나의 시/군/구가 수십~수백 개의 조각(섬)으로
+        // 이루어져 있다. 조각마다 별개의 Polygon 객체를 만들면 전국 기준 250개가 아니라
+        // 수만 개가 생겨서 줌마다 다시 칠하는 비용이 폭발한다 — 카카오 Polygon의 path는
+        // 이차원 배열을 지원하므로, 조각들을 한 Polygon 객체로 합쳐서 "지역당 객체 1개"를 유지한다.
+        const allPaths = polys.map((rings) => rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng)));
+        if (allPaths.length === 0) return;
 
-        polys.forEach((rings) => {
-          const path = rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
-          const polygon = new window.kakao.maps.Polygon({ path, ...styleFor(idx) });
-          polygon.setMap(mapRef.current);
-          window.kakao.maps.event.addListener(polygon, 'click', () => {
-            const value = valuesRef.current?.[idx];
-            setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (클릭하면 비교 목록에 추가됩니다)`);
-            if (f.code) onSelectRef.current?.(f.code);
-          });
-          window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
-            const value = valuesRef.current?.[idx];
-            const hasValue = value != null;
-            if (zoomTierRef.current === 'far') {
-              polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
-            }
-            setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
-          });
-          window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
-            polygon.setOptions(styleFor(idx));
-            setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
-          });
-          polygonsRef.current.push({ polygon, featureIndex: idx });
+        const polygon = new window.kakao.maps.Polygon({ path: allPaths, ...styleFor(idx) });
+        polygon.setMap(mapRef.current);
+        window.kakao.maps.event.addListener(polygon, 'click', () => {
+          const value = valuesRef.current?.[idx];
+          setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : `${f.name} (클릭하면 비교 목록에 추가됩니다)`);
+          if (f.code) onSelectRef.current?.(f.code);
         });
+        window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
+          const value = valuesRef.current?.[idx];
+          const hasValue = value != null;
+          if (zoomTierRef.current === 'far') {
+            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+          }
+          setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
+        });
+        window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
+          polygon.setOptions(styleFor(idx));
+          setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
+        });
+        polygonsRef.current.push({ polygon, featureIndex: idx });
       });
 
       applyAllStyles();
@@ -228,29 +231,29 @@ export default function KakaoChoropleth({
       const geomType = f.feature.geometry.type;
       const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
 
-      polys.forEach((rings) => {
-        const path = rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng));
-        const polygon = new window.kakao.maps.Polygon({ path, ...dongStyleFor(idx) });
-        polygon.setMap(zoomTierRef.current !== 'far' ? mapRef.current : null);
-        window.kakao.maps.event.addListener(polygon, 'click', () => {
-          const value = dongValuesRef.current?.[idx];
-          setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
-          if (f.code) onSelectRef.current?.(f.code);
-        });
-        window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
-          const value = dongValuesRef.current?.[idx];
-          const hasValue = value != null;
-          if (zoomTierRef.current === 'mid') {
-            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
-          }
-          setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
-        });
-        window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
-          polygon.setOptions(dongStyleFor(idx));
-          setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
-        });
-        dongPolygonsRef.current.push({ polygon, featureIndex: idx });
+      const allPaths = polys.map((rings) => rings[0].map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng)));
+      if (allPaths.length === 0) return;
+
+      const polygon = new window.kakao.maps.Polygon({ path: allPaths, ...dongStyleFor(idx) });
+      polygon.setMap(zoomTierRef.current !== 'far' ? mapRef.current : null);
+      window.kakao.maps.event.addListener(polygon, 'click', () => {
+        const value = dongValuesRef.current?.[idx];
+        setCaption(value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
+        if (f.code) onSelectRef.current?.(f.code);
       });
+      window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
+        const value = dongValuesRef.current?.[idx];
+        const hasValue = value != null;
+        if (zoomTierRef.current === 'mid') {
+          polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+        }
+        setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
+      });
+      window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
+        polygon.setOptions(dongStyleFor(idx));
+        setCaption('지역에 마우스를 올리면 이름이, 클릭하면 비교 목록에 추가됩니다.');
+      });
+      dongPolygonsRef.current.push({ polygon, featureIndex: idx });
     });
 
     return () => {
