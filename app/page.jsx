@@ -788,7 +788,7 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [selected]);
 
-  const MAX_MAP_COMPLEXES = 200;
+  const MAX_MAP_COMPLEXES = 60;
 
   const mapComplexes = useMemo(() => {
     const seen = new Set();
