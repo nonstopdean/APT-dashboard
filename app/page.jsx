@@ -805,6 +805,22 @@ export default function Page() {
     return out;
   }, [dongRawFeatures]);
 
+  const findDongCentroid = (regionCode, dong) => {
+    const exact = dongCentroids[`${regionCode}|${normalizeDongName(dong)}`];
+    if (exact) return exact;
+    // 국토부 실거래 데이터는 "법정동"(예: 광안동), 동 경계 지도는 "행정동"(예: 광안4동) 기준이라
+    // 이름이 정확히 안 맞는 경우가 있다 — 같은 지역 안에서 이름이 겹치는(앞부분이 같은) 동을 찾아
+    // 그 중심점들을 평균 내서 대략의 위치라도 잡아준다.
+    const root = normalizeDongName(dong).replace(/동$/, '');
+    if (!root) return null;
+    const matches = Object.entries(dongCentroids)
+      .filter(([k]) => k.startsWith(`${regionCode}|`) && k.slice(regionCode.length + 1).startsWith(root));
+    if (matches.length === 0) return null;
+    const lat = matches.reduce((s, [, v]) => s + v.lat, 0) / matches.length;
+    const lng = matches.reduce((s, [, v]) => s + v.lng, 0) / matches.length;
+    return { lat, lng };
+  };
+
   const MAX_MAP_COMPLEXES = 300;
 
   const mapComplexes = useMemo(() => {
@@ -815,7 +831,7 @@ export default function Page() {
       const key = `${regionCode}|${dong}|${apt}`;
       if (seen.has(key)) return;
       seen.add(key);
-      const coord = dongCentroids[`${regionCode}|${normalizeDongName(dong)}`];
+      const coord = findDongCentroid(regionCode, dong);
       list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng });
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.

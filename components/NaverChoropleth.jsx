@@ -99,9 +99,9 @@ export default function NaverChoropleth({
     return {
       strokeWeight: hasValue ? 1.5 : 0.4,
       strokeColor: borderColor || '#8A8172',
-      strokeOpacity: near ? (hasValue ? 0.35 : 0.06) : (hasValue ? 0.9 : 0.12),
+      strokeOpacity: near ? (hasValue ? 0.5 : 0.1) : (hasValue ? 0.9 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.07 : 0) : (hasValue ? 0.3 : 0),
+      fillOpacity: near ? (hasValue ? 0.18 : 0) : (hasValue ? 0.35 : 0),
     };
   };
 
