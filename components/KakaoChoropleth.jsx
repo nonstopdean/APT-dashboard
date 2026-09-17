@@ -106,10 +106,13 @@ export default function KakaoChoropleth({
     const level = mapRef.current.getLevel();
     const tier = level >= FAR_ZOOM_LEVEL ? 'far' : (level <= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
     if (tier !== zoomTierRef.current) {
+      console.time('[지도] 줌 전환 재계산');
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
       onZoomTierChangeRef.current?.(tier);
+      console.timeEnd('[지도] 줌 전환 재계산');
+      console.log(`[지도] 구 도형 ${polygonsRef.current.length}개, 동 도형 ${dongPolygonsRef.current.length}개, 마커 ${markersRef.current.length}개`);
     }
     updateMarkerVisibility();
   };

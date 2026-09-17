@@ -131,10 +131,13 @@ export default function NaverChoropleth({
     const level = mapRef.current.getZoom();
     const tier = level <= FAR_ZOOM_LEVEL ? 'far' : (level >= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
     if (tier !== zoomTierRef.current) {
+      console.time('[지도] 줌 전환 재계산');
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
       onZoomTierChangeRef.current?.(tier);
+      console.timeEnd('[지도] 줌 전환 재계산');
+      console.log(`[지도] 구 도형 ${polygonsRef.current.length}개, 동 도형 ${dongPolygonsRef.current.length}개, 마커 ${markersRef.current.length}개`);
     }
     updateMarkerVisibility();
   };
@@ -247,9 +250,11 @@ export default function NaverChoropleth({
   // "동" 단위 도형 생성 — dongFeatures는 선택된 지역의 시/도가 바뀔 때만 갱신되므로 별도 effect로 둔다.
   useEffect(() => {
     if (!mapRef.current || !window.naver?.maps) return undefined;
+    console.log(`[지도] 동 도형 새로 생성 시작 (기존 ${dongPolygonsRef.current.length}개 제거, 새 dongFeatures ${dongFeatures?.length ?? 0}개)`);
+    console.time('[지도] 동 도형 생성');
     dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
     dongPolygonsRef.current = [];
-    if (!dongFeatures || dongFeatures.length === 0) return undefined;
+    if (!dongFeatures || dongFeatures.length === 0) { console.timeEnd('[지도] 동 도형 생성'); return undefined; }
 
     dongFeatures.forEach((f, idx) => {
       if (!f.feature) return;
@@ -292,6 +297,7 @@ export default function NaverChoropleth({
         dongPolygonsRef.current.push({ polygon, featureIndex: idx });
       });
     });
+    console.timeEnd('[지도] 동 도형 생성');
 
     return () => {
       dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
