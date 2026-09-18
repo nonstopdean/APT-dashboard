@@ -851,6 +851,31 @@ export default function Page() {
     return aptHistory.filter((t) => t.pyeong != null && Math.floor(t.pyeong / 10) * 10 === bucket);
   }, [aptHistory, historyAreaFilter]);
 
+  // 이 단지의 역대 최고가·최저가, 고점 대비 하락폭, 최근 거래 간격을 계산한다.
+  const aptDetailStats = useMemo(() => {
+    const priceOf = (t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount);
+    const rows = aptHistoryFiltered.map((t) => ({ ...t, _price: priceOf(t) })).filter((t) => t._price != null);
+    if (!rows.length) return null;
+    const sorted = [...rows].sort((a, b) => {
+      const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
+      const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
+      return db.localeCompare(da);
+    });
+    const latest = sorted[0];
+    const high = Math.max(...rows.map((r) => r._price));
+    const latestUnit = latest.pricePerPyeong ?? (latest.isJeonse ? latest.depositPerPyeong : null);
+    const highUnit = Math.max(...rows.map((r) => (r.pricePerPyeong ?? (r.isJeonse ? r.depositPerPyeong : null))).filter((v) => v != null));
+    const low = Math.min(...rows.map((r) => r._price));
+    const drawdown = high ? ((latest._price - high) / high) * 100 : null;
+    const recent5 = sorted.slice(0, 5).map((r) => r._price);
+    const recentAvg = recent5.length ? recent5.reduce((a, b) => a + b, 0) / recent5.length : null;
+    const dates = sorted.slice(0, 6).map((r) => new Date(Number(r.year), Number(r.month) - 1, Number(r.day || 1))).filter((d) => !Number.isNaN(d.getTime()));
+    const gaps = [];
+    for (let i = 1; i < dates.length; i += 1) gaps.push(Math.round((dates[i - 1] - dates[i]) / 86400000));
+    const avgGap = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : null;
+    return { latest, high, low, latestUnit, highUnit, drawdown, recentAvg, avgGap, count: rows.length };
+  }, [aptHistoryFiltered, isRent]);
+
   const aptTrendData = useMemo(() => {
     const byMonth = {};
     aptHistoryFiltered.forEach((t) => {
@@ -2457,7 +2482,7 @@ export default function Page() {
           ))}
         </div>
         <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card">
-          {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락']].map(([k, l]) => (
+          {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포']].map(([k, l]) => (
             <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
           ))}
         </div>
@@ -2547,6 +2572,36 @@ export default function Page() {
             ))}
           </div>
         )}
+        {analyticsView === 'distribution' && (() => {
+          const vals = advancedAnalytics.rows.map((r) => r.latest).filter((v) => Number.isFinite(v));
+          if (!vals.length) return <div style={styles.card} className="ui-card">가격분포를 계산할 데이터가 없습니다.</div>;
+          const min = Math.floor(Math.min(...vals) / 10000) * 10000;
+          const max = Math.ceil(Math.max(...vals) / 10000) * 10000;
+          const step = 10000;
+          const bins = [];
+          for (let lo = min; lo <= max; lo += step) {
+            const hi = lo + step;
+            bins.push({ label: `${(lo / 10000).toFixed(0)}억`, count: vals.filter((v) => v >= lo && v < hi).length });
+          }
+          const top = Math.max(...bins.map((b) => b.count), 1);
+          return (
+            <div style={styles.card} className="ui-card">
+              <h2 style={styles.sectionTitle}>최근 거래가격 분포</h2>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted }}>현재 조회된 단지의 최근 거래가격을 1억원 구간으로 나눠 분포를 보여줍니다.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 8, alignItems: 'end' }}>
+                {bins.map((b) => (
+                  <div key={b.label} style={{ textAlign: 'center' }}>
+                    <div style={{ height: 110, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                      <div title={`${b.count}건`} style={{ width: '55%', height: `${Math.max(4, (b.count / top) * 100)}%`, background: PALETTE.accent, borderRadius: '5px 5px 0 0' }} />
+                    </div>
+                    <b style={{ fontSize: 11 }}>{b.label}</b>
+                    <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{b.count}개</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {analyticsView === 'highs' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div style={styles.card} className="ui-card">
