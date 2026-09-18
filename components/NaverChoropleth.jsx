@@ -130,6 +130,54 @@ export default function NaverChoropleth({
   // 반대로 색칠은 진해지고 마커는 숨긴다 — 실제 부동산 사이트들과 같은 방식.
   const zoomDebounceRef = useRef(null);
 
+  // 네이버용 클러스터링 — 공식 클러스터러 라이브러리 없이, 지도를 격자로 나눠 겹치는 단지를
+  // 하나의 숫자 배지로 묶어 보여준다 (호갱노노/아실처럼). 확대하면 묶음이 풀리면서 개별 마커가 나타난다.
+  // handleZoomChangedImmediate가 이 함수를 호출하므로, 반드시 그보다 먼저 선언해야 한다.
+  const syncNaverClusterer = () => {
+    if (!mapRef.current) return;
+    const show = mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL;
+    clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
+    clustererRef.current = [];
+    if (!show) {
+      // 축소하면 개별 마커도 모두 지운다 — 안 그러면 묶음만 지워지고 마커가 남는다.
+      markersRef.current.forEach(({ marker }) => marker.setMap(null));
+      return;
+    }
+    const zoom = mapRef.current.getZoom();
+    // 격자 크기(도 단위): 확대할수록 작은 격자를 써서 묶음이 자연스럽게 풀리게 한다.
+    const cellDeg = 0.0008 * Math.pow(2, 20 - zoom);
+    const buckets = new Map();
+    markersRef.current.forEach(({ marker, key }) => {
+      const pos = marker.getPosition();
+      const lat = pos.lat();
+      const lng = pos.lng();
+      const cellKey = `${Math.round(lat / cellDeg)}|${Math.round(lng / cellDeg)}`;
+      if (!buckets.has(cellKey)) buckets.set(cellKey, []);
+      buckets.get(cellKey).push({ marker, key, lat, lng });
+    });
+    buckets.forEach((group) => {
+      if (group.length === 1) {
+        group[0].marker.setMap(mapRef.current);
+        return;
+      }
+      const lat = group.reduce((s, g) => s + g.lat, 0) / group.length;
+      const lng = group.reduce((s, g) => s + g.lng, 0) / group.length;
+      const size = group.length;
+      const bg = size < 10 ? 'rgba(178,58,46,0.88)' : size < 50 ? 'rgba(178,58,46,0.92)' : 'rgba(122,34,26,0.94)';
+      const wh = size < 10 ? 38 : size < 50 ? 48 : 60;
+      const overlay = new window.naver.maps.Marker({
+        position: new window.naver.maps.LatLng(lat, lng),
+        icon: {
+          content: `<div style="width:${wh}px;height:${wh}px;border-radius:${wh / 2}px;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25);">${size}</div>`,
+          size: new window.naver.maps.Size(wh, wh),
+          anchor: new window.naver.maps.Point(wh / 2, wh / 2),
+        },
+      });
+      overlay.setMap(mapRef.current);
+      clustererRef.current.push({ overlay });
+    });
+  };
+
   const handleZoomChangedImmediate = () => {
     if (!mapRef.current) return;
     const level = mapRef.current.getZoom();
@@ -249,53 +297,6 @@ export default function NaverChoropleth({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [features, borderColor]);
-
-  // 네이버용 클러스터링 — 공식 클러스터러 라이브러리 없이, 지도를 격자로 나눠 겹치는 단지를
-  // 하나의 숫자 배지로 묶어 보여준다 (호갱노노/아실처럼). 확대하면 묶음이 풀리면서 개별 마커가 나타난다.
-  const syncNaverClusterer = () => {
-    if (!mapRef.current) return;
-    const show = mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL;
-    clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
-    clustererRef.current = [];
-    if (!show) {
-      // 축소하면 개별 마커도 모두 지운다 — 안 그러면 묶음만 지워지고 마커가 남는다.
-      markersRef.current.forEach(({ marker }) => marker.setMap(null));
-      return;
-    }
-    const zoom = mapRef.current.getZoom();
-    // 격자 크기(도 단위): 확대할수록 작은 격자를 써서 묶음이 자연스럽게 풀리게 한다.
-    const cellDeg = 0.0008 * Math.pow(2, 20 - zoom);
-    const buckets = new Map();
-    markersRef.current.forEach(({ marker, key }) => {
-      const pos = marker.getPosition();
-      const lat = pos.lat();
-      const lng = pos.lng();
-      const cellKey = `${Math.round(lat / cellDeg)}|${Math.round(lng / cellDeg)}`;
-      if (!buckets.has(cellKey)) buckets.set(cellKey, []);
-      buckets.get(cellKey).push({ marker, key, lat, lng });
-    });
-    buckets.forEach((group) => {
-      if (group.length === 1) {
-        group[0].marker.setMap(mapRef.current);
-        return;
-      }
-      const lat = group.reduce((s, g) => s + g.lat, 0) / group.length;
-      const lng = group.reduce((s, g) => s + g.lng, 0) / group.length;
-      const size = group.length;
-      const bg = size < 10 ? 'rgba(178,58,46,0.88)' : size < 50 ? 'rgba(178,58,46,0.92)' : 'rgba(122,34,26,0.94)';
-      const wh = size < 10 ? 38 : size < 50 ? 48 : 60;
-      const overlay = new window.naver.maps.Marker({
-        position: new window.naver.maps.LatLng(lat, lng),
-        icon: {
-          content: `<div style="width:${wh}px;height:${wh}px;border-radius:${wh / 2}px;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25);">${size}</div>`,
-          size: new window.naver.maps.Size(wh, wh),
-          anchor: new window.naver.maps.Point(wh / 2, wh / 2),
-        },
-      });
-      overlay.setMap(mapRef.current);
-      clustererRef.current.push({ overlay });
-    });
-  };
 
   // "동" 단위 도형 생성 — dongFeatures는 선택된 지역의 시/도가 바뀔 때만 갱신되므로 별도 effect로 둔다.
   useEffect(() => {
