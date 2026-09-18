@@ -80,8 +80,10 @@ export default function NaverChoropleth({
     const hasValue = value != null;
     const tier = zoomTierRef.current;
     if (tier !== 'far') {
+      // 확대된 상태에서는 완전히 투명해지는데, clickable을 꺼주지 않으면 안 보이는 이 도형이
+      // 그 아래 "동" 레이어나 단지 마커의 클릭/호버를 계속 가로채서 먹통이 된 것처럼 보인다.
       return {
-        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0,
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: false,
       };
     }
     return {
@@ -90,6 +92,7 @@ export default function NaverChoropleth({
       strokeOpacity: hasValue ? 1 : 0.15,
       fillColor: colorForRef.current(value),
       fillOpacity: hasValue ? 0.32 : 0,
+      clickable: true,
     };
   };
 
@@ -199,11 +202,10 @@ export default function NaverChoropleth({
           if (f.code) onSelectRef.current?.(f.code);
         });
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+          if (zoomTierRef.current !== 'far') return;
           const value = valuesRef.current?.[idx];
           const hasValue = value != null;
-          if (zoomTierRef.current === 'far') {
-            polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
-          }
+          polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
           infoWindowRef.current.setContent(
             `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
           );
@@ -324,11 +326,10 @@ export default function NaverChoropleth({
         if (f.code) onSelectRef.current?.(f.code);
       });
       window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+        if (zoomTierRef.current !== 'mid') return;
         const value = dongValuesRef.current?.[idx];
         const hasValue = value != null;
-        if (zoomTierRef.current === 'mid') {
-          polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
-        }
+        polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
         infoWindowRef.current?.setContent(
           `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
         );

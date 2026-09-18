@@ -41,10 +41,11 @@ export default function KakaoChoropleth({
     const hasValue = value != null;
     const tier = zoomTierRef.current;
     if (tier !== 'far') {
-      // 확대된 상태에서는 구 색칠을 완전히 숨긴다("동" 레이어와 겹쳐서 진해지는 걸 막기 위함).
-      // 다만 도형 자체는 지도에 남겨둬서(투명해도) 클릭으로 지역을 고를 수 있게 한다.
+      // 확대된 상태에서는 구 색칠을 완전히 숨기고, clickable도 꺼서 그 아래 "동" 레이어나
+      // 단지 마커의 클릭/호버를 가로채지 않게 한다 (안 보이는 도형이 계속 이벤트를 먹으면
+      // 마커를 눌러도 반응이 없거나, 사라지지 않는 툴팁이 뜨는 것처럼 보인다).
       return {
-        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0,
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: false,
       };
     }
     return {
@@ -53,6 +54,7 @@ export default function KakaoChoropleth({
       strokeOpacity: hasValue ? 1 : 0.15,
       fillColor: colorForRef.current(value),
       fillOpacity: hasValue ? 0.32 : 0,
+      clickable: true,
     };
   };
 
@@ -198,11 +200,10 @@ export default function KakaoChoropleth({
           if (f.code) onSelectRef.current?.(f.code);
         });
         window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
+          if (zoomTierRef.current !== 'far') return;
           const value = valuesRef.current?.[idx];
           const hasValue = value != null;
-          if (zoomTierRef.current === 'far') {
-            polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
-          }
+          polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
           setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
         });
         window.kakao.maps.event.addListener(polygon, 'mouseout', () => {
