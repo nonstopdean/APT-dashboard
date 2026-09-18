@@ -931,6 +931,48 @@ export default function Page() {
 
   const [analyticsMetric, setAnalyticsMetric] = useState('change');
   const [analyticsScope, setAnalyticsScope] = useState('region');
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('6'); // 3|6|12
+  const [analyticsView, setAnalyticsView] = useState('overview'); // overview|compare|momentum|volume|highs
+
+  // 시장분석센터: 같은 데이터에서 가격 모멘텀·거래강도·신고가·고점대비 하락폭을 함께 계산한다.
+  const advancedAnalytics = useMemo(() => {
+    const cutoff = ymShift(endYm, -(parseInt(analyticsPeriod, 10) - 1));
+    const tx = allTx.filter((t) => {
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      return ym >= cutoff && ym <= endYm;
+    });
+    const priceOf = (t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount);
+    const keyOf = (t) => `${t.regionCode}|${t.dong}|${t.apt}`;
+    const groups = {};
+    tx.forEach((t) => { const k = keyOf(t); (groups[k] ||= []).push(t); });
+    const rows = Object.entries(groups).map(([key, rows0]) => {
+      const rowsSorted = [...rows0].filter((r) => priceOf(r) != null).sort((a, b) => `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`.localeCompare(`${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`));
+      if (!rowsSorted.length) return null;
+      const latest = rowsSorted[rowsSorted.length - 1];
+      const prev = rowsSorted.length > 1 ? rowsSorted[rowsSorted.length - 2] : null;
+      const prices = rowsSorted.map(priceOf).filter((v) => v != null);
+      const high = Math.max(...prices);
+      const current = priceOf(latest);
+      const first = priceOf(rowsSorted[0]);
+      const change = first ? ((current - first) / first) * 100 : null;
+      const mom = prev && priceOf(prev) ? ((current - priceOf(prev)) / priceOf(prev)) * 100 : null;
+      const newHigh = current >= high && rowsSorted.length >= 2;
+      return {
+        key, apt: latest.apt, dong: latest.dong, regionCode: latest.regionCode, latest: current,
+        unitPrice: latest.pricePerPyeong, volume: rowsSorted.length, change, mom, high,
+        drawdown: high ? ((current - high) / high) * 100 : null, newHigh,
+      };
+    }).filter(Boolean);
+    const monthly = {};
+    tx.forEach((t) => { const ym = `${t.year}${String(t.month).padStart(2, '0')}`; monthly[ym] = (monthly[ym] || 0) + 1; });
+    const monthSeries = Object.keys(monthly).sort().map((ym) => ({ ym: monthLabel(ym), 건수: monthly[ym] }));
+    const highs = rows.filter((r) => r.newHigh).sort((a, b) => (b.mom ?? -Infinity) - (a.mom ?? -Infinity)).slice(0, 30);
+    const momentum = [...rows].filter((r) => r.mom != null).sort((a, b) => b.mom - a.mom).slice(0, 30);
+    const drawdowns = [...rows].filter((r) => r.drawdown != null && r.drawdown < 0).sort((a, b) => a.drawdown - b.drawdown).slice(0, 30);
+    const volumeLeaders = [...rows].sort((a, b) => b.volume - a.volume).slice(0, 30);
+    return { tx, rows, monthSeries, highs, momentum, drawdowns, volumeLeaders, cutoff };
+  }, [allTx, isRent, endYm, analyticsPeriod]);
+
 
   const analyticsRows = useMemo(() => {
     const rows = [];
@@ -1891,13 +1933,14 @@ export default function Page() {
             { key: 'compare', label: '비교분석' },
             { key: 'subscriptions', label: '분양정보' },
             { key: 'analytics', label: '순위·통계' },
+            { key: 'market', label: '시장분석' },
             { key: 'favorites', label: '즐겨찾기' },
           ].map((t) => (
             <div
               key={t.key}
               onClick={() => setViewMode(t.key)}
               style={{
-                display: 'flex', alignItems: 'center', height: '100%', padding: '0 9px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', height: '100%', padding: '0 7px', cursor: 'pointer',
                 fontSize: 12.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
                 color: viewMode === t.key ? '#fff' : 'rgba(255,255,255,0.55)',
                 borderBottom: viewMode === t.key ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
@@ -1916,7 +1959,7 @@ export default function Page() {
             onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
             placeholder="지역 또는 단지명 검색"
             style={{
-              width: 150, padding: '7px 10px', borderRadius: 8, border: 'none', outline: 'none',
+              width: 128, padding: '7px 9px', borderRadius: 8, border: 'none', outline: 'none',
               background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 12.5,
             }}
           />
@@ -2389,6 +2432,145 @@ export default function Page() {
             </div>
           </div>
         </div>
+      ) : viewMode === 'market' ? (
+      <div style={{ padding: '20px 20px 44px', maxWidth: 1400, margin: '0 auto' }}>
+        <div style={{ marginBottom: 18 }}>
+          <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>시장분석센터</h1>
+          <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래를 바탕으로 가격·거래량·신고가·고점대비 하락폭을 한 화면에서 확인합니다.</p>
+        </div>
+        <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} className="ui-card">
+          <span style={{ fontSize: 12, fontWeight: 700 }}>분석기간</span>
+          {['3', '6', '12'].map((v) => (
+            <button key={v} className="portal-pill" onClick={() => setAnalyticsPeriod(v)} style={{ background: analyticsPeriod === v ? PALETTE.accent : PALETTE.panelAlt, color: analyticsPeriod === v ? '#fff' : PALETTE.textPrimary }}>{v}개월</button>
+          ))}
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: PALETTE.textMuted }}>조회 {advancedAnalytics.tx.length.toLocaleString()}건 · {advancedAnalytics.rows.length.toLocaleString()}개 단지</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 10, marginBottom: 12 }}>
+          {[
+            ['평균 최근가', advancedAnalytics.rows.length ? fmtWon(advancedAnalytics.rows.reduce((s, r) => s + r.latest, 0) / advancedAnalytics.rows.length) : '-'],
+            ['거래량', `${advancedAnalytics.tx.length.toLocaleString()}건`],
+            ['신고가 단지', `${advancedAnalytics.highs.length}개`],
+            ['상승 모멘텀', advancedAnalytics.momentum[0] ? fmtPct(advancedAnalytics.momentum[0].mom) : '-'],
+            ['최대 하락폭', advancedAnalytics.drawdowns[0] ? fmtPct(advancedAnalytics.drawdowns[0].drawdown) : '-'],
+          ].map(([l, v]) => (
+            <div key={l} style={styles.card} className="ui-card"><div style={styles.kpiLabel}>{l}</div><div style={{ ...styles.kpiValue, fontSize: 20 }}>{v}</div></div>
+          ))}
+        </div>
+        <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card">
+          {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락']].map(([k, l]) => (
+            <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
+          ))}
+        </div>
+        {analyticsView === 'overview' && (
+          <>
+            <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card">
+              <h2 style={styles.sectionTitle}>월별 거래량</h2>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={advancedAnalytics.monthSeries}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="ym" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="건수" fill={PALETTE.accent} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={styles.card} className="ui-card">
+                <h2 style={styles.sectionTitle}>최근 상승 모멘텀</h2>
+                {advancedAnalytics.momentum.slice(0, 8).map((r) => (
+                  <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: `1px solid ${PALETTE.border}`, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', color: PALETTE.textMuted, fontWeight: 400 }}>{r.dong}</small></span>
+                    <b style={{ color: r.mom >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(r.mom)}</b>
+                  </div>
+                ))}
+              </div>
+              <div style={styles.card} className="ui-card">
+                <h2 style={styles.sectionTitle}>고점 대비 하락</h2>
+                {advancedAnalytics.drawdowns.slice(0, 8).map((r) => (
+                  <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: `1px solid ${PALETTE.border}`, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>
+                    <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', color: PALETTE.textMuted, fontWeight: 400 }}>{r.dong}</small></span>
+                    <b style={{ color: PALETTE.down }}>{fmtPct(r.drawdown)}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+        {analyticsView === 'compare' && (
+          <div style={styles.card} className="ui-card">
+            <h2 style={styles.sectionTitle}>단지 가격비교</h2>
+            <p style={{ fontSize: 11, color: PALETTE.textMuted }}>최근 거래가와 기간 변동, 거래량을 동시에 비교합니다.</p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead><tr>{['단지', '최근가', '평당가', '변동률', '거래량', '고점대비'].map((h) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {advancedAnalytics.rows.slice().sort((a, b) => (b.unitPrice ?? b.latest) - (a.unitPrice ?? a.latest)).slice(0, 80).map((r) => (
+                    <tr key={r.key}>
+                      <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>{r.apt}<div style={{ fontSize: 10, color: PALETTE.textMuted }}>{r.dong}</div></td>
+                      <td style={styles.td}>{fmtWon(r.latest)}</td>
+                      <td style={styles.td}>{r.unitPrice ? fmtManwon(r.unitPrice) : '-'}</td>
+                      <td style={{ ...styles.td, color: r.change >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(r.change)}</td>
+                      <td style={styles.td}>{r.volume}건</td>
+                      <td style={{ ...styles.td, color: r.drawdown < 0 ? PALETTE.down : PALETTE.textSecondary }}>{fmtPct(r.drawdown)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {analyticsView === 'momentum' && (
+          <div style={styles.card} className="ui-card">
+            <h2 style={styles.sectionTitle}>최근 거래 모멘텀</h2>
+            <p style={{ fontSize: 11, color: PALETTE.textMuted }}>선택 기간 내 마지막 두 거래의 가격 차이를 계산한 지표입니다. 거래 간 면적 차이는 보정하지 않습니다.</p>
+            {advancedAnalytics.momentum.map((r, i) => (
+              <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '42px 1fr 100px 90px', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}`, alignItems: 'center' }}>
+                <b>{i + 1}</b>
+                <span style={{ fontSize: 12, fontWeight: 700, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>{r.apt}<small style={{ display: 'block', fontWeight: 400, color: PALETTE.textMuted }}>{r.dong}</small></span>
+                <span>{fmtWon(r.latest)}</span>
+                <b style={{ color: r.mom >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(r.mom)}</b>
+              </div>
+            ))}
+          </div>
+        )}
+        {analyticsView === 'volume' && (
+          <div style={styles.card} className="ui-card">
+            <h2 style={styles.sectionTitle}>거래량 상위 단지</h2>
+            {advancedAnalytics.volumeLeaders.map((r, i) => (
+              <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '42px 1fr 90px 90px', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
+                <b>{i + 1}</b>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', fontWeight: 400, color: PALETTE.textMuted }}>{r.dong}</small></span>
+                <span>{r.volume}건</span>
+                <span>{fmtWon(r.latest)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {analyticsView === 'highs' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={styles.card} className="ui-card">
+              <h2 style={styles.sectionTitle}>신고가 후보</h2>
+              {advancedAnalytics.highs.map((r) => (
+                <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
+                  <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.up }}>{fmtWon(r.latest)}</span>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.dong} · 최고가 갱신</div>
+                </div>
+              ))}
+            </div>
+            <div style={styles.card} className="ui-card">
+              <h2 style={styles.sectionTitle}>고점 대비 하락폭</h2>
+              {advancedAnalytics.drawdowns.map((r) => (
+                <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
+                  <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.down }}>{fmtPct(r.drawdown)}</span>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.dong} · 현재 {fmtWon(r.latest)} / 고점 {fmtWon(r.high)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 12 }}>※ 모든 지표는 현재 화면에서 조회된 실거래를 기반으로 한 파생지표입니다. 면적·층·동일 평형 여부를 완전히 보정하지 않은 값은 참고용으로 표시합니다.</div>
+      </div>
       ) : viewMode === 'favorites' ? (
       <div style={{ padding: '20px 20px 0' }}>
         <div style={styles.card} className="ui-card">
@@ -2497,7 +2679,7 @@ export default function Page() {
       </div>
       )}
 
-      {viewMode !== 'compare' && viewMode !== 'subscriptions' && viewMode !== 'favorites' && viewMode !== 'analytics' && (
+      {viewMode !== 'compare' && viewMode !== 'subscriptions' && viewMode !== 'favorites' && viewMode !== 'analytics' && viewMode !== 'market' && (
       <main style={styles.main} className="dash-main">
         <div>
           <h1 className="dash-title" style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 4px' }}>
