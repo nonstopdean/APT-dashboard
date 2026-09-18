@@ -16,6 +16,7 @@ export default function KakaoChoropleth({
   const polygonsRef = useRef([]); // [{ polygon, featureIndex }] - 구 단위
   const dongPolygonsRef = useRef([]); // [{ polygon, featureIndex }] - 동 단위
   const markersRef = useRef([]); // [{ marker, key }]
+  const clustererRef = useRef(null); // 단지 마커 클러스터러 (아실/호갱노노처럼 겹치는 단지를 묶어서 보여줌)
   const placesRef = useRef(null);
   const onComplexSelectRef = useRef(onComplexSelect);
   const onZoomTierChangeRef = useRef(onZoomTierChange);
@@ -101,20 +102,41 @@ export default function KakaoChoropleth({
   // 축소하면 반대로 바뀐다 — 실제 부동산 사이트들과 같은 방식.
   const zoomDebounceRef = useRef(null);
 
+  // 마커는 항상 클러스터러가 관리한다. 넓게 볼 때는 겹치는 단지가 하나의 클러스터로 묶이고,
+  // 가까이 확대하면 클러스터가 풀리면서 단지 하나하나가 마커로 보인다 — 실제 부동산 앱들과 같은 방식.
+  const syncClusterer = () => {
+    if (!mapRef.current || !window.kakao?.maps?.MarkerClusterer) return;
+    if (!clustererRef.current) {
+      clustererRef.current = new window.kakao.maps.MarkerClusterer({
+        map: mapRef.current,
+        markers: [],
+        gridSize: 60,
+        averageCenter: true,
+        // 이 레벨보다 확대되면(레벨 3 아래) 클러스터가 풀리면서 개별 마커가 나타난다.
+        minLevel: NEAR_ZOOM_LEVEL,
+        calculator: (size) => (size < 10 ? 0 : size < 50 ? 1 : 2),
+        styles: [
+          { width: 38, height: 38, borderRadius: 19, background: 'rgba(178,58,46,0.88)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 12, lineHeight: '38px' },
+          { width: 48, height: 48, borderRadius: 24, background: 'rgba(178,58,46,0.92)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 13, lineHeight: '48px' },
+          { width: 60, height: 60, borderRadius: 30, background: 'rgba(122,34,26,0.94)', color: '#fff', textAlign: 'center', fontWeight: 800, fontSize: 14, lineHeight: '60px' },
+        ],
+      });
+    }
+    clustererRef.current.clear();
+    const all = markersRef.current.map((m) => m.marker);
+    if (all.length > 0) clustererRef.current.addMarkers(all);
+  };
+
   const handleZoomChangedImmediate = () => {
     if (!mapRef.current) return;
     const level = mapRef.current.getLevel();
     const tier = level >= FAR_ZOOM_LEVEL ? 'far' : (level <= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
     if (tier !== zoomTierRef.current) {
-      console.time('[지도] 줌 전환 재계산');
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
       onZoomTierChangeRef.current?.(tier);
-      console.timeEnd('[지도] 줌 전환 재계산');
-      console.log(`[지도] 구 도형 ${polygonsRef.current.length}개, 동 도형 ${dongPolygonsRef.current.length}개, 마커 ${markersRef.current.length}개`);
     }
-    updateMarkerVisibility();
   };
 
   // 줌 도중(스크롤/핀치 중) 매 프레임마다 도형 수백 개를 다시 그리면 버벅이므로,
@@ -201,7 +223,7 @@ export default function KakaoChoropleth({
       if (!script) {
         script = document.createElement('script');
         script.id = 'kakao-map-sdk';
-        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false&libraries=services`;
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${key}&autoload=false&libraries=services,clusterer`;
         script.async = true;
         script.onerror = () => { if (!cancelled) setLoadFailed(true); };
         document.head.appendChild(script);
@@ -320,14 +342,13 @@ export default function KakaoChoropleth({
         window.kakao.maps.event.addListener(marker, 'click', () => {
           onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
         });
-        // 새로 생긴 마커는 현재 확대 상태에 맞춰 바로 보이거나 숨겨지게만 설정하고,
-        // 전체 마커를 다시 훑는 건 다 끝난 뒤 한 번만 한다 (그렇지 않으면 개수가 많을 때 버벅인다).
-        marker.setMap(mapRef.current.getLevel() <= NEAR_ZOOM_LEVEL ? mapRef.current : null);
+        // 지도에 직접 붙이지 않고 클러스터러가 보여주도록 둔다 — 줌 레벨에 따라
+        // 클러스터(묶음) <-> 개별 마커 전환은 클러스터러가 알아서 한다.
         markersRef.current.push({ marker, key: c.key });
       }, 6);
       queueServerGeocodeSave(newlyFound);
 
-      if (!cancelled) updateMarkerVisibility();
+      if (!cancelled) syncClusterer();
     }
     run();
     return () => { cancelled = true; };

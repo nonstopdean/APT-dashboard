@@ -67,6 +67,16 @@ function fmtManwon(manwon) {
   return `${Math.round(manwon).toLocaleString()}만원`;
 }
 
+// 층 분포를 "저층 n / 중층 n / 고층 n" 형태로 줄여서 보여준다 (단지 비교 표용).
+function floorDistLabel(floorDist) {
+  if (!floorDist) return '-';
+  const parts = [];
+  if (floorDist.low) parts.push(`저 ${floorDist.low}`);
+  if (floorDist.mid) parts.push(`중 ${floorDist.mid}`);
+  if (floorDist.high) parts.push(`고 ${floorDist.high}`);
+  return parts.length ? parts.join(' / ') : '-';
+}
+
 // KOSTAT 지도 데이터의 시/도 코드(앞 2자리) -> 시/도 이름. 우리 REGION_GROUPS와 이름이 다른
 // (개편된) 시/도는 별칭으로 연결한다.
 const KOSTAT_SIDO_CODE_TO_NAME = {
@@ -593,10 +603,28 @@ export default function Page() {
     });
   }, [selected, months, rawByRegionMonth, unitSizeFilter, buildYearFilter]);
 
-  const recentTx = useMemo(() => allTx.slice(0, 30), [allTx]);
+  // 아실/호갱노노처럼 가격대(매매금액·보증금, 억 단위)로 거래 내역을 좁혀볼 수 있는 필터.
+  const [priceRange, setPriceRange] = useState({ min: '', max: '' });
+
+  const allTxFiltered = useMemo(() => {
+    if (priceRange.min === '' && priceRange.max === '') return allTx;
+    const min = priceRange.min === '' ? null : parseFloat(priceRange.min);
+    const max = priceRange.max === '' ? null : parseFloat(priceRange.max);
+    return allTx.filter((t) => {
+      const v = isRent ? t.deposit : t.amount;
+      if (v == null) return false;
+      const eok = v / 10000;
+      if (min != null && Number.isFinite(min) && eok < min) return false;
+      if (max != null && Number.isFinite(max) && eok > max) return false;
+      return true;
+    });
+  }, [allTx, priceRange, isRent]);
+
+  const recentTx = useMemo(() => allTxFiltered.slice(0, 30), [allTxFiltered]);
 
   const [aptHistory, setAptHistory] = useState([]);
   const [aptHistoryLoading, setAptHistoryLoading] = useState(false);
+  const [historyAreaFilter, setHistoryAreaFilter] = useState('all');
 
   useEffect(() => {
     setAptHistory([]);
@@ -628,6 +656,7 @@ export default function Page() {
           return db.localeCompare(da);
         });
         setAptHistory(filtered);
+        setHistoryAreaFilter('all');
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setAptHistoryLoading(false); });
@@ -639,9 +668,59 @@ export default function Page() {
     return nearestStation(selectedApt.lat, selectedApt.lng);
   }, [selectedApt]);
 
+  // 아실처럼 단지 상세 모달 상단에 핵심 요약(최근 3개월 평균가, 1년 전 대비, 3년 최고가)을 보여준다.
+  const aptSummary = useMemo(() => {
+    if (aptHistory.length === 0) return null;
+    const priceOf = (t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount);
+    const ymOf = (t) => `${t.year}${String(t.month).padStart(2, '0')}`;
+    const ym3 = ymShift(ymNow(), -2); // 이번 달 포함 최근 3개월
+    const recent = aptHistory.filter((t) => ymOf(t) >= ym3);
+    const recentPrices = recent.map(priceOf).filter((v) => v != null);
+    const ymAgo = ymShift(ymNow(), -12);
+    const yearAgo = aptHistory.filter((t) => ymOf(t) >= ymAgo && ymOf(t) <= ymShift(ymNow(), -10));
+    const yearAgoPrices = yearAgo.map(priceOf).filter((v) => v != null);
+    const recentAvg = recentPrices.length ? recentPrices.reduce((s, v) => s + v, 0) / recentPrices.length : null;
+    const yearAgoAvg = yearAgoPrices.length ? yearAgoPrices.reduce((s, v) => s + v, 0) / yearAgoPrices.length : null;
+    const yoyChange = recentAvg != null && yearAgoAvg ? ((recentAvg - yearAgoAvg) / yearAgoAvg) * 100 : null;
+    const sorted = [...aptHistory].sort((a, b) => (priceOf(b) ?? 0) - (priceOf(a) ?? 0));
+    const maxTx = sorted[0];
+    return {
+      recentAvg,
+      recentCount: recent.length,
+      yearAgoAvg,
+      yoyChange,
+      maxPrice: maxTx ? priceOf(maxTx) : null,
+      maxLabel: maxTx ? `${fmtArea(maxTx.area)} · ${maxTx.year}.${String(maxTx.month).padStart(2, '0')}` : '-',
+    };
+  }, [aptHistory, isRent]);
+
+  // 같은 단지라도 전용면적(평형)마다 가격이 다르므로, 아실처럼 면적대별로 나눠서 볼 수 있게 한다.
+  const aptHistoryAreaOptions = useMemo(() => {
+    const groups = {};
+    aptHistory.forEach((t) => {
+      if (t.pyeong == null) return;
+      const bucket = Math.floor(t.pyeong / 10) * 10;
+      groups[bucket] = (groups[bucket] || 0) + 1;
+    });
+    return Object.keys(groups)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((b) => ({
+        value: String(b),
+        label: `${b}평대`,
+        count: groups[b],
+      }));
+  }, [aptHistory]);
+
+  const aptHistoryFiltered = useMemo(() => {
+    if (historyAreaFilter === 'all') return aptHistory;
+    const bucket = parseInt(historyAreaFilter, 10);
+    return aptHistory.filter((t) => t.pyeong != null && Math.floor(t.pyeong / 10) * 10 === bucket);
+  }, [aptHistory, historyAreaFilter]);
+
   const aptTrendData = useMemo(() => {
     const byMonth = {};
-    aptHistory.forEach((t) => {
+    aptHistoryFiltered.forEach((t) => {
       const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
       const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
       if (price == null) return;
@@ -652,16 +731,16 @@ export default function Page() {
       ym: monthLabel(ym),
       가격: Math.round(byMonth[ym].reduce((s, v) => s + v, 0) / byMonth[ym].length),
     }));
-  }, [aptHistory, isRent]);
+  }, [aptHistoryFiltered, isRent]);
 
   const aptVolumeData = useMemo(() => {
     const byMonth = {};
-    aptHistory.forEach((t) => {
+    aptHistoryFiltered.forEach((t) => {
       const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
       byMonth[ym] = (byMonth[ym] || 0) + 1;
     });
     return Object.keys(byMonth).sort().map((ym) => ({ ym: monthLabel(ym), 건수: byMonth[ym] }));
-  }, [aptHistory]);
+  }, [aptHistoryFiltered]);
 
   // 단지별로 묶어서, 가장 최근 거래 기준으로 여러 단지를 한눈에 비교할 수 있는 목록.
   // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
@@ -669,7 +748,7 @@ export default function Page() {
 
   const complexCompare = useMemo(() => {
     const groups = {};
-    allTx.forEach((t) => {
+    allTxFiltered.forEach((t) => {
       const key = `${t.regionCode}|${t.dong}|${t.apt}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
@@ -691,7 +770,17 @@ export default function Page() {
       const change = unitPrice && earliestUnitPrice
         ? ((unitPrice - earliestUnitPrice) / earliestUnitPrice) * 100
         : null;
-      return { ...latest, count: rows.length, unitPrice, change };
+      return { ...latest, count: rows.length, unitPrice, change, floorDist: (() => {
+        const d = { low: 0, mid: 0, high: 0 };
+        rows.forEach((r) => {
+          const f = parseInt(r.floor, 10);
+          if (!Number.isFinite(f)) return;
+          if (f <= 10) d.low += 1;
+          else if (f <= 20) d.mid += 1;
+          else d.high += 1;
+        });
+        return d;
+      })() };
     });
     const filtered = list.filter((r) => r.unitPrice != null);
     if (complexSort === 'change') {
@@ -705,7 +794,7 @@ export default function Page() {
       });
     }
     return filtered.sort((a, b) => a.unitPrice - b.unitPrice);
-  }, [allTx, isRent, complexSort]);
+  }, [allTxFiltered, isRent, complexSort]);
 
   const [analyticsMetric, setAnalyticsMetric] = useState('change');
   const [analyticsScope, setAnalyticsScope] = useState('region');
@@ -845,6 +934,23 @@ export default function Page() {
   }, [allTx, fullComplexList, dongCentroids]);
 
   const [globalSearch, setGlobalSearch] = useState('');
+
+  // 조회해둔 거래 내역 안에서 단지 이름을 바로 찾아보는 사이드바 검색 (아실 앱의 단지 검색처럼).
+  const [complexSearch, setComplexSearch] = useState('');
+  const complexSearchResults = useMemo(() => {
+    const q = complexSearch.trim();
+    if (!q) return [];
+    const seen = new Set();
+    const out = [];
+    allTxFiltered.forEach((t) => {
+      if (!t.apt?.includes(q)) return;
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode });
+    });
+    return out;
+  }, [complexSearch, allTxFiltered]);
   const [globalSearchMsg, setGlobalSearchMsg] = useState('');
 
   const handleGlobalSearch = () => {
@@ -1532,6 +1638,44 @@ export default function Page() {
               시/도 전체는 그 안의 모든 시/군/구를 합산하는 방식이라 조회가 더 오래 걸려요.
               기간은 3~6개월 정도로 시작해보세요.
             </p>
+          )}
+        </div>
+
+        <div>
+          <label style={styles.label}>단지 검색 (현재 조회 내역)</label>
+          <input
+            type="text"
+            placeholder="아파트 이름 입력 (예: 자이, 푸르지오)"
+            value={complexSearch}
+            onChange={(e) => setComplexSearch(e.target.value)}
+            style={styles.select}
+          />
+          {complexSearch.trim() && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
+              {complexSearchResults.slice(0, 8).map((c) => (
+                <div
+                  key={c.key}
+                  onClick={() => {
+                    setComplexSearch('');
+                    const coord = codeToLatLng[c.regionCode];
+                    setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: coord?.lat, lng: coord?.lng });
+                  }}
+                  style={{
+                    border: `1px solid ${PALETTE.border}`, borderRadius: 8, padding: '7px 9px', cursor: 'pointer',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</div>
+                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{regionLabel(c.regionCode)} {c.dong}</div>
+                  </div>
+                  <span style={{ fontSize: 10.5, color: PALETTE.textMuted, flexShrink: 0 }}>단지 상세</span>
+                </div>
+              ))}
+              {complexSearchResults.length === 0 && (
+                <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>일치하는 단지가 없어요.</span>
+              )}
+            </div>
           )}
         </div>
 
@@ -2440,6 +2584,40 @@ export default function Page() {
             </div>
 
             <div style={styles.card} className="ui-card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: PALETTE.textSecondary }}>{isRent ? '보증금' : '매매가'} 금액대 (억원)</span>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="최소"
+                  value={priceRange.min}
+                  onChange={(e) => setPriceRange((p) => ({ ...p, min: e.target.value }))}
+                  style={{ ...styles.select, width: 76, padding: '6px 8px' }}
+                />
+                <span style={{ color: PALETTE.textMuted }}>~</span>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="최대"
+                  value={priceRange.max}
+                  onChange={(e) => setPriceRange((p) => ({ ...p, max: e.target.value }))}
+                  style={{ ...styles.select, width: 76, padding: '6px 8px' }}
+                />
+                {(priceRange.min !== '' || priceRange.max !== '') && (
+                  <button
+                    onClick={() => setPriceRange({ min: '', max: '' })}
+                    style={{ border: `1px solid ${PALETTE.border}`, background: PALETTE.panelAlt, borderRadius: 8, padding: '5px 10px', fontSize: 11.5, cursor: 'pointer', color: PALETTE.textSecondary }}
+                  >
+                    필터 해제
+                  </button>
+                )}
+                <span style={{ fontSize: 11, color: PALETTE.textMuted }}>
+                  {allTxFiltered.length.toLocaleString()}건 표시 중
+                </span>
+              </div>
+            </div>
+
+            <div style={styles.card} className="ui-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <h2 style={{ ...styles.sectionTitle, margin: 0 }}>단지별 비교</h2>
                 <select
@@ -2472,6 +2650,7 @@ export default function Page() {
                       <th style={{ ...styles.th, width: 80 }}>등락률</th>
                       <th style={{ ...styles.th, width: 90 }}>최근 계약일</th>
                       <th style={{ ...styles.th, width: 70 }}>거래건수</th>
+                      <th style={{ ...styles.th, width: 110 }}>층 분포</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2493,6 +2672,7 @@ export default function Page() {
                         </td>
                         <td style={styles.td}>{c.year}.{c.month}.{c.day}</td>
                         <td style={styles.td}>{c.count}</td>
+                      <td style={styles.td}>{floorDistLabel(c.floorDist)}</td>
                       </tr>
                     ))}
                     {complexCompare.length === 0 && (
@@ -2602,6 +2782,29 @@ export default function Page() {
               {labelFor(selectedApt.regionCode)} · 최근 3년 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
+            {aptSummary && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
+                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>거래 {aptSummary.recentCount}건</div>
+                </div>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>1년 전 대비</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: aptSummary.yoyChange > 0 ? PALETTE.up : aptSummary.yoyChange < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                    {aptSummary.yoyChange != null ? fmtPct(aptSummary.yoyChange) : '-'}
+                  </div>
+                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
+                    {aptSummary.yearAgoAvg != null ? `1년 전 평균 ${fmtManwon(aptSummary.yearAgoAvg)}` : '비교 기준 없음'}
+                  </div>
+                </div>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>3년 내 최고가</div>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</div>
+                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{aptSummary.maxLabel}</div>
+                </div>
+              </div>
+            )}
             {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                 {isRegulatedByCode(selectedApt.regionCode) && (
@@ -2627,6 +2830,36 @@ export default function Page() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                 {nearbySchools.map((s) => (
                   <span key={s.name} style={styles.chip}>{s.name} ({s.kind})</span>
+                ))}
+              </div>
+            )}
+            {aptHistoryAreaOptions.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: PALETTE.textMuted }}>평형대</span>
+                <button
+                  onClick={() => setHistoryAreaFilter('all')}
+                  style={{
+                    border: `1px solid ${historyAreaFilter === 'all' ? PALETTE.accent : PALETTE.border}`,
+                    background: historyAreaFilter === 'all' ? 'rgba(239,68,68,0.10)' : 'transparent',
+                    color: historyAreaFilter === 'all' ? PALETTE.up : PALETTE.textSecondary,
+                    borderRadius: 8, padding: '3px 8px', fontSize: 11, cursor: 'pointer',
+                  }}
+                >
+                  전체
+                </button>
+                {aptHistoryAreaOptions.map((o) => (
+                  <button
+                    key={o.value}
+                    onClick={() => setHistoryAreaFilter(o.value)}
+                    style={{
+                      border: `1px solid ${historyAreaFilter === o.value ? PALETTE.accent : PALETTE.border}`,
+                      background: historyAreaFilter === o.value ? 'rgba(239,68,68,0.10)' : 'transparent',
+                      color: historyAreaFilter === o.value ? PALETTE.up : PALETTE.textSecondary,
+                      borderRadius: 8, padding: '3px 8px', fontSize: 11, cursor: 'pointer',
+                    }}
+                  >
+                    {o.label} ({o.count})
+                  </button>
                 ))}
               </div>
             )}
@@ -2684,7 +2917,7 @@ export default function Page() {
                   </tr>
                 </thead>
                 <tbody>
-                  {aptHistory.map((t, i) => (
+                  {aptHistoryFiltered.map((t, i) => (
                     <tr key={i}>
                       <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                       <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
@@ -2701,7 +2934,7 @@ export default function Page() {
                       )}
                     </tr>
                   ))}
-                  {aptHistory.length === 0 && (
+                  {aptHistoryFiltered.length === 0 && (
                     <tr><td style={styles.td} colSpan={isRent ? 7 : 5}>표시할 거래 내역이 없습니다.</td></tr>
                   )}
                 </tbody>
