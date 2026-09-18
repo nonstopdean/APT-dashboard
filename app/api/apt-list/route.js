@@ -3,7 +3,7 @@ import { expandRegionCode } from '../../../lib/regions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 45;
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -22,9 +22,9 @@ export async function GET(request) {
 
   const memberSet = new Set();
   codes.forEach((code) => expandRegionCode(code).forEach((mc) => memberSet.add(mc)));
-  // 시/도 전체처럼 한 번에 수십 개 구가 펼쳐지면 단지 목록 조회량이 너무 커져서 느려지므로,
-  // 지도 마커용으로는 앞쪽 일부 지역만 가져온다 (실거래가 있는 지역은 allTx 쪽에서 이미 커버됨).
-  const members = [...memberSet].slice(0, 8);
+  // 시/도 전체처럼 한 번에 수십 개 구가 펼쳐지면 단지 목록 조회량이 커지지만, 병렬로 가져오고
+  // 지도 마커도 이제 좌표 검색이 거의 필요 없어 가벼워졌으므로 한 시/도 전체 정도는 감당할 수 있다.
+  const members = [...memberSet].slice(0, 30);
 
   const data = {};
   let errorMsg = null;

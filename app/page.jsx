@@ -157,6 +157,20 @@ export default function Page() {
   const [subsTabSido, setSubsTabSido] = useState('서울');
   const [subsTabRows, setSubsTabRows] = useState([]);
   const [subsTabLoading, setSubsTabLoading] = useState(false);
+  const [subsSubView, setSubsSubView] = useState('list'); // 'list' | 'supply'
+
+  const supplyByMonth = useMemo(() => {
+    const byMonth = {};
+    subsTabRows.forEach((s) => {
+      const ym = (s.moveInMonth || '').trim();
+      if (!ym) return;
+      const units = parseInt(s.totalUnits, 10);
+      if (!Number.isFinite(units)) return;
+      byMonth[ym] = (byMonth[ym] || 0) + units;
+    });
+    return Object.keys(byMonth).sort().map((ym) => ({ ym, 세대수: byMonth[ym] }));
+  }, [subsTabRows]);
+
   const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
 
   const currentSidoShort = useMemo(() => {
@@ -208,6 +222,33 @@ export default function Page() {
       .finally(() => { if (!cancelled) setSubsTabLoading(false); });
     return () => { cancelled = true; };
   }, [viewMode, subsTabSido]);
+
+  const [populationRows, setPopulationRows] = useState([]);
+  const [populationLoading, setPopulationLoading] = useState(false);
+  const populationCacheRef = useRef({}); // sido -> rows
+
+  useEffect(() => {
+    setPopulationRows([]);
+    if (!currentSidoShort) return undefined;
+    const cached = populationCacheRef.current[currentSidoShort];
+    if (cached) {
+      setPopulationRows(cached);
+      return undefined;
+    }
+    let cancelled = false;
+    setPopulationLoading(true);
+    fetch(`/api/population?sido=${encodeURIComponent(currentSidoShort)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const rows = json?.rows || [];
+        populationCacheRef.current[currentSidoShort] = rows;
+        setPopulationRows(rows);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPopulationLoading(false); });
+    return () => { cancelled = true; };
+  }, [currentSidoShort]);
 
   const aptListCacheRef = useRef({}); // regionCode -> [{kaptCode, kaptName}]
 
@@ -910,7 +951,7 @@ export default function Page() {
     return { lat, lng };
   };
 
-  const MAX_MAP_COMPLEXES = 300;
+  const MAX_MAP_COMPLEXES = 800;
 
   const mapComplexes = useMemo(() => {
     const seen = new Set();
@@ -1480,7 +1521,7 @@ export default function Page() {
         {!isRone && !isRatio && (
         <div>
           <label style={styles.label}>평형 (전용면적 기준)</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6 }}>
             {[['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상']].map(([k, l]) => (
               <div key={k} style={{ ...styles.toggleBtn(unitSizeFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setUnitSizeFilter(k)}>{l}</div>
             ))}
@@ -1491,7 +1532,7 @@ export default function Page() {
         {(dealType === 'trade' || isSilv) && (
         <div>
           <label style={styles.label}>입주년차 (준공연도 기준)</label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6 }}>
             {[['all', '전체'], ['5', '5년 이내'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내'], ['20p', '20년 초과']].map(([k, l]) => (
               <div key={k} style={{ ...styles.toggleBtn(buildYearFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setBuildYearFilter(k)}>{l}</div>
             ))}
@@ -1923,18 +1964,17 @@ export default function Page() {
               style={{ ...styles.select, fontSize: 13 }}
             >
               <option value="">시/도 - 시/군/구 선택</option>
-              <optgroup label="시/도 전체 (합산)">
-                {SIDO_AGGREGATES.map((it) => (
-                  <option key={it.code} value={it.code}>{it.name}</option>
-                ))}
-              </optgroup>
-              {REGION_GROUPS.map((g) => (
-                <optgroup key={g.sido} label={g.sido}>
-                  {g.items.map((it) => (
-                    <option key={it.code} value={it.code}>{it.name}</option>
-                  ))}
-                </optgroup>
-              ))}
+              {REGION_GROUPS.map((g) => {
+                const agg = SIDO_AGGREGATES.find((a) => a.sido === g.sido);
+                return (
+                  <optgroup key={g.sido} label={g.sido}>
+                    {agg && <option key={agg.code} value={agg.code}>{agg.name}</option>}
+                    {g.items.map((it) => (
+                      <option key={it.code} value={it.code}>{it.name}</option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
             {status === 'loading' && (
               <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 4 }}>불러오는 중...</p>
@@ -2073,14 +2113,20 @@ export default function Page() {
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
             한국부동산원 청약홈 기준, 최근 1년 내 아파트 모집공고예요. 지역을 골라서 확인하세요.
           </p>
-          <div style={{ marginBottom: 14, maxWidth: 220 }}>
-            <select
-              value={subsTabSido}
-              onChange={(e) => setSubsTabSido(e.target.value)}
-              style={{ ...styles.select, fontSize: 13 }}
-            >
-              {SIDO_SHORT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <div style={{ maxWidth: 220, flex: 1, minWidth: 160 }}>
+              <select
+                value={subsTabSido}
+                onChange={(e) => setSubsTabSido(e.target.value)}
+                style={{ ...styles.select, fontSize: 13 }}
+              >
+                {SIDO_SHORT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <div style={styles.toggleBtn(subsSubView === 'list')} onClick={() => setSubsSubView('list')}>분양공고 목록</div>
+              <div style={styles.toggleBtn(subsSubView === 'supply')} onClick={() => setSubsSubView('supply')}>입주물량(공급)</div>
+            </div>
           </div>
           {subsTabLoading && (
             <p style={{ fontSize: 12, color: PALETTE.textMuted }}>불러오는 중...</p>
@@ -2088,7 +2134,27 @@ export default function Page() {
           {!subsTabLoading && subsTabRows.length === 0 && (
             <p style={{ fontSize: 12, color: PALETTE.textMuted }}>최근 1년 내 모집공고가 없어요.</p>
           )}
-          {subsTabRows.length > 0 && (
+          {subsSubView === 'supply' && subsTabRows.length > 0 && (
+            <>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+                {subsTabSido} 지역, 입주예정월 기준 신규 공급 세대수예요. 아파트 청약 공고에 나온 세대수만 반영돼요.
+              </p>
+              <div style={{ width: '100%', height: 260 }}>
+                <ResponsiveContainer>
+                  <BarChart data={supplyByMonth} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={44} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => `${v.toLocaleString()}세대`} />
+                    <Bar dataKey="세대수" fill={PALETTE.accent} radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+          {subsSubView === 'list' && subsTabRows.length > 0 && (
             <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -2135,6 +2201,41 @@ export default function Page() {
           <div style={{ marginBottom: 18 }}>
             <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>순위·통계 분석</h1>
             <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래 데이터를 기준으로 가격수준·변동률·거래량·가격범위를 비교합니다.</p>
+          </div>
+          <div style={{ ...styles.card, marginBottom: 14 }} className="ui-card">
+            <label style={styles.label}>분석할 지역 추가</label>
+            <select
+              value={comparePickerValue}
+              onChange={(e) => addRegionAndFetch(e.target.value)}
+              style={{ ...styles.select, fontSize: 13, maxWidth: 320 }}
+            >
+              <option value="">시/도 - 시/군/구 선택</option>
+              {REGION_GROUPS.map((g) => {
+                const agg = SIDO_AGGREGATES.find((a) => a.sido === g.sido);
+                return (
+                  <optgroup key={g.sido} label={g.sido}>
+                    {agg && <option key={agg.code} value={agg.code}>{agg.name}</option>}
+                    {g.items.map((it) => (
+                      <option key={it.code} value={it.code}>{it.name}</option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {selected.map((code) => (
+                <span key={code} style={styles.chip}>
+                  {labelFor(code)}
+                  <X size={11} style={{ cursor: 'pointer' }} onClick={() => removeRegion(code)} />
+                </span>
+              ))}
+              {selected.length === 0 && (
+                <span style={{ fontSize: 12, color: PALETTE.textMuted }}>선택된 지역이 없어요. 위에서 지역을 추가해보세요.</span>
+              )}
+            </div>
+            {status === 'loading' && (
+              <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 8 }}>불러오는 중...</p>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
             <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>분석 대상</div><div style={styles.kpiValue}>{analyticsKpis.count.toLocaleString()}개</div></div>
@@ -2285,6 +2386,53 @@ export default function Page() {
               : '왼쪽에서 조건을 설정한 뒤 데이터 조회를 눌러주세요.'}
           </p>
         </div>
+
+        {populationLoading && populationRows.length === 0 && (
+          <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }} className="ui-card">
+            인구 추이 불러오는 중...
+          </div>
+        )}
+        {populationRows.length > 1 && (() => {
+          const first = populationRows[0];
+          const last = populationRows[populationRows.length - 1];
+          const change = first.population ? ((last.population - first.population) / first.population) * 100 : null;
+          const chartData = populationRows.map((r) => ({
+            ym: `${r.ym.slice(0, 4)}.${r.ym.slice(4, 6)}`,
+            인구: r.population,
+          }));
+          return (
+            <div style={styles.card} className="ui-card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <h2 style={{ ...styles.sectionTitle, marginBottom: 4 }}>{currentSidoShort} 인구 추이 (KOSIS)</h2>
+                  <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: 0 }}>
+                    최근 {populationRows.length}개월, 주민등록인구 기준
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 800 }}>{last.population.toLocaleString()}명</div>
+                  <div style={{ fontSize: 12, color: change > 0 ? PALETTE.up : change < 0 ? PALETTE.down : PALETTE.textSecondary }}>
+                    {change > 0 ? '▲' : change < 0 ? '▼' : ''} {fmtPct(change)} ({populationRows.length}개월 전 대비)
+                  </div>
+                </div>
+              </div>
+              <div style={{ width: '100%', height: 160, marginTop: 12 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={56}
+                      tickFormatter={(v) => v.toLocaleString()} domain={['auto', 'auto']} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => `${v.toLocaleString()}명`} />
+                    <Line type="monotone" dataKey="인구" stroke={PALETTE.down} strokeWidth={2} dot={false} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          );
+        })()}
 
         {subscriptionsLoading && subscriptions.length === 0 && (
           <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }} className="ui-card">
@@ -2962,7 +3110,7 @@ export default function Page() {
         @media (max-width: 720px) {
           .hero-wrap { flex-direction: column !important; height: 90vh !important; }
           .dash-sidebar-fixed {
-            width: 100% !important; height: 45vh !important; border-right: none !important;
+            width: 100% !important; height: 58vh !important; border-right: none !important;
             border-bottom: 1px solid ${PALETTE.border};
           }
           .dash-main { padding: 16px !important; }
