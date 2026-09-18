@@ -1056,6 +1056,36 @@ export default function Page() {
     return { avg, volume, median: changes.length ? changes[Math.floor(changes.length / 2)] : null, count: analyticsRows.length };
   }, [analyticsRows]);
 
+  const marketSignals = useMemo(() => {
+    const monthsN = Math.max(1, parseInt(analyticsPeriod, 10) || 6);
+    const cutoff = ymShift(endYm, -(monthsN - 1));
+    const priceOf = (t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount);
+    const tx = allTx.filter((t) => {
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      return ym >= cutoff && ym <= endYm;
+    });
+    const byMonth = {};
+    tx.forEach((t) => {
+      const v = priceOf(t); if (v == null) return;
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      (byMonth[ym] ||= []).push(v);
+    });
+    const monthly = Object.keys(byMonth).sort().map((ym) => {
+      const vals = byMonth[ym].slice().sort((a, b) => a - b);
+      return { ym, count: vals.length, median: vals[Math.floor(vals.length / 2)] ?? null };
+    });
+    const split = Math.max(1, Math.floor(monthly.length / 2));
+    const prev = monthly.slice(0, split).reduce((s, r) => s + r.count, 0);
+    const recent = monthly.slice(split).reduce((s, r) => s + r.count, 0);
+    const volumeChange = prev ? ((recent - prev) / prev) * 100 : null;
+    const vals = tx.map(priceOf).filter(Number.isFinite).sort((a, b) => a - b);
+    const q = (ratio) => (vals.length ? vals[Math.floor((vals.length - 1) * ratio)] : null);
+    const median = q(0.5); const p25 = q(0.25); const p75 = q(0.75);
+    const last = monthly.at(-1); const before = monthly.at(-2);
+    const monthlyPriceChange = last?.median && before?.median ? ((last.median - before.median) / before.median) * 100 : null;
+    return { monthly, prev, recent, volumeChange, median, p25, p75, spread: p25 && p75 ? ((p75 - p25) / p25) * 100 : null, monthlyPriceChange };
+  }, [allTx, endYm, analyticsPeriod, isRent]);
+
   const [fullComplexList, setFullComplexList] = useState([]);
 
   useEffect(() => {
@@ -1410,6 +1440,7 @@ export default function Page() {
 
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [mapZoomTier, setMapZoomTier] = useState('far');
+  const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
   const loadedSidosRef = useRef(new Set());
 
   useEffect(() => {
@@ -2064,18 +2095,33 @@ export default function Page() {
           {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
           {allTx.length > 0 && (
             <div className="map-complex-panel" style={{
-              position: 'absolute', top: 72, right: 14, bottom: 18, width: 292, zIndex: 19,
+              position: 'absolute', top: 72, right: 14, width: 292, zIndex: 19,
+              bottom: mapPanelMinimized ? 'auto' : 18,
               background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`,
               borderRadius: 14, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', overflow: 'hidden',
               backdropFilter: 'blur(10px)',
             }}
             >
-              <div style={{ padding: '14px 14px 10px', borderBottom: `1px solid ${PALETTE.border}` }}>
-                <div style={{ fontSize: 14, fontWeight: 800 }}>단지 탐색</div>
-                <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 3 }}>
-                  최근 거래가 있는 단지를 선택하면 상세정보를 확인할 수 있어요.
+              <div
+                style={{
+                  padding: '14px 14px 10px', borderBottom: mapPanelMinimized ? 'none' : `1px solid ${PALETTE.border}`,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer',
+                }}
+                onClick={() => setMapPanelMinimized((v) => !v)}
+              >
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>단지 탐색</div>
+                  {!mapPanelMinimized && (
+                    <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 3 }}>
+                      최근 거래가 있는 단지를 선택하면 상세정보를 확인할 수 있어요.
+                    </div>
+                  )}
                 </div>
+                <span style={{ fontSize: 16, color: PALETTE.textMuted, lineHeight: 1, flexShrink: 0, marginLeft: 8 }}>
+                  {mapPanelMinimized ? '▸' : '▾'}
+                </span>
               </div>
+              {!mapPanelMinimized && (
               <div style={{ overflowY: 'auto', height: 'calc(100% - 64px)' }}>
                 {complexCompare.slice(0, 40).map((c, i) => {
                   const coord = codeToLatLng[c.regionCode];
@@ -2104,6 +2150,7 @@ export default function Page() {
                   );
                 })}
               </div>
+              )}
             </div>
           )}
         </div>
@@ -2482,7 +2529,7 @@ export default function Page() {
           ))}
         </div>
         <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card">
-          {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포']].map(([k, l]) => (
+          {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
             <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
           ))}
         </div>
@@ -2621,6 +2668,46 @@ export default function Page() {
                   <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.dong} · 현재 {fmtWon(r.latest)} / 고점 {fmtWon(r.high)}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+        {analyticsView === 'signals' && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ ...styles.card, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10 }} className="ui-card">
+              {[['최근 거래량', `${marketSignals.recent.toLocaleString()}건`], ['이전 구간', `${marketSignals.prev.toLocaleString()}건`], ['거래량 변화', fmtPct(marketSignals.volumeChange)], ['가격 중앙값', fmtWon(marketSignals.median)]].map(([label, value]) => (
+                <div key={label} style={{ padding: 12, background: PALETTE.panelAlt, borderRadius: 8 }}><div style={styles.kpiLabel}>{label}</div><div style={{ fontSize: 18, fontWeight: 800 }}>{value}</div></div>
+              ))}
+            </div>
+            <div style={{ ...styles.card, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="ui-card">
+              <div>
+                <h2 style={styles.sectionTitle}>가격 분포 범위</h2>
+                <p style={{ fontSize: 11, color: PALETTE.textMuted }}>조회기간 거래가격의 25~75 분위 범위입니다.</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginTop: 16 }}><b>25% {fmtWon(marketSignals.p25)}</b><b>중앙값 {fmtWon(marketSignals.median)}</b><b>75% {fmtWon(marketSignals.p75)}</b></div>
+                <div style={{ height: 12, background: PALETTE.border, borderRadius: 8, marginTop: 8 }}><div style={{ width: '50%', margin: '0 auto', height: '100%', background: PALETTE.textPrimary, opacity: 0.18, borderRadius: 8 }} /></div>
+              </div>
+              <div>
+                <h2 style={styles.sectionTitle}>최근 흐름</h2>
+                <p style={{ fontSize: 11, color: PALETTE.textMuted }}>최근 구간과 이전 구간의 거래활동 및 최근 월 중앙가격 변화입니다.</p>
+                <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>거래량 변화</span><b style={{ color: (marketSignals.volumeChange ?? 0) >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(marketSignals.volumeChange)}</b></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>최근 월 중앙가격</span><b style={{ color: (marketSignals.monthlyPriceChange ?? 0) >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(marketSignals.monthlyPriceChange)}</b></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>25~75 분위 스프레드</span><b>{fmtPct(marketSignals.spread)}</b></div>
+                </div>
+              </div>
+            </div>
+            <div style={styles.card} className="ui-card">
+              <h2 style={styles.sectionTitle}>월별 중앙가격 · 거래량</h2>
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={marketSignals.monthly.map((r) => ({ ...r, ym: monthLabel(r.ym), 중앙가격: r.median }))}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="ym" />
+                  <YAxis yAxisId="p" />
+                  <YAxis yAxisId="v" orientation="right" />
+                  <Tooltip />
+                  <Bar yAxisId="v" dataKey="count" fill={PALETTE.accent} opacity={0.25} />
+                  <Line yAxisId="p" type="monotone" dataKey="중앙가격" stroke={PALETTE.textPrimary} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
         )}

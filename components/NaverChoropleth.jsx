@@ -168,12 +168,16 @@ export default function NaverChoropleth({
       const overlay = new window.naver.maps.Marker({
         position: new window.naver.maps.LatLng(lat, lng),
         icon: {
-          content: `<div style="width:${wh}px;height:${wh}px;border-radius:${wh / 2}px;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25);">${size}</div>`,
+          content: `<div style="width:${wh}px;height:${wh}px;border-radius:${wh / 2}px;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25);cursor:pointer;">${size}</div>`,
           size: new window.naver.maps.Size(wh, wh),
           anchor: new window.naver.maps.Point(wh / 2, wh / 2),
         },
       });
       overlay.setMap(mapRef.current);
+      // 묶음을 누르면 그 위치로 확대해서 묶음이 풀리게 한다 (여태까진 눌러도 반응이 없었다).
+      window.naver.maps.Event.addListener(overlay, 'click', () => {
+        mapRef.current.morph(new window.naver.maps.LatLng(lat, lng), Math.min(mapRef.current.getZoom() + 2, 19));
+      });
       clustererRef.current.push({ overlay });
     });
   };
