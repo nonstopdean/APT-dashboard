@@ -173,34 +173,6 @@ export default function Page() {
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
   const [calcPriceInput, setCalcPriceInput] = useState('');
-  const [gongsiInfo, setGongsiInfo] = useState(null);
-  const [gongsiLoading, setGongsiLoading] = useState(false);
-  const [gongsiError, setGongsiError] = useState('');
-
-  useEffect(() => {
-    setGongsiInfo(null);
-    setGongsiError('');
-    if (!selectedApt || aptHistory.length === 0) return undefined;
-    const withJibun = aptHistory.find((t) => t.jibun);
-    if (!withJibun) return undefined;
-    let cancelled = false;
-    setGongsiLoading(true);
-    const params = new URLSearchParams({
-      regionCode: selectedApt.regionCode, dong: selectedApt.dong, jibun: withJibun.jibun,
-    });
-    if (withJibun.aptDong) params.set('aptDong', withJibun.aptDong);
-    fetch(`/api/gongsi?${params.toString()}`)
-      .then((res) => res.json())
-      .then((json) => {
-        if (cancelled) return;
-        if (json?.error) setGongsiError(json.error);
-        else setGongsiInfo(json);
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setGongsiLoading(false); });
-    return () => { cancelled = true; };
-  }, [selectedApt, aptHistory]);
-
   const [userAlerts, setUserAlerts] = useState([]);
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
@@ -795,6 +767,34 @@ export default function Page() {
       .finally(() => { if (!cancelled) setAptHistoryLoading(false); });
     return () => { cancelled = true; };
   }, [selectedApt, isSilv, propertyType, isRent]);
+
+  const [gongsiInfo, setGongsiInfo] = useState(null);
+  const [gongsiLoading, setGongsiLoading] = useState(false);
+  const [gongsiError, setGongsiError] = useState('');
+
+  useEffect(() => {
+    setGongsiInfo(null);
+    setGongsiError('');
+    if (!selectedApt || aptHistory.length === 0) return undefined;
+    const withJibun = aptHistory.find((t) => t.jibun);
+    if (!withJibun) return undefined;
+    let cancelled = false;
+    setGongsiLoading(true);
+    const params = new URLSearchParams({
+      regionCode: selectedApt.regionCode, dong: selectedApt.dong, jibun: withJibun.jibun,
+    });
+    if (withJibun.aptDong) params.set('aptDong', withJibun.aptDong);
+    fetch(`/api/gongsi?${params.toString()}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json?.error) setGongsiError(json.error);
+        else setGongsiInfo(json);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setGongsiLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedApt, aptHistory]);
 
   const nearestStationInfo = useMemo(() => {
     if (!selectedApt?.lat || !selectedApt?.lng) return null;
