@@ -173,6 +173,34 @@ export default function Page() {
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
   const [calcPriceInput, setCalcPriceInput] = useState('');
+  const [gongsiInfo, setGongsiInfo] = useState(null);
+  const [gongsiLoading, setGongsiLoading] = useState(false);
+  const [gongsiError, setGongsiError] = useState('');
+
+  useEffect(() => {
+    setGongsiInfo(null);
+    setGongsiError('');
+    if (!selectedApt || aptHistory.length === 0) return undefined;
+    const withJibun = aptHistory.find((t) => t.jibun);
+    if (!withJibun) return undefined;
+    let cancelled = false;
+    setGongsiLoading(true);
+    const params = new URLSearchParams({
+      regionCode: selectedApt.regionCode, dong: selectedApt.dong, jibun: withJibun.jibun,
+    });
+    if (withJibun.aptDong) params.set('aptDong', withJibun.aptDong);
+    fetch(`/api/gongsi?${params.toString()}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (json?.error) setGongsiError(json.error);
+        else setGongsiInfo(json);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setGongsiLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedApt, aptHistory]);
+
   const [userAlerts, setUserAlerts] = useState([]);
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
@@ -3088,6 +3116,21 @@ export default function Page() {
                 </div>
               );
             })()}
+            {gongsiLoading && (
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>공시가격 조회 중...</p>
+            )}
+            {gongsiInfo?.rows?.length > 0 && (
+              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>공동주택 공시가격 (브이월드)</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {gongsiInfo.rows.slice(0, 6).map((r, i) => (
+                    <span key={i} style={styles.chip}>
+                      {r.dong}동 {r.ho}호 · {fmtManwon(Math.round(r.price / 10000))} ({r.year}년)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                 {isRegulatedByCode(selectedApt.regionCode) && (
