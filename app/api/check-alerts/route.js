@@ -81,5 +81,47 @@ export async function GET(request) {
     }
   }
 
-  return Response.json({ checkedAt: new Date().toISOString(), results });
+  const userAlertResults = kvReady() ? await checkUserAlerts(serviceKey, webhookUrl) : [];
+
+  return Response.json({ checkedAt: new Date().toISOString(), results, userAlertResults });
+}
+
+// 사용자가 등록한 단지별 가격 알림도 같은 크론에서 같이 확인한다.
+export async function checkUserAlerts(serviceKey, webhookUrl) {
+  const list = (await kvGet('user-alerts-list')) || [];
+  const pending = list.filter((a) => !a.firedAt);
+  if (pending.length === 0) return [];
+
+  const [thisMonth, lastMonth] = lastNMonths(2);
+  const results = [];
+
+  for (const alert of pending) {
+    try {
+      const [rowsThis, rowsLast] = await Promise.all([
+        fetchRegionMonth(serviceKey, alert.regionCode, thisMonth),
+        fetchRegionMonth(serviceKey, alert.regionCode, lastMonth),
+      ]);
+      const rows = [...rowsThis, ...rowsLast].filter((r) => r.aptNm === alert.apt && r.umdNm === alert.dong);
+      if (rows.length === 0) {
+        results.push({ id: alert.id, skipped: '최근 거래 없음' });
+        continue;
+      }
+      const latest = rows.sort((a, b) => `${b.dealYear}${b.dealMonth}${b.dealDay}`.localeCompare(`${a.dealYear}${a.dealMonth}${a.dealDay}`))[0];
+      const price = parseInt(String(latest.dealAmount ?? '').replace(/,/g, ''), 10);
+      const triggered = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
+      results.push({ id: alert.id, price, triggered });
+      if (triggered && webhookUrl) {
+        const dir = alert.direction === 'above' ? '이상' : '이하';
+        const msg = `🔔 **${alert.apt}** (${alert.regionName} ${alert.dong}) 알림\n`
+          + `목표가 ${alert.targetPrice.toLocaleString()}만원 ${dir} 도달 — 최근 거래가 ${price.toLocaleString()}만원`;
+        await postToDiscord(webhookUrl, msg);
+        alert.firedAt = new Date().toISOString();
+      }
+    } catch (e) {
+      results.push({ id: alert.id, error: e.message });
+    }
+  }
+
+  await kvSet('user-alerts-list', list);
+  return results;
 }

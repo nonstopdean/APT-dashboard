@@ -32,8 +32,8 @@ export async function GET(request) {
     const monthCount = Math.min(Math.max(parseInt(searchParams.get('months') || '6', 10), 1), 24);
     months = lastNMonths(monthCount);
   }
-  if (months.length > 36) {
-    return Response.json({ error: `기간이 너무 깁니다 (${months.length}개월). 36개월 이하로 설정해주세요.` }, { status: 400 });
+  if (months.length > 240) {
+    return Response.json({ error: `기간이 너무 깁니다 (${months.length}개월). 240개월(20년) 이하로 설정해주세요.` }, { status: 400 });
   }
 
   const expansion = {};

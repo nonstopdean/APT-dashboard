@@ -67,6 +67,28 @@ function fmtManwon(manwon) {
   return `${Math.round(manwon).toLocaleString()}만원`;
 }
 
+// 취득세 대략 계산 (1주택자 기준 표준세율 근사치 + 지방교육세 등). 다주택자 중과, 생애최초 감면 등은
+// 반영하지 않은 단순 참고용 수치이며, 실제 세액은 취득 시점 법령과 세무사 확인이 필요하다.
+function calcAcquisitionTax(amountManwon) {
+  if (!amountManwon) return null;
+  const eok = amountManwon / 10000;
+  let rate;
+  if (eok <= 6) rate = 1.0;
+  else if (eok <= 9) rate = (eok * 2) / 3 - 3;
+  else rate = 3.0;
+  const acquisitionTax = amountManwon * (rate / 100);
+  const localEduTax = acquisitionTax * 0.1;
+  const ruralTax = amountManwon * 0.002; // 전용 85㎡ 초과 가정 근사치
+  return { rate, acquisitionTax, localEduTax, ruralTax, total: acquisitionTax + localEduTax + ruralTax };
+}
+
+// 대출 가능액 대략 추정 (LTV만 반영한 단순 근사치, DSR/DTI·소득·기존대출 등은 미반영).
+function calcLoanEstimate(amountManwon, isRegulated) {
+  if (!amountManwon) return null;
+  const ltv = isRegulated ? 0.4 : 0.7;
+  return { ltv, maxLoan: amountManwon * ltv };
+}
+
 // 층 분포를 "저층 n / 중층 n / 고층 n" 형태로 줄여서 보여준다 (단지 비교 표용).
 function floorDistLabel(floorDist) {
   if (!floorDist) return '-';
@@ -150,6 +172,47 @@ export default function Page() {
   const [mapFeatures, setMapFeatures] = useState(null);
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
+  const [calcPriceInput, setCalcPriceInput] = useState('');
+  const [userAlerts, setUserAlerts] = useState([]);
+  const [alertFormOpen, setAlertFormOpen] = useState(false);
+  const [alertTargetPrice, setAlertTargetPrice] = useState('');
+  const [alertDirection, setAlertDirection] = useState('below');
+  const [alertSaving, setAlertSaving] = useState(false);
+
+  const loadUserAlerts = () => {
+    fetch('/api/user-alerts').then((res) => res.json()).then((json) => setUserAlerts(json?.alerts || [])).catch(() => {});
+  };
+
+  useEffect(() => { if (viewMode === 'favorites') loadUserAlerts(); }, [viewMode]);
+
+  const submitAlert = async () => {
+    const price = parseFloat(alertTargetPrice);
+    if (!price || !selectedApt) return;
+    setAlertSaving(true);
+    try {
+      await fetch('/api/user-alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apt: selectedApt.apt, dong: selectedApt.dong, regionCode: selectedApt.regionCode,
+          regionName: labelFor(selectedApt.regionCode), targetPrice: price * 10000, direction: alertDirection,
+        }),
+      });
+      setAlertFormOpen(false);
+      setAlertTargetPrice('');
+      loadUserAlerts();
+    } catch (e) {
+      // 조용히 실패 — 다시 시도하면 된다
+    } finally {
+      setAlertSaving(false);
+    }
+  };
+
+  const removeUserAlert = async (id) => {
+    await fetch(`/api/user-alerts?id=${id}`, { method: 'DELETE' }).catch(() => {});
+    loadUserAlerts();
+  };
+
   const [aptBasicInfo, setAptBasicInfo] = useState(null);
   const [nearbySchools, setNearbySchools] = useState([]);
   const [schoolsLoading, setSchoolsLoading] = useState(false);
@@ -669,11 +732,12 @@ export default function Page() {
 
   useEffect(() => {
     setAptHistory([]);
+    setCalcPriceInput('');
     if (!selectedApt) return undefined;
     let cancelled = false;
     setAptHistoryLoading(true);
     const endYmH = ymNow();
-    const startYmH = ymShift(endYmH, -35); // 최근 3년(36개월)치 — 아실처럼 "쭉" 나오는 추이를 위해
+    const startYmH = ymShift(endYmH, -239); // 최대 20년치 — 국토부 실거래가 공개 시작(2006년) 즈음까지
     const endpointH = isSilv
       ? '/api/silv-trades'
       : propertyType === 'offi'
@@ -2346,6 +2410,37 @@ export default function Page() {
             </div>
           )}
         </div>
+
+        <div style={{ ...styles.card, marginTop: 16 }} className="ui-card">
+          <h2 style={styles.sectionTitle}>가격 알림</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            단지 상세 화면에서 등록한 알림이에요. 매일 자동으로 확인해서 조건을 만족하면 알려드려요.
+          </p>
+          {userAlerts.length === 0 ? (
+            <p style={{ fontSize: 13, color: PALETTE.textMuted }}>
+              등록된 알림이 없어요. 지도에서 단지를 클릭한 뒤 "🔔 이 단지 가격 알림 등록"을 눌러보세요.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {userAlerts.map((a) => (
+                <div key={a.id} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  background: PALETTE.panelAlt, borderRadius: 10, padding: '10px 12px',
+                }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{a.apt} <span style={{ fontWeight: 400, color: PALETTE.textMuted, fontSize: 11 }}>({a.regionName} {a.dong})</span></div>
+                    <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
+                      {fmtManwon(a.targetPrice)} {a.direction === 'above' ? '이상' : '이하'}
+                      {a.firedAt && <span style={{ color: PALETTE.up, marginLeft: 6 }}>✓ 알림 발송됨</span>}
+                    </div>
+                  </div>
+                  <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeUserAlert(a.id)} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       ) : (
       <div style={{ padding: '20px 20px 0' }}>
@@ -2927,7 +3022,7 @@ export default function Page() {
               <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
             </div>
             <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
-              {labelFor(selectedApt.regionCode)} · 최근 3년 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
+              {labelFor(selectedApt.regionCode)} · 전체 기간(최대 20년) 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
             {aptSummary && (
@@ -2953,6 +3048,46 @@ export default function Page() {
                 </div>
               </div>
             )}
+            {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (() => {
+              const price = calcPriceInput !== '' ? parseFloat(calcPriceInput) * 10000 : aptSummary.recentAvg;
+              const tax = calcAcquisitionTax(price);
+              const loan = calcLoanEstimate(price, isRegulatedByCode(selectedApt.regionCode));
+              return (
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700 }}>취득세·대출 계산기 (참고용)</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input
+                        type="number"
+                        placeholder={String(Math.round(aptSummary.recentAvg / 10000))}
+                        value={calcPriceInput}
+                        onChange={(e) => setCalcPriceInput(e.target.value)}
+                        style={{
+                          width: 80, padding: '4px 6px', borderRadius: 6, border: `1px solid ${PALETTE.border}`,
+                          fontSize: 12, textAlign: 'right',
+                        }}
+                      />
+                      <span style={{ fontSize: 11, color: PALETTE.textMuted }}>억원 기준</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>취득세 등 합계 (1주택 기준)</div>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>{tax ? fmtManwon(tax.total) : '-'}</div>
+                      <div style={{ fontSize: 10, color: PALETTE.textMuted }}>취득세율 약 {tax ? tax.rate.toFixed(2) : '-'}%</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>추정 대출 가능액 (LTV 기준)</div>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>{loan ? fmtManwon(loan.maxLoan) : '-'}</div>
+                      <div style={{ fontSize: 10, color: PALETTE.textMuted }}>LTV {loan ? Math.round(loan.ltv * 100) : '-'}% ({isRegulatedByCode(selectedApt.regionCode) ? '규제지역' : '비규제지역'})</div>
+                    </div>
+                  </div>
+                  <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                    다주택 중과·생애최초 감면·DSR·소득 등은 반영되지 않은 단순 참고용 추정치예요. 실제 세액·대출한도는 세무사·은행 확인이 필요해요.
+                  </p>
+                </div>
+              );
+            })()}
             {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                 {isRegulatedByCode(selectedApt.regionCode) && (
@@ -2971,13 +3106,41 @@ export default function Page() {
                 )}
               </div>
             )}
+            <div style={{ marginBottom: 14 }}>
+              {!alertFormOpen ? (
+                <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12 }} onClick={() => setAlertFormOpen(true)}>
+                  🔔 이 단지 가격 알림 등록
+                </button>
+              ) : (
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                  <select value={alertDirection} onChange={(e) => setAlertDirection(e.target.value)} style={{ ...styles.select, width: 'auto', fontSize: 12 }}>
+                    <option value="below">이하로 떨어지면</option>
+                    <option value="above">이상으로 오르면</option>
+                  </select>
+                  <input
+                    type="number"
+                    placeholder="목표가(억원)"
+                    value={alertTargetPrice}
+                    onChange={(e) => setAlertTargetPrice(e.target.value)}
+                    style={{ width: 100, padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                  />
+                  <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '6px 12px', fontSize: 12 }} onClick={submitAlert} disabled={alertSaving}>
+                    {alertSaving ? '등록 중...' : '등록'}
+                  </button>
+                  <span style={{ fontSize: 11, color: PALETTE.textMuted, cursor: 'pointer' }} onClick={() => setAlertFormOpen(false)}>취소</span>
+                </div>
+              )}
+              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '4px 0 0' }}>
+                등록한 알림은 "즐겨찾기" 탭에서 관리할 수 있어요. 매일 자동으로 확인해서 조건을 만족하면 알려드려요.
+              </p>
+            </div>
             {schoolsLoading && nearbySchools.length === 0 && (
               <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>인근 학교 찾는 중...</p>
             )}
             {nearbySchools.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
                 {nearbySchools.map((s) => (
-                  <span key={s.name} style={styles.chip}>{s.name} ({s.kind})</span>
+                  <span key={s.name} style={styles.chip}>{s.name} ({s.kind}{s.foundType ? `·${s.foundType}` : ''})</span>
                 ))}
               </div>
             )}
