@@ -89,6 +89,42 @@ function calcLoanEstimate(amountManwon, isRegulated) {
   return { ltv, maxLoan: amountManwon * ltv };
 }
 
+// z-score를 저평가/고평가 라벨로 바꾼다. 공식 시세 평가가 아니라, 지금 조회된 데이터
+// 안에서 비슷한 지역·평형 대비 상대적으로 어디쯤인지 보여주는 참고용 점수임을 항상 명시한다.
+function valuationLabel(z) {
+  if (z == null) return null;
+  if (z <= -2) return { text: '★저평가', color: '#3B6FE0', bg: 'rgba(59,111,224,0.12)' };
+  if (z <= -1) return { text: '저평가', color: '#3B6FE0', bg: 'rgba(59,111,224,0.1)' };
+  if (z >= 2) return { text: '★고평가', color: '#B23A2E', bg: 'rgba(178,58,46,0.12)' };
+  if (z >= 1) return { text: '고평가', color: '#B23A2E', bg: 'rgba(178,58,46,0.1)' };
+  return null;
+}
+
+function ZBadge({ z }) {
+  const v = valuationLabel(z);
+  if (!v) return <span style={{ fontSize: 10.5, color: '#9a9488' }}>-</span>;
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 700, color: v.color, background: v.bg, borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap' }} title={`z-score ${z.toFixed(2)} (참고용, 공식 시세평가 아님)`}>
+      {v.text}
+    </span>
+  );
+}
+
+function Sparkline({ points }) {
+  if (!points || points.length < 2) return <span style={{ fontSize: 10, color: '#9a9488' }}>-</span>;
+  const w = 70; const h = 22;
+  const min = Math.min(...points); const max = Math.max(...points);
+  const range = max - min || 1;
+  const step = w / (points.length - 1);
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${(i * step).toFixed(1)} ${(h - ((p - min) / range) * h).toFixed(1)}`).join(' ');
+  const up = points[points.length - 1] >= points[0];
+  return (
+    <svg width={w} height={h} aria-label={`최근 ${points.length}개월 평당가 추이`}>
+      <path d={path} fill="none" stroke={up ? '#B23A2E' : '#3B6FE0'} strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 // 층 분포를 "저층 n / 중층 n / 고층 n" 형태로 줄여서 보여준다 (단지 비교 표용).
 function floorDistLabel(floorDist) {
   if (!floorDist) return '-';
@@ -953,6 +989,86 @@ export default function Page() {
     }
     return filtered.sort((a, b) => a.unitPrice - b.unitPrice);
   }, [allTxFiltered, isRent, complexSort]);
+
+  // z-score 기반 저평가/고평가 참고 점수 — 같은 시/도 + 비슷한 평형(10평 단위)끼리 묶어서
+  // 그 안에서 이 단지 평당가가 평균보다 얼마나 낮은지/높은지를 계산한다. 공식 시세 평가가
+  // 아니라 "현재 조회된 데이터 안에서의 상대적 위치"를 보여주는 참고용 점수다.
+  const complexValuation = useMemo(() => {
+    const keyOf = (c) => `${c.regionCode}|${c.dong}|${c.apt}`;
+    const groups = {};
+    complexCompare.forEach((c) => {
+      if (c.unitPrice == null || !c.pyeong) return;
+      const gk = `${c.regionCode.slice(0, 2)}|${Math.round(c.pyeong / 10) * 10}`;
+      (groups[gk] ||= []).push(c.unitPrice);
+    });
+    const stats = {};
+    Object.entries(groups).forEach(([gk, vals]) => {
+      const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+      const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
+      stats[gk] = { mean, std: Math.sqrt(variance), n: vals.length };
+    });
+    const out = {};
+    complexCompare.forEach((c) => {
+      if (c.unitPrice == null || !c.pyeong) { out[keyOf(c)] = null; return; }
+      const gk = `${c.regionCode.slice(0, 2)}|${Math.round(c.pyeong / 10) * 10}`;
+      const s = stats[gk];
+      out[keyOf(c)] = (!s || s.n < 3 || s.std === 0) ? null : (c.unitPrice - s.mean) / s.std;
+    });
+    return out;
+  }, [complexCompare]);
+
+  // 단지별 12개월 평당가 스파크라인 — 현재 조회 중인(선택 지역) 데이터 범위 안에서만 계산한다.
+  const complexSparklines = useMemo(() => {
+    const keyOf = (t) => `${t.regionCode}|${t.dong}|${t.apt}`;
+    const groups = {};
+    allTxFiltered.forEach((t) => {
+      const v = isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong;
+      if (v == null) return;
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      const k = keyOf(t);
+      ((groups[k] ||= {})[ym] ||= []).push(v);
+    });
+    const out = {};
+    Object.entries(groups).forEach(([k, byMonth]) => {
+      const series = Object.keys(byMonth).sort().map((ym) => {
+        const vals = byMonth[ym];
+        return vals.reduce((s, v) => s + v, 0) / vals.length;
+      });
+      out[k] = series;
+    });
+    return out;
+  }, [allTxFiltered, isRent]);
+
+  const undervaluedPicks = useMemo(() => {
+    return complexCompare
+      .map((c) => ({ ...c, z: complexValuation[`${c.regionCode}|${c.dong}|${c.apt}`] }))
+      .filter((c) => c.z != null && c.z <= -1)
+      .sort((a, b) => a.z - b.z)
+      .slice(0, 8);
+  }, [complexCompare, complexValuation]);
+
+  // 매매 ↔ 전세 비교: 현재 선택된 지역들의 최근월 매매 평당가와 전세 평당가를 나란히 본다.
+  const crossDealStats = useMemo(() => {
+    const out = [];
+    selected.forEach((code) => {
+      const saleSeries = monthlyByRegion[code] || [];
+      const jeonseTx = [];
+      expandRegionCode(code).forEach((mc) => {
+        months.forEach((ym) => {
+          (jeonseRaw?.[`${mc}_${ym}`] || []).forEach((r) => { if (r.isJeonse) jeonseTx.push(r); });
+        });
+      });
+      const saleLatest = [...saleSeries].reverse().find((m) => m.avgPyeong != null);
+      if (!saleLatest || jeonseTx.length === 0) return;
+      const jeonseAvgPyeong = jeonseTx.reduce((s, r) => s + (r.depositPerPyeong || 0), 0) / jeonseTx.length;
+      if (!jeonseAvgPyeong) return;
+      out.push({
+        code, name: labelFor(code), salePyeong: saleLatest.avgPyeong, jeonsePyeong: jeonseAvgPyeong,
+        ratio: (jeonseAvgPyeong / saleLatest.avgPyeong) * 100,
+      });
+    });
+    return out;
+  }, [selected, monthlyByRegion, jeonseRaw, months]);
 
   const [analyticsMetric, setAnalyticsMetric] = useState('change');
   const [analyticsScope, setAnalyticsScope] = useState('region');
@@ -3212,6 +3328,52 @@ export default function Page() {
               </div>
             </div>
 
+            {undervaluedPicks.length > 0 && (
+              <div style={styles.card} className="ui-card">
+                <h2 style={styles.sectionTitle}>저평가 참고 추천</h2>
+                <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+                  같은 지역·비슷한 평형 단지들과 비교했을 때 평당가가 상대적으로 낮은 단지예요. 공식 시세평가가 아니라 지금 조회된 데이터 안에서의 참고용 점수예요.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+                  {undervaluedPicks.map((c) => (
+                    <div
+                      key={`${c.regionCode}|${c.dong}|${c.apt}`}
+                      style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, cursor: 'pointer' }}
+                      onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700 }}>{c.apt}</div>
+                        <ZBadge z={c.z} />
+                      </div>
+                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 2 }}>{labelFor(c.regionCode)} {c.dong}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, marginTop: 6 }}>{fmtManwon(Math.round(c.unitPrice))}/평</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {crossDealStats.length > 0 && (
+              <div style={styles.card} className="ui-card">
+                <h2 style={styles.sectionTitle}>매매 ↔ 전세 평당가 비교</h2>
+                <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+                  선택하신 지역의 최근월 매매 평당가와 전세 평당가예요 (전세가율 = 전세/매매 × 100).
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+                  {crossDealStats.map((c) => (
+                    <div key={c.code} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{c.name}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <span style={{ color: '#B23A2E' }}>매매 {fmtManwon(Math.round(c.salePyeong))}</span>
+                        <span style={{ color: '#3182F7' }}>전세 {fmtManwon(Math.round(c.jeonsePyeong))}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 4 }}>전세가율 {c.ratio.toFixed(1)}%</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={styles.card} className="ui-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <h2 style={{ ...styles.sectionTitle, margin: 0 }}>단지별 비교</h2>
@@ -3246,6 +3408,8 @@ export default function Page() {
                       <th style={{ ...styles.th, width: 90 }}>최근 계약일</th>
                       <th style={{ ...styles.th, width: 70 }}>거래건수</th>
                       <th style={{ ...styles.th, width: 110 }}>층 분포</th>
+                      <th style={{ ...styles.th, width: 78 }}>참고 평가</th>
+                      <th style={{ ...styles.th, width: 90 }}>추이</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3268,10 +3432,12 @@ export default function Page() {
                         <td style={styles.td}>{c.year}.{c.month}.{c.day}</td>
                         <td style={styles.td}>{c.count}</td>
                       <td style={styles.td}>{floorDistLabel(c.floorDist)}</td>
+                      <td style={styles.td}><ZBadge z={complexValuation[`${c.regionCode}|${c.dong}|${c.apt}`]} /></td>
+                      <td style={styles.td}><Sparkline points={complexSparklines[`${c.regionCode}|${c.dong}|${c.apt}`]} /></td>
                       </tr>
                     ))}
                     {complexCompare.length === 0 && (
-                      <tr><td style={styles.td} colSpan={9}>비교할 단지가 없습니다.</td></tr>
+                      <tr><td style={styles.td} colSpan={11}>비교할 단지가 없습니다.</td></tr>
                     )}
                   </tbody>
                 </table>
