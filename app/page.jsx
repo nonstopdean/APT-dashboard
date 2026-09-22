@@ -1617,16 +1617,35 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [selected, mapZoomTier]);
 
+  // 동별 가격/거래량 집계는 지도를 그릴 때마다 allTx를 반복 filter하지 않도록
+  // 최초 1회 인덱스로 만들어둔다. 기존 O(동 수 × 거래건수) 구조를
+  // O(거래건수 + 동 수)로 줄여서, 동이 많은 지역을 확대할 때 계산량을 크게 줄인다.
+  const dongPriceIndex = useMemo(() => {
+    const index = new Map();
+    allTx.forEach((t) => {
+      if (!t?.regionCode || !t?.dong) return;
+      const value = isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong;
+      const key = `${t.regionCode}|${normalizeDongName(t.dong)}`;
+      const prev = index.get(key);
+      if (prev) {
+        prev.count += 1;
+        if (value != null) { prev.sum += value; prev.priced += 1; }
+      } else {
+        index.set(key, { sum: value ?? 0, priced: value != null ? 1 : 0, count: 1 });
+      }
+    });
+    return index;
+  }, [allTx, isRent]);
+
   const dongMapData = useMemo(() => {
     if (dongRawFeatures.length === 0) return null;
-    const relevant = dongRawFeatures.filter((f) => selected.some((code) => expandRegionCode(code).includes(f.regionCode)));
+    const selectedCodes = new Set(selected.flatMap((code) => expandRegionCode(code)));
+    const relevant = dongRawFeatures.filter((f) => selectedCodes.has(f.regionCode));
     const values = relevant.map((f) => {
-      const rows = allTx.filter((t) => t.regionCode === f.regionCode && normalizeDongName(t.dong) === normalizeDongName(f.name));
-      if (mapColorMode === 'volume') return rows.length || null;
-      const vals = rows
-        .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
-        .filter((v) => v != null);
-      return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+      const agg = dongPriceIndex.get(`${f.regionCode}|${normalizeDongName(f.name)}`);
+      if (!agg) return null;
+      if (mapColorMode === 'volume') return agg.count || null;
+      return agg.priced ? agg.sum / agg.priced : null;
     });
     const available = values.filter((v) => v != null);
     const min = available.length ? Math.min(...available) : 0;
@@ -1637,7 +1656,7 @@ export default function Page() {
       min,
       max,
     };
-  }, [dongRawFeatures, selected, allTx, isRent, mapColorMode]);
+  }, [dongRawFeatures, selected, dongPriceIndex, mapColorMode]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
