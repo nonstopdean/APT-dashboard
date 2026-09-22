@@ -19,6 +19,12 @@ const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].i
 const DEFAULT_SELECTED = [];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 const SIDO_SHORT_NAMES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'];
+const SIDO_FULL_TO_SHORT = {
+  서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주',
+  대전광역시: '대전', 울산광역시: '울산', 세종특별자치시: '세종', 경기도: '경기', 강원특별자치도: '강원',
+  충청북도: '충북', 충청남도: '충남', 전북특별자치도: '전북', 전라남도: '전남', 경상북도: '경북',
+  경상남도: '경남', 제주특별자치도: '제주',
+};
 
 const PALETTE = {
   bg: '#F5F5F3',
@@ -277,7 +283,7 @@ export default function Page() {
     const firstCode = selected[0];
     for (const g of REGION_GROUPS) {
       if (g.items.some((it) => it.code === firstCode) || SIDO_AGGREGATES.some((a) => a.code === firstCode && a.sido === g.sido)) {
-        return g.sido.replace(/특별자치시|특별자치도|광역시|특별시|도$/, '');
+        return SIDO_FULL_TO_SHORT[g.sido] || g.sido;
       }
     }
     return null;
@@ -746,11 +752,21 @@ export default function Page() {
   // 아실/호갱노노처럼 가격대(매매금액·보증금, 억 단위)로 거래 내역을 좁혀볼 수 있는 필터.
   const [priceRange, setPriceRange] = useState({ min: '', max: '' });
 
+  const [dongFilter, setDongFilter] = useState('all');
+  const dongFilterOptions = useMemo(() => {
+    const set = new Set();
+    allTx.forEach((t) => { if (t.dong) set.add(t.dong); });
+    return [...set].sort();
+  }, [allTx]);
+
   const allTxFiltered = useMemo(() => {
-    if (priceRange.min === '' && priceRange.max === '') return allTx;
     const min = priceRange.min === '' ? null : parseFloat(priceRange.min);
     const max = priceRange.max === '' ? null : parseFloat(priceRange.max);
+    const hasPriceFilter = priceRange.min !== '' || priceRange.max !== '';
+    if (!hasPriceFilter && dongFilter === 'all') return allTx;
     return allTx.filter((t) => {
+      if (dongFilter !== 'all' && t.dong !== dongFilter) return false;
+      if (!hasPriceFilter) return true;
       const v = isRent ? t.deposit : t.amount;
       if (v == null) return false;
       const eok = v / 10000;
@@ -758,18 +774,9 @@ export default function Page() {
       if (max != null && Number.isFinite(max) && eok > max) return false;
       return true;
     });
-  }, [allTx, priceRange, isRent]);
+  }, [allTx, priceRange, isRent, dongFilter]);
 
-  const [recentTxDongFilter, setRecentTxDongFilter] = useState('all');
-  const recentTxDongOptions = useMemo(() => {
-    const set = new Set();
-    allTxFiltered.forEach((t) => { if (t.dong) set.add(t.dong); });
-    return [...set].sort();
-  }, [allTxFiltered]);
-  const recentTx = useMemo(() => {
-    const base = recentTxDongFilter === 'all' ? allTxFiltered : allTxFiltered.filter((t) => t.dong === recentTxDongFilter);
-    return base.slice(0, 30);
-  }, [allTxFiltered, recentTxDongFilter]);
+  const recentTx = useMemo(() => allTxFiltered.slice(0, 30), [allTxFiltered]);
 
   const [aptHistory, setAptHistory] = useState([]);
   const [aptHistoryLoading, setAptHistoryLoading] = useState(false);
@@ -1282,13 +1289,14 @@ export default function Page() {
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
-    allTx.forEach((t) => addItem(t.apt, t.dong, t.regionCode));
+    allTxFiltered.forEach((t) => addItem(t.apt, t.dong, t.regionCode));
     for (const c of fullComplexList) {
       if (list.length >= MAX_MAP_COMPLEXES) break;
+      if (dongFilter !== 'all' && c.dong !== dongFilter) continue;
       addItem(c.apt, c.dong, c.regionCode);
     }
     return list.slice(0, MAX_MAP_COMPLEXES);
-  }, [allTx, fullComplexList, dongCentroids]);
+  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter]);
 
   const [globalSearch, setGlobalSearch] = useState('');
 
@@ -1933,6 +1941,23 @@ export default function Page() {
             </div>
           </div>
         </div>
+
+        {dongFilterOptions.length > 0 && (
+        <div>
+          <label style={styles.label}>동 필터</label>
+          <select
+            value={dongFilter}
+            onChange={(e) => setDongFilter(e.target.value)}
+            style={{ ...styles.select, fontSize: 13 }}
+          >
+            <option value="all">전체 동</option>
+            {dongFilterOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '4px 0 0' }}>
+            선택하면 대시보드·비교·지도 전체가 그 동 기준으로 좁혀져요.
+          </p>
+        </div>
+        )}
 
         <div>
           <label style={styles.label}>지역 선택</label>
@@ -3503,19 +3528,7 @@ export default function Page() {
             </div>
 
             <div style={styles.card} className="ui-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <h2 style={{ ...styles.sectionTitle, margin: 0 }}>최근 거래 내역</h2>
-                {recentTxDongOptions.length > 1 && (
-                  <select
-                    value={recentTxDongFilter}
-                    onChange={(e) => setRecentTxDongFilter(e.target.value)}
-                    style={{ ...styles.select, width: 'auto', fontSize: 12, padding: '6px 8px' }}
-                  >
-                    <option value="all">전체 동</option>
-                    {recentTxDongOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                )}
-              </div>
+              <h2 style={styles.sectionTitle}>최근 거래 내역</h2>
               <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
