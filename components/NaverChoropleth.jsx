@@ -36,7 +36,7 @@ export default function NaverChoropleth({
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
   // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
-  const FAR_ZOOM_LEVEL = 13;
+  const FAR_ZOOM_LEVEL = 12;
   const NEAR_ZOOM_LEVEL = 15;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
@@ -121,11 +121,11 @@ export default function NaverChoropleth({
     const hasValue = value != null;
     const near = zoomTierRef.current === 'near';
     return {
-      strokeWeight: hasValue ? 1.5 : 0.4,
+      strokeWeight: hasValue ? 1.5 : 0.6,
       strokeColor: borderColor || '#8A8172',
-      strokeOpacity: near ? (hasValue ? 0.5 : 0.1) : (hasValue ? 0.9 : 0.12),
+      strokeOpacity: near ? (hasValue ? 0.5 : 0.25) : (hasValue ? 0.9 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.18 : 0) : (hasValue ? 0.35 : 0),
+      fillOpacity: near ? (hasValue ? 0.2 : 0.06) : (hasValue ? 0.35 : 0),
     };
   };
 

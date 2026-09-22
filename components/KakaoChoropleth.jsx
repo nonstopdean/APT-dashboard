@@ -64,11 +64,11 @@ export default function KakaoChoropleth({
     const hasValue = value != null;
     const near = zoomTierRef.current === 'near';
     return {
-      strokeWeight: hasValue ? 1.5 : 0.4,
+      strokeWeight: hasValue ? 1.5 : 0.6,
       strokeColor: borderColor || '#8A8172',
-      strokeOpacity: near ? (hasValue ? 0.5 : 0.1) : (hasValue ? 0.9 : 0.12),
+      strokeOpacity: near ? (hasValue ? 0.5 : 0.25) : (hasValue ? 0.9 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.18 : 0) : (hasValue ? 0.35 : 0),
+      fillOpacity: near ? (hasValue ? 0.2 : 0.06) : (hasValue ? 0.35 : 0),
     };
   };
 
