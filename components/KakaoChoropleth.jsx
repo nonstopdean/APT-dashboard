@@ -41,11 +41,12 @@ export default function KakaoChoropleth({
     const hasValue = value != null;
     const tier = zoomTierRef.current;
     if (tier !== 'far') {
-      // 확대된 상태에서는 구 색칠을 완전히 숨기고, clickable도 꺼서 그 아래 "동" 레이어나
-      // 단지 마커의 클릭/호버를 가로채지 않게 한다 (안 보이는 도형이 계속 이벤트를 먹으면
-      // 마커를 눌러도 반응이 없거나, 사라지지 않는 툴팁이 뜨는 것처럼 보인다).
+      // 확대된 상태에서는 구 색칠을 완전히 숨긴다. "동" 데이터가 비어있는 구간에서는 동을
+      // 눌러도 반응이 없을 수 있으므로, near(마커 활성) 단계가 아닐 때는 이 투명한 구 도형을
+      // 계속 클릭 가능하게 남겨서 "구를 고르는" 동작이 항상 되게 한다. near 단계에서는
+      // 단지 마커 클릭을 가로채지 않도록 꺼둔다.
       return {
-        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: false,
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid',
       };
     }
     return {
@@ -82,7 +83,7 @@ export default function KakaoChoropleth({
 
   // 카카오 레벨: 숫자가 작을수록 확대된 상태. far(구)는 5레벨 이상(3km+), mid(동)는 3~4레벨(1km 안팎),
   // near(동, 연하게+마커)는 2레벨 이하(약 300m 이내)에 대응하도록 잡았다.
-  const FAR_ZOOM_LEVEL = 6;
+  const FAR_ZOOM_LEVEL = 5;
   const NEAR_ZOOM_LEVEL = 3;
 
   const updateLayerVisibility = () => {

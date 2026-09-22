@@ -36,7 +36,7 @@ export default function NaverChoropleth({
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
   // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
-  const FAR_ZOOM_LEVEL = 11;
+  const FAR_ZOOM_LEVEL = 13;
   const NEAR_ZOOM_LEVEL = 15;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
@@ -98,10 +98,12 @@ export default function NaverChoropleth({
     const hasValue = value != null;
     const tier = zoomTierRef.current;
     if (tier !== 'far') {
-      // 확대된 상태에서는 완전히 투명해지는데, clickable을 꺼주지 않으면 안 보이는 이 도형이
-      // 그 아래 "동" 레이어나 단지 마커의 클릭/호버를 계속 가로채서 먹통이 된 것처럼 보인다.
+      // 확대된 상태에서는 완전히 투명해진다. "동" 데이터가 비어있는 구간(예: 아파트가 적은
+      // 원도심)에서는 동을 눌러도 반응이 없을 수 있으므로, near(마커 활성) 단계가 아닐 때는
+      // 이 투명한 구 도형을 계속 클릭 가능하게 남겨서 "구를 고르는" 동작이 항상 되게 한다.
+      // near 단계에서는 단지 마커 클릭을 가로채지 않도록 꺼둔다.
       return {
-        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: false,
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid',
       };
     }
     return {
