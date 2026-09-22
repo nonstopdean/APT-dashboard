@@ -760,11 +760,21 @@ export default function Page() {
     });
   }, [allTx, priceRange, isRent]);
 
-  const recentTx = useMemo(() => allTxFiltered.slice(0, 30), [allTxFiltered]);
+  const [recentTxDongFilter, setRecentTxDongFilter] = useState('all');
+  const recentTxDongOptions = useMemo(() => {
+    const set = new Set();
+    allTxFiltered.forEach((t) => { if (t.dong) set.add(t.dong); });
+    return [...set].sort();
+  }, [allTxFiltered]);
+  const recentTx = useMemo(() => {
+    const base = recentTxDongFilter === 'all' ? allTxFiltered : allTxFiltered.filter((t) => t.dong === recentTxDongFilter);
+    return base.slice(0, 30);
+  }, [allTxFiltered, recentTxDongFilter]);
 
   const [aptHistory, setAptHistory] = useState([]);
   const [aptHistoryLoading, setAptHistoryLoading] = useState(false);
   const [historyAreaFilter, setHistoryAreaFilter] = useState('all');
+  const [historyListLimit, setHistoryListLimit] = useState(30);
 
   useEffect(() => {
     setAptHistory([]);
@@ -798,6 +808,7 @@ export default function Page() {
         });
         setAptHistory(filtered);
         setHistoryAreaFilter('all');
+        setHistoryListLimit(30);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setAptHistoryLoading(false); });
@@ -1500,12 +1511,18 @@ export default function Page() {
   const mapValueFor = (code) => {
     if (isRone) return roneRanking.find((r) => r.code === code)?.latest ?? null;
     if (isRatio) return ratioRanking.find((r) => r.code === code)?.ratio ?? null;
+    if (mapColorMode === 'volume') {
+      let count = 0;
+      months.forEach((ym) => { count += (rawByRegionMonth[`${code}_${ym}`] || []).length; });
+      return count || null;
+    }
     const lastMonth = months[months.length - 1];
     const items = rawByRegionMonth[`${code}_${lastMonth}`] || [];
     const valid = items.map((r) => r.pricePerPyeong).filter(Boolean);
     return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
   };
 
+  const [mapColorMode, setMapColorMode] = useState('price'); // 'price' | 'volume'
   const [sidebarDrillSido, setSidebarDrillSido] = useState(null);
   const [regionSearch, setRegionSearch] = useState('');
   const [focusLatLng, setFocusLatLng] = useState(null);
@@ -1544,7 +1561,7 @@ export default function Page() {
       return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType]);
+  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode]);
 
   const seoulMapData = useMemo(() => {
     if (!mapDisplayFeatures || !mapValues) return null;
@@ -1605,6 +1622,7 @@ export default function Page() {
     const relevant = dongRawFeatures.filter((f) => selected.some((code) => expandRegionCode(code).includes(f.regionCode)));
     const values = relevant.map((f) => {
       const rows = allTx.filter((t) => t.regionCode === f.regionCode && normalizeDongName(t.dong) === normalizeDongName(f.name));
+      if (mapColorMode === 'volume') return rows.length || null;
       const vals = rows
         .map((r) => (isRent ? (r.isJeonse ? r.depositPerPyeong : null) : r.pricePerPyeong))
         .filter((v) => v != null);
@@ -1619,7 +1637,7 @@ export default function Page() {
       min,
       max,
     };
-  }, [dongRawFeatures, selected, allTx, isRent]);
+  }, [dongRawFeatures, selected, allTx, isRent, mapColorMode]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -2199,6 +2217,27 @@ export default function Page() {
                 </button>
               ))}
             </div>
+            {!isRone && !isRatio && (
+              <div style={{
+                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 4,
+                background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
+                borderRadius: 12, padding: 5, boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+                backdropFilter: 'blur(8px)',
+              }}
+              >
+                {[['price', '가격'], ['volume', '거래량']].map(([key, label]) => (
+                  <button key={key} className="portal-pill" onClick={() => setMapColorMode(key)} style={{
+                    border: 'none', borderRadius: 9, padding: '8px 12px', whiteSpace: 'nowrap',
+                    background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
+                    color: mapColorMode === key ? '#fff' : PALETTE.textSecondary,
+                    fontSize: 12, fontWeight: mapColorMode === key ? 700 : 500, cursor: 'pointer',
+                  }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="map-status-card" style={{
               marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
               border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
@@ -3445,7 +3484,19 @@ export default function Page() {
             </div>
 
             <div style={styles.card} className="ui-card">
-              <h2 style={styles.sectionTitle}>최근 거래 내역</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <h2 style={{ ...styles.sectionTitle, margin: 0 }}>최근 거래 내역</h2>
+                {recentTxDongOptions.length > 1 && (
+                  <select
+                    value={recentTxDongFilter}
+                    onChange={(e) => setRecentTxDongFilter(e.target.value)}
+                    style={{ ...styles.select, width: 'auto', fontSize: 12, padding: '6px 8px' }}
+                  >
+                    <option value="all">전체 동</option>
+                    {recentTxDongOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                )}
+              </div>
               <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
@@ -3681,7 +3732,7 @@ export default function Page() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, color: PALETTE.textMuted }}>평형대</span>
                 <button
-                  onClick={() => setHistoryAreaFilter('all')}
+                  onClick={() => { setHistoryAreaFilter('all'); setHistoryListLimit(30); }}
                   style={{
                     border: `1px solid ${historyAreaFilter === 'all' ? PALETTE.accent : PALETTE.border}`,
                     background: historyAreaFilter === 'all' ? 'rgba(239,68,68,0.10)' : 'transparent',
@@ -3694,7 +3745,7 @@ export default function Page() {
                 {aptHistoryAreaOptions.map((o) => (
                   <button
                     key={o.value}
-                    onClick={() => setHistoryAreaFilter(o.value)}
+                    onClick={() => { setHistoryAreaFilter(o.value); setHistoryListLimit(30); }}
                     style={{
                       border: `1px solid ${historyAreaFilter === o.value ? PALETTE.accent : PALETTE.border}`,
                       background: historyAreaFilter === o.value ? 'rgba(239,68,68,0.10)' : 'transparent',
@@ -3761,7 +3812,7 @@ export default function Page() {
                   </tr>
                 </thead>
                 <tbody>
-                  {aptHistoryFiltered.map((t, i) => (
+                  {aptHistoryFiltered.slice(0, historyListLimit).map((t, i) => (
                     <tr key={i}>
                       <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
                       <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
@@ -3783,6 +3834,17 @@ export default function Page() {
                   )}
                 </tbody>
               </table>
+              {aptHistoryFiltered.length > historyListLimit && (
+                <div style={{ textAlign: 'center', marginTop: 10 }}>
+                  <button
+                    className="ui-btn"
+                    style={{ ...styles.btn, width: 'auto', padding: '7px 16px', fontSize: 12 }}
+                    onClick={() => setHistoryListLimit((n) => n + 30)}
+                  >
+                    더보기 ({aptHistoryFiltered.length - historyListLimit}건 더 있음)
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
