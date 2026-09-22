@@ -24,6 +24,8 @@ export default function NaverChoropleth({
   const onComplexSelectRef = useRef(onComplexSelect);
   const onZoomTierChangeRef = useRef(onZoomTierChange);
   const [loadFailed, setLoadFailed] = useState(false);
+  const markerSyncTimerRef = useRef(null);
+  const markerSyncSeqRef = useRef(0);
 
   useEffect(() => { valuesRef.current = values; }, [values]);
   useEffect(() => { dongValuesRef.current = dongValues; }, [dongValues]);
@@ -38,10 +40,26 @@ export default function NaverChoropleth({
   const NEAR_ZOOM_LEVEL = 15;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
-  const updateMarkerVisibility = () => {
-    if (!mapRef.current) return;
-    const show = mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL;
-    markersRef.current.forEach(({ marker }) => marker.setMap(show ? mapRef.current : null));
+  // 현재 화면(+여유 25%) 범위를 구한다 — 이 범위 안의 단지만 좌표를 찾고 마커를 만들면,
+  // 큰 지역을 선택해도 실제 보이는 만큼만 일하므로 훨씬 가볍다.
+  const getExpandedBounds = () => {
+    const map = mapRef.current;
+    if (!map || !window.naver?.maps) return null;
+    const b = map.getBounds();
+    if (!b) return null;
+    const sw = b.getSW();
+    const ne = b.getNE();
+    const latPad = Math.max((ne.lat() - sw.lat()) * 0.25, 0.002);
+    const lngPad = Math.max((ne.lng() - sw.lng()) * 0.25, 0.002);
+    return new window.naver.maps.LatLngBounds(
+      new window.naver.maps.LatLng(sw.lat() - latPad, sw.lng() - lngPad),
+      new window.naver.maps.LatLng(ne.lat() + latPad, ne.lng() + lngPad),
+    );
+  };
+
+  const isInBounds = (coord, bounds) => {
+    if (!coord || !bounds) return false;
+    return bounds.hasLatLng(new window.naver.maps.LatLng(coord.lat, coord.lng));
   };
 
   // 네이버 지도 표시용으로는 좌표 검색(Geocoding) API에 별도 서버 키가 필요해서,
@@ -182,22 +200,27 @@ export default function NaverChoropleth({
     });
   };
 
+  // 줌 중에는 클러스터를 매 프레임 다시 만들지 않고, 잠깐 멈춘 뒤 한 번만 반영한다.
+  const scheduleMarkerSync = (delay = 80) => {
+    if (markerSyncTimerRef.current) clearTimeout(markerSyncTimerRef.current);
+    markerSyncTimerRef.current = setTimeout(() => {
+      markerSyncTimerRef.current = null;
+      syncNaverClusterer();
+    }, delay);
+  };
+
   const handleZoomChangedImmediate = () => {
     if (!mapRef.current) return;
     const level = mapRef.current.getZoom();
     const tier = level <= FAR_ZOOM_LEVEL ? 'far' : (level >= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
     if (tier !== zoomTierRef.current) {
-      console.time('[지도] 줌 티어 전환 재계산');
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
       onZoomTierChangeRef.current?.(tier);
-      console.timeEnd('[지도] 줌 티어 전환 재계산');
-      console.log(`[지도] 구 도형 ${polygonsRef.current.length}개, 동 도형 ${dongPolygonsRef.current.length}개, 마커 ${markersRef.current.length}개`);
     }
-    console.time('[지도] 클러스터 재계산(줌마다)');
-    syncNaverClusterer();
-    console.timeEnd('[지도] 클러스터 재계산(줌마다)');
+    scheduleMarkerSync(120);
+    if (tier === 'near') syncVisibleMarkers();
   };
 
   const handleZoomChanged = () => {
@@ -372,69 +395,89 @@ export default function NaverChoropleth({
     mapRef.current.morph(new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng), 13);
   }, [focusLatLng]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!complexes || !mapRef.current || !window.naver?.maps) return;
-      console.time('[지도] 마커 동기화 전체');
-      const ready = await ensureKakaoGeocoder();
-      if (cancelled || !ready) return;
-      if (!kakaoPlacesRef.current) kakaoPlacesRef.current = new window.kakao.maps.services.Places();
+  // 현재 화면(+여유 25%) 안에 보이는 단지만 좌표를 찾아 마커로 만든다. 큰 지역을 선택해도
+  // 실제 보이는 범위만큼만 일하므로 800개를 한꺼번에 처리할 때보다 훨씬 가볍다.
+  const syncVisibleMarkers = async () => {
+    if (!mapRef.current || !window.naver?.maps || !complexes?.length || zoomTierRef.current !== 'near') return;
+    const seq = ++markerSyncSeqRef.current;
+    const bounds = getExpandedBounds();
+    const visibleComplexes = complexes.filter((c) => {
+      if (c.lat == null || c.lng == null) return false;
+      return isInBounds({ lat: c.lat, lng: c.lng }, bounds);
+    });
+    // 화면 + 여유 영역에서 최대 220개만 Marker화한다.
+    const candidate = visibleComplexes.slice(0, 220);
+    const existingKeys = new Set(markersRef.current.map((m) => m.key));
+    const wanted = new Set(candidate.map((c) => c.key));
 
-      const existingKeys = new Set(markersRef.current.map((m) => m.key));
-      const wanted = new Set(complexes.map((c) => c.key));
-
-      markersRef.current = markersRef.current.filter((m) => {
-        if (wanted.has(m.key)) return true;
-        m.marker.setMap(null);
-        return false;
-      });
-
-      const todo = complexes.filter((c) => !existingKeys.has(c.key));
-      console.log(`[지도] 전체 단지 ${complexes.length}개, 새로 처리할 단지 ${todo.length}개`);
-
-      const needServerLookup = todo.filter((c) => geocodeCache[c.key] === undefined).map((c) => c.key);
-      if (needServerLookup.length > 0) {
-        console.time('[지도] 서버 좌표 캐시 조회');
-        const serverHits = await fetchServerGeocodeCache(needServerLookup);
-        Object.entries(serverHits).forEach(([key, coord]) => { geocodeCache[key] = coord; });
-        console.timeEnd('[지도] 서버 좌표 캐시 조회');
-        console.log(`[지도] 서버 캐시에서 ${Object.keys(serverHits).length}/${needServerLookup.length}개 찾음`);
-      }
-
-      console.time('[지도] 좌표 확보(센트로이드+검색)');
-      const newlyFound = [];
-      await runPool(todo, async (c) => {
-        if (cancelled) return;
-        let coord = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : geocodeCache[c.key];
-        if (coord === undefined) {
-          coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
-            || await geocodeComplex(`${c.dong} ${c.apt}`)
-            || await geocodeComplex(c.apt);
-          geocodeCache[c.key] = coord;
-          if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
-        }
-        if (cancelled || !coord) return;
-        const marker = new window.naver.maps.Marker({
-          position: new window.naver.maps.LatLng(coord.lat, coord.lng),
-        });
-        window.naver.maps.Event.addListener(marker, 'click', () => {
-          onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
-        });
-        // 지도에 직접 붙이지 않는다 — 클러스터러(격자 묶음)가 줌 레벨에 맞게 보여준다.
-        markersRef.current.push({ marker, key: c.key });
-      }, 6);
-      console.timeEnd('[지도] 좌표 확보(센트로이드+검색)');
-      console.log(`[지도] 카카오 실시간 검색으로 새로 찾은 단지 ${newlyFound.length}개`);
-      queueServerGeocodeSave(newlyFound);
-
-      console.time('[지도] 클러스터 묶기');
-      if (!cancelled) syncNaverClusterer();
-      console.timeEnd('[지도] 클러스터 묶기');
-      console.timeEnd('[지도] 마커 동기화 전체');
+    markersRef.current = markersRef.current.filter((m) => {
+      if (wanted.has(m.key)) return true;
+      m.marker.setMap(null);
+      return false;
+    });
+    const todo = candidate.filter((c) => !existingKeys.has(c.key));
+    if (todo.length === 0) {
+      syncNaverClusterer();
+      return;
     }
-    run();
-    return () => { cancelled = true; };
+
+    const ready = await ensureKakaoGeocoder();
+    if (seq !== markerSyncSeqRef.current) return;
+    if (ready && !kakaoPlacesRef.current) kakaoPlacesRef.current = new window.kakao.maps.services.Places();
+
+    const needServerLookup = todo.filter((c) => geocodeCache[c.key] === undefined).map((c) => c.key);
+    if (needServerLookup.length > 0) {
+      const serverHits = await fetchServerGeocodeCache(needServerLookup);
+      if (seq !== markerSyncSeqRef.current) return;
+      Object.entries(serverHits).forEach(([key, coord]) => { geocodeCache[key] = coord; });
+    }
+
+    const newlyFound = [];
+    await runPool(todo, async (c) => {
+      if (seq !== markerSyncSeqRef.current) return;
+      let coord = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : geocodeCache[c.key];
+      if (coord === undefined) {
+        if (!ready) return;
+        coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
+          || await geocodeComplex(`${c.dong} ${c.apt}`)
+          || await geocodeComplex(c.apt);
+        geocodeCache[c.key] = coord;
+        if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
+      }
+      if (seq !== markerSyncSeqRef.current || !coord) return;
+      const marker = new window.naver.maps.Marker({
+        position: new window.naver.maps.LatLng(coord.lat, coord.lng),
+      });
+      window.naver.maps.Event.addListener(marker, 'click', () => {
+        onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
+      });
+      // 지도에 직접 붙이지 않는다 — 클러스터러(격자 묶음)가 줌 레벨에 맞게 보여준다.
+      markersRef.current.push({ marker, key: c.key });
+    }, 6);
+    queueServerGeocodeSave(newlyFound);
+    if (seq === markerSyncSeqRef.current) syncNaverClusterer();
+  };
+
+  useEffect(() => {
+    // complexes가 처음 들어오거나 지역을 바꿨을 때만 준비한다. 실제 Marker 생성은 near + idle에서 한다.
+    if (!mapRef.current || !complexes?.length) return undefined;
+    if (zoomTierRef.current === 'near') syncVisibleMarkers();
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complexes]);
+
+  // 지도 이동/확대가 끝난 순간에만 화면 안 단지를 갱신한다.
+  useEffect(() => {
+    if (!mapRef.current || !window.naver?.maps) return undefined;
+    const listener = window.naver.maps.Event.addListener(mapRef.current, 'idle', () => {
+      if (zoomTierRef.current === 'near') {
+        scheduleMarkerSync(50);
+        syncVisibleMarkers();
+      }
+    });
+    return () => {
+      if (listener?.remove) listener.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complexes]);
 
