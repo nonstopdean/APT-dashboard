@@ -187,12 +187,17 @@ export default function NaverChoropleth({
     const level = mapRef.current.getZoom();
     const tier = level <= FAR_ZOOM_LEVEL ? 'far' : (level >= NEAR_ZOOM_LEVEL ? 'near' : 'mid');
     if (tier !== zoomTierRef.current) {
+      console.time('[지도] 줌 티어 전환 재계산');
       zoomTierRef.current = tier;
       applyAllStyles();
       updateLayerVisibility();
       onZoomTierChangeRef.current?.(tier);
+      console.timeEnd('[지도] 줌 티어 전환 재계산');
+      console.log(`[지도] 구 도형 ${polygonsRef.current.length}개, 동 도형 ${dongPolygonsRef.current.length}개, 마커 ${markersRef.current.length}개`);
     }
+    console.time('[지도] 클러스터 재계산(줌마다)');
     syncNaverClusterer();
+    console.timeEnd('[지도] 클러스터 재계산(줌마다)');
   };
 
   const handleZoomChanged = () => {
@@ -331,10 +336,11 @@ export default function NaverChoropleth({
         if (f.code) onSelectRef.current?.(f.code);
       });
       window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
-        if (zoomTierRef.current !== 'mid') return;
+        const tier = zoomTierRef.current;
+        if (tier === 'far') return;
         const value = dongValuesRef.current?.[idx];
         const hasValue = value != null;
-        polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+        polygon.setOptions({ fillOpacity: hasValue ? (tier === 'near' ? 0.55 : 0.5) : 0.15, strokeWeight: 2 });
         infoWindowRef.current?.setContent(
           `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
         );
@@ -370,6 +376,7 @@ export default function NaverChoropleth({
     let cancelled = false;
     async function run() {
       if (!complexes || !mapRef.current || !window.naver?.maps) return;
+      console.time('[지도] 마커 동기화 전체');
       const ready = await ensureKakaoGeocoder();
       if (cancelled || !ready) return;
       if (!kakaoPlacesRef.current) kakaoPlacesRef.current = new window.kakao.maps.services.Places();
@@ -384,13 +391,18 @@ export default function NaverChoropleth({
       });
 
       const todo = complexes.filter((c) => !existingKeys.has(c.key));
+      console.log(`[지도] 전체 단지 ${complexes.length}개, 새로 처리할 단지 ${todo.length}개`);
 
       const needServerLookup = todo.filter((c) => geocodeCache[c.key] === undefined).map((c) => c.key);
       if (needServerLookup.length > 0) {
+        console.time('[지도] 서버 좌표 캐시 조회');
         const serverHits = await fetchServerGeocodeCache(needServerLookup);
         Object.entries(serverHits).forEach(([key, coord]) => { geocodeCache[key] = coord; });
+        console.timeEnd('[지도] 서버 좌표 캐시 조회');
+        console.log(`[지도] 서버 캐시에서 ${Object.keys(serverHits).length}/${needServerLookup.length}개 찾음`);
       }
 
+      console.time('[지도] 좌표 확보(센트로이드+검색)');
       const newlyFound = [];
       await runPool(todo, async (c) => {
         if (cancelled) return;
@@ -412,9 +424,14 @@ export default function NaverChoropleth({
         // 지도에 직접 붙이지 않는다 — 클러스터러(격자 묶음)가 줌 레벨에 맞게 보여준다.
         markersRef.current.push({ marker, key: c.key });
       }, 6);
+      console.timeEnd('[지도] 좌표 확보(센트로이드+검색)');
+      console.log(`[지도] 카카오 실시간 검색으로 새로 찾은 단지 ${newlyFound.length}개`);
       queueServerGeocodeSave(newlyFound);
 
+      console.time('[지도] 클러스터 묶기');
       if (!cancelled) syncNaverClusterer();
+      console.timeEnd('[지도] 클러스터 묶기');
+      console.timeEnd('[지도] 마커 동기화 전체');
     }
     run();
     return () => { cancelled = true; };

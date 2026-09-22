@@ -267,8 +267,8 @@ export default function KakaoChoropleth({
       window.kakao.maps.event.addListener(polygon, 'mouseover', () => {
         const value = dongValuesRef.current?.[idx];
         const hasValue = value != null;
-        if (zoomTierRef.current === 'mid') {
-          polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.12 });
+        if (zoomTierRef.current !== 'far') {
+          polygon.setOptions({ fillOpacity: hasValue ? 0.5 : 0.15 });
         }
         setCaption(hasValue ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name);
       });
