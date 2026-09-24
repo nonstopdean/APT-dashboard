@@ -367,7 +367,14 @@ export default function NaverChoropleth({
           if (zoomTierRef.current !== 'far') return;
           const value = valuesRef.current?.[idx];
           const hasValue = value != null;
-          polygon.setOptions({ fillOpacity: hasValue ? 0.65 : 0.15, strokeWeight: 2 });
+          // 데이터 유무와 상관없이 호버하면 항상 뚜렷하게 보이도록 한다 (네이버 지도 기본 동작과 동일).
+          // 데이터가 있으면 그 색을 더 진하게, 없으면 중립 색으로 또렷하게 보여준다.
+          polygon.setOptions({
+            fillOpacity: hasValue ? 0.65 : 0.45,
+            fillColor: hasValue ? colorForRef.current(value) : '#8A8172',
+            strokeWeight: 2.5,
+            strokeColor: '#5B5347',
+          });
           infoWindowRef.current.setContent(
             `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
           );
@@ -468,7 +475,12 @@ export default function NaverChoropleth({
           if (tier === 'far') return;
           const value = dongValuesRef.current?.[idx];
           const hasValue = value != null;
-          polygon.setOptions({ fillOpacity: hasValue ? (tier === 'near' ? 0.55 : 0.5) : 0.15, strokeWeight: 2 });
+          polygon.setOptions({
+            fillOpacity: hasValue ? (tier === 'near' ? 0.55 : 0.5) : 0.4,
+            fillColor: hasValue ? colorForRef.current(value) : '#8A8172',
+            strokeWeight: 2.5,
+            strokeColor: '#5B5347',
+          });
           infoWindowRef.current?.setContent(
             `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
           );
