@@ -855,6 +855,33 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [selectedApt, isSilv, propertyType, isRent]);
 
+  // 매매를 보고 있어도 이 단지의 전세가율을 같이 보여주기 위해, 최근 12개월 전세 실거래를
+  // 가볍게 따로 받아온다 (isRent가 이미 전세면 따로 받을 필요 없다).
+  const [aptJeonseInfo, setAptJeonseInfo] = useState(null); // {avgDeposit, count} | null
+  useEffect(() => {
+    setAptJeonseInfo(null);
+    if (!selectedApt || isRent || isSilv || propertyType === 'offi') return undefined;
+    let cancelled = false;
+    const endYmJ = ymNow();
+    const startYmJ = ymShift(endYmJ, -11);
+    fetch(`/api/rents?codes=${selectedApt.regionCode}&start=${startYmJ}&end=${endYmJ}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const months2 = json?.months || [];
+        const rows = [];
+        months2.forEach((ym) => {
+          (json?.data?.[`${selectedApt.regionCode}_${ym}`] || []).forEach((r) => rows.push(r));
+        });
+        const matched = rows.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.isJeonse && t.deposit != null);
+        if (matched.length === 0) return;
+        const avgDeposit = matched.reduce((s, t) => s + t.deposit, 0) / matched.length;
+        setAptJeonseInfo({ avgDeposit, count: matched.length });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedApt, isRent, isSilv, propertyType]);
+
   const [gongsiInfo, setGongsiInfo] = useState(null);
   const [gongsiLoading, setGongsiLoading] = useState(false);
   const [gongsiError, setGongsiError] = useState('');
@@ -4113,7 +4140,7 @@ export default function Page() {
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
             {aptSummary && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 14 }}>
                 <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
                   <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
@@ -4140,7 +4167,21 @@ export default function Page() {
                     {aptSummary.turnoverRate != null ? `거래 ${aptSummary.last12moCount}건 / 세대수 ${aptBasicInfo?.households}` : '세대수 정보 없음'}
                   </div>
                 </div>
+                {aptJeonseInfo && aptSummary.recentAvg != null && (
+                  <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 이 단지 전세 거래 평균 ÷ 최근 3개월 매매 평균 × 100. 표본이 적으면 오차가 클 수 있어요.">
+                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>전세가율(최근 12개월)</div>
+                    <div style={{ fontSize: 15, fontWeight: 800 }}>{((aptJeonseInfo.avgDeposit / aptSummary.recentAvg) * 100).toFixed(1)}%</div>
+                    <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
+                      전세 {fmtManwon(Math.round(aptJeonseInfo.avgDeposit))} · 표본 {aptJeonseInfo.count}건
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
+            {aptSummary && (
+              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '-8px 0 14px' }}>
+                기준일 {new Date().toLocaleDateString('ko-KR')} · 이 단지 거래 표본 {aptHistory.length}건(최대 20년치) · 국토교통부 실거래가 공개자료
+              </p>
             )}
             {aptSummary?.volumeChangePct != null && Math.abs(aptSummary.volumeChangePct) >= 20 && (
               <div style={{
