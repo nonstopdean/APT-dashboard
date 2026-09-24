@@ -1401,6 +1401,7 @@ export default function Page() {
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
 
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
+  const [priceMoveFilter, setPriceMoveFilter] = useState('all'); // 'all' | 'high' | 'drop'
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
   const [visibleMarkerCount, setVisibleMarkerCount] = useState(null);
@@ -1464,6 +1465,17 @@ export default function Page() {
       .filter((c) => c.latestPrice != null && c.latestPrice <= maxManwon)
       .sort((a, b) => b.latestPrice - a.latestPrice);
   }, [budgetSearchOpen, budgetAmount, mapComplexes]);
+
+  // 신고가/하락 단지만 지도에 남긴다 — complexCompare의 최근 거래 대비 변동률(change)을 기준으로 한다.
+  const priceMoveMatches = useMemo(() => {
+    if (priceMoveFilter === 'all') return null;
+    const changeByKey = new Map(complexCompare.map((c) => [`${c.regionCode}|${c.dong}|${c.apt}`, c.change]));
+    return mapComplexes.filter((c) => {
+      const change = changeByKey.get(c.key);
+      if (change == null) return false;
+      return priceMoveFilter === 'high' ? change >= 5 : change <= -5;
+    });
+  }, [priceMoveFilter, mapComplexes, complexCompare]);
 
   // "단지 탐색" 패널을 현재 지도 화면 범위에 맞춰 보여준다 — 지도를 옮기면 목록도 같이 바뀐다.
   const mapPanelList = useMemo(() => {
@@ -1848,6 +1860,10 @@ export default function Page() {
     // 실거래 데이터가 있는(=이미 선택된) 동만 색이 들어가고 나머지는 연한 무채색으로 그린다 —
     // 어느 동이든 눌러서 그 구를 새로 선택할 수 있게 한다.
     const values = dongRawFeatures.map((f) => {
+      if (isRatio) {
+        // 전세가율은 동 단위로 따로 계산하지 않으므로, 구 전체 전세가율 값을 그대로 쓴다.
+        return ratioRanking.find((r) => r.code === f.regionCode)?.ratio ?? null;
+      }
       const agg = dongPriceIndex.get(`${f.regionCode}|${normalizeDongName(f.name)}`);
       if (mapColorMode === 'volume') {
         if (agg?.count) return agg.count;
@@ -1868,7 +1884,7 @@ export default function Page() {
       min,
       max,
     };
-  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn]);
+  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn, isRatio, ratioRanking]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -1909,7 +1925,7 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={budgetMatches || mapComplexes}
+            complexes={budgetMatches || priceMoveMatches || mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -1926,7 +1942,7 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={budgetMatches || mapComplexes}
+            complexes={budgetMatches || priceMoveMatches || mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -2543,6 +2559,29 @@ export default function Page() {
             >
               {dongLayerOn ? '🗺️ 동 색칠 켜짐' : '⚡ 동 색칠 끔 (가벼운 모드)'}
             </button>
+            {!isRent && !isRatio && !isRone && (
+              <div style={{
+                pointerEvents: 'auto', display: 'flex', gap: 2,
+                background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
+                borderRadius: 12, padding: 4, boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+              }}
+              >
+                {[['all', '전체'], ['high', '📈 신고가'], ['drop', '📉 하락']].map(([k, l]) => (
+                  <button
+                    key={k}
+                    onClick={() => setPriceMoveFilter(k)}
+                    style={{
+                      border: 'none', borderRadius: 9, padding: '6px 9px', whiteSpace: 'nowrap',
+                      background: priceMoveFilter === k ? PALETTE.textPrimary : 'transparent',
+                      color: priceMoveFilter === k ? '#fff' : PALETTE.textSecondary,
+                      fontSize: 11.5, fontWeight: priceMoveFilter === k ? 700 : 500, cursor: 'pointer',
+                    }}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="map-status-card" style={{
               marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
               border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
@@ -2550,6 +2589,8 @@ export default function Page() {
             }}>
               {budgetMatches ? (
                 <><b>{budgetMatches.length.toLocaleString()}</b>개 단지가 예산 이내</>
+              ) : priceMoveMatches ? (
+                <><b>{priceMoveMatches.length.toLocaleString()}</b>개 단지 · {priceMoveFilter === 'high' ? '신고가 후보(변동률 +5%↑)' : '하락 후보(변동률 -5%↓)'}</>
               ) : (
                 <>
                   <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
