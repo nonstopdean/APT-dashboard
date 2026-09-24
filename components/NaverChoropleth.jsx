@@ -359,6 +359,7 @@ export default function NaverChoropleth({
           if (f.code) onSelectRef.current?.(f.code);
         });
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+          console.log(`[호버] 구 마우스오버: ${f.name}, 현재 티어=${zoomTierRef.current}, 지도에 붙어있음=${!!polygon.getMap()}`);
           if (zoomTierRef.current !== 'far') return;
           const value = valuesRef.current?.[idx];
           const hasValue = value != null;
@@ -459,6 +460,7 @@ export default function NaverChoropleth({
         });
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
           const tier = zoomTierRef.current;
+          console.log(`[호버] 동 마우스오버: ${f.name}, 현재 티어=${tier}, 지도에 붙어있음=${!!polygon.getMap()}`);
           if (tier === 'far') return;
           const value = dongValuesRef.current?.[idx];
           const hasValue = value != null;
