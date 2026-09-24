@@ -2382,6 +2382,7 @@ export default function Page() {
                       key={`${c.regionCode}|${c.dong}|${c.apt}|${i}`}
                       onClick={() => {
                         setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: coord?.lat, lng: coord?.lng });
+                        if (coord) setFocusLatLng(coord);
                       }}
                       style={{
                         width: '100%', textAlign: 'left', border: 'none', borderBottom: `1px solid ${PALETTE.border}`,
