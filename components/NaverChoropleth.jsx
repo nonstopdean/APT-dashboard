@@ -56,7 +56,7 @@ export default function NaverChoropleth({
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
   // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
   const FAR_ZOOM_LEVEL = 12;
-  const NEAR_ZOOM_LEVEL = 15;
+  const NEAR_ZOOM_LEVEL = 16;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
 
   // 현재 화면(+여유 25%) 범위를 구한다 — 이 범위 안의 단지만 좌표를 찾고 마커를 만들면,
