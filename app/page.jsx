@@ -1382,6 +1382,10 @@ export default function Page() {
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
 
+  const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
+  const [budgetAmount, setBudgetAmount] = useState('');
+  const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
+
   // 지금 보고 있는 단지 주변(반경 내) 다른 단지들을 자동으로 찾아 비교한다 (아실/호갱노노 스타일).
   const nearbyComplexes = useMemo(() => {
     if (!selectedApt) return [];
@@ -1653,8 +1657,6 @@ export default function Page() {
   };
 
   const [mapColorMode, setMapColorMode] = useState('price'); // 'price' | 'volume'
-  const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
-  const [budgetAmount, setBudgetAmount] = useState('');
   const [ladderBaseline, setLadderBaseline] = useState(null);
   const [timelineMonth, setTimelineMonth] = useState(null); // null = 최신, 아니면 특정 'YYYYMM'
   const [tradeUpCurrentPrice, setTradeUpCurrentPrice] = useState('');
@@ -1710,7 +1712,6 @@ export default function Page() {
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [mapZoomTier, setMapZoomTier] = useState('far');
   const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
-  const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
   const loadedSidosRef = useRef(new Set());
 
   useEffect(() => {
