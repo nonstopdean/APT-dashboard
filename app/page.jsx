@@ -107,12 +107,22 @@ function calcLoanEstimate(amountManwon, isRegulated) {
 
 // z-score를 저평가/고평가 라벨로 바꾼다. 공식 시세 평가가 아니라, 지금 조회된 데이터
 // 안에서 비슷한 지역·평형 대비 상대적으로 어디쯤인지 보여주는 참고용 점수임을 항상 명시한다.
+// 표준정규분포 누적확률(대략치) — z-score를 "비교군 안에서 하위/상위 몇 %인지"로 바꿔서 보여준다.
+function normalCdf(z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  if (z > 0) p = 1 - p;
+  return p;
+}
+
+// z-score를 "저평가/고평가" 같은 투자 판단성 단어 대신, 비교군 안에서의 상대적 위치(백분위)로
+// 표현한다 — 공식 시세 평가가 아니라 지금 조회된 데이터 안에서의 통계적 위치일 뿐이라서다.
 function valuationLabel(z) {
   if (z == null) return null;
-  if (z <= -2) return { text: '★저평가', color: '#3B6FE0', bg: 'rgba(59,111,224,0.12)' };
-  if (z <= -1) return { text: '저평가', color: '#3B6FE0', bg: 'rgba(59,111,224,0.1)' };
-  if (z >= 2) return { text: '★고평가', color: '#B23A2E', bg: 'rgba(178,58,46,0.12)' };
-  if (z >= 1) return { text: '고평가', color: '#B23A2E', bg: 'rgba(178,58,46,0.1)' };
+  const pct = Math.round(normalCdf(z) * 100);
+  if (z <= -1) return { text: `하위 ${pct}%`, color: '#3B6FE0', bg: 'rgba(59,111,224,0.1)', extreme: z <= -2 };
+  if (z >= 1) return { text: `상위 ${100 - pct}%`, color: '#B23A2E', bg: 'rgba(178,58,46,0.1)', extreme: z >= 2 };
   return null;
 }
 
@@ -120,7 +130,7 @@ function ZBadge({ z }) {
   const v = valuationLabel(z);
   if (!v) return <span style={{ fontSize: 10.5, color: '#9a9488' }}>-</span>;
   return (
-    <span style={{ fontSize: 10.5, fontWeight: 700, color: v.color, background: v.bg, borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap' }} title={`z-score ${z.toFixed(2)} (참고용, 공식 시세평가 아님)`}>
+    <span style={{ fontSize: 10.5, fontWeight: 700, color: v.color, background: v.bg, borderRadius: 6, padding: '2px 6px', whiteSpace: 'nowrap' }} title={`같은 지역·비슷한 평형 단지들과 비교했을 때 평당가 ${v.text} 위치(z=${z.toFixed(2)}). 저평가/고평가 판단이 아닌 통계적 위치일 뿐이며, 공식 시세평가가 아닙니다.`}>
       {v.text}
     </span>
   );
@@ -807,6 +817,7 @@ export default function Page() {
     setCalcPriceInput('');
     setTradeUpCurrentPrice('');
     setTradeUpLoanBalance('');
+    setTradeUpTargetPrice('');
     if (!selectedApt) return undefined;
     let cancelled = false;
     setAptHistoryLoading(true);
@@ -1402,6 +1413,21 @@ export default function Page() {
       .slice(0, 20);
   }, [selectedApt, mapComplexes, nearbyRadius]);
 
+  // "비슷한 단지"라고 단정하지 않고, 평형(±5평)이 비슷한 단지 중 평당가가 가까운 순으로
+  // "비교 조건이 유사한 단지"를 찾는다 — 준공연도·세대수까지 반영한 정교한 유사도는 아니다.
+  const similarComplexes = useMemo(() => {
+    if (!selectedApt) return [];
+    const selfKey = `${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`;
+    const self = complexCompare.find((c) => `${c.regionCode}|${c.dong}|${c.apt}` === selfKey);
+    if (!self || self.unitPrice == null || self.pyeong == null) return [];
+    return complexCompare
+      .filter((c) => `${c.regionCode}|${c.dong}|${c.apt}` !== selfKey)
+      .filter((c) => c.unitPrice != null && c.pyeong != null && Math.abs(c.pyeong - self.pyeong) <= 5)
+      .map((c) => ({ ...c, priceDiffPct: ((c.unitPrice - self.unitPrice) / self.unitPrice) * 100 }))
+      .sort((a, b) => Math.abs(a.priceDiffPct) - Math.abs(b.priceDiffPct))
+      .slice(0, 6);
+  }, [selectedApt, complexCompare]);
+
   // "이 가격에 살 수 있는 단지" 역지도 — 예산을 넣으면 그 이하 단지만 남긴다.
   const budgetMatches = useMemo(() => {
     if (!budgetSearchOpen || !budgetAmount) return null;
@@ -1661,6 +1687,7 @@ export default function Page() {
   const [timelineMonth, setTimelineMonth] = useState(null); // null = 최신, 아니면 특정 'YYYYMM'
   const [tradeUpCurrentPrice, setTradeUpCurrentPrice] = useState('');
   const [tradeUpLoanBalance, setTradeUpLoanBalance] = useState('');
+  const [tradeUpTargetPrice, setTradeUpTargetPrice] = useState('');
   const [sidebarDrillSido, setSidebarDrillSido] = useState(null);
   const [regionSearch, setRegionSearch] = useState('');
   const [focusLatLng, setFocusLatLng] = useState(null);
@@ -3719,7 +3746,7 @@ export default function Page() {
 
             {undervaluedPicks.length > 0 && (
               <div style={styles.card} className="ui-card">
-                <h2 style={styles.sectionTitle}>저평가 참고 추천</h2>
+                <h2 style={styles.sectionTitle}>가격 비교군 하위권 단지</h2>
                 <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
                   같은 지역·비슷한 평형 단지들과 비교했을 때 평당가가 상대적으로 낮은 단지예요. 공식 시세평가가 아니라 지금 조회된 데이터 안에서의 참고용 점수예요.
                 </p>
@@ -4021,9 +4048,9 @@ export default function Page() {
               <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700 }}>🔄 갈아타기 계산기 (참고용)</span>
                 <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '4px 0 10px' }}>
-                  지금 보고 있는 이 단지를 "갈아탈 집"으로 놓고, 현재 사시는 집 정보만 입력하면 추가로 필요한 자금을 계산해요.
+                  목표가는 기본으로 이 단지의 최근 평균가가 들어있지만, 직접 고치면 다른 단지 가격으로도 계산할 수 있어요.
                 </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
                   <div>
                     <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>현재 집 예상 매도가(억원)</label>
                     <input
@@ -4040,9 +4067,17 @@ export default function Page() {
                       style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
                     />
                   </div>
+                  <div>
+                    <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>목표 단지 가격(억원)</label>
+                    <input
+                      type="number" placeholder={(aptSummary.recentAvg / 10000).toFixed(2)} value={tradeUpTargetPrice}
+                      onChange={(e) => setTradeUpTargetPrice(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
+                    />
+                  </div>
                 </div>
                 {tradeUpCurrentPrice && (() => {
-                  const targetPrice = aptSummary.recentAvg; // 만원
+                  const targetPrice = tradeUpTargetPrice ? parseFloat(tradeUpTargetPrice) * 10000 : aptSummary.recentAvg; // 만원
                   const currentPrice = parseFloat(tradeUpCurrentPrice) * 10000;
                   const loanBalance = tradeUpLoanBalance ? parseFloat(tradeUpLoanBalance) * 10000 : 0;
                   const sellCost = currentPrice * 0.005; // 중개보수 등 대략 0.5% 참고치
@@ -4055,7 +4090,7 @@ export default function Page() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: PALETTE.down }}><span>− 대출 잔액</span><span>{fmtManwon(loanBalance)}</span></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: PALETTE.down }}><span>− 매도 중개보수(추정)</span><span>{fmtManwon(sellCost)}</span></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 700 }}><span>실제 사용 가능 자금</span><span>{fmtManwon(usable)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: 6 }}><span>이 단지 필요자금(가격+취득세)</span><span>{fmtManwon(targetPrice + (targetTax?.total || 0))}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: 6 }}><span>목표 필요자금(가격+취득세)</span><span>{fmtManwon(targetPrice + (targetTax?.total || 0))}</span></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 800, color: needed > 0 ? PALETTE.down : PALETTE.up }}>
                         <span>{needed > 0 ? '추가로 필요한 자금' : '남는 자금'}</span><span>{fmtManwon(Math.abs(needed))}</span>
                       </div>
@@ -4275,6 +4310,32 @@ export default function Page() {
                 동 중심좌표 기준 거리라 실제 위치와 다소 차이가 있을 수 있어요.
               </p>
             </div>
+            {similarComplexes.length > 0 && (
+              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>비교 조건이 유사한 단지</span>
+                <p style={{ fontSize: 10, color: PALETTE.textMuted, margin: '4px 0 8px' }}>
+                  평형(±5평)이 비슷한 단지 중 평당가가 가까운 순이에요. 준공연도·세대수까지 반영한 정밀한 유사도는 아니에요.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                  {similarComplexes.map((c) => (
+                    <div
+                      key={`${c.regionCode}|${c.dong}|${c.apt}`}
+                      onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
+                      style={{ background: PALETTE.panel, borderRadius: 8, padding: 9, cursor: 'pointer', border: `1px solid ${PALETTE.border}` }}
+                    >
+                      <div style={{ fontSize: 11.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</div>
+                      <div style={{ fontSize: 10, color: PALETTE.textMuted, margin: '2px 0' }}>{fmtArea(c.area)} · {labelFor(c.regionCode)}</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <b style={{ fontSize: 12 }}>{fmtManwon(Math.round(c.unitPrice))}/평</b>
+                        <span style={{ fontSize: 10, color: c.priceDiffPct > 0 ? PALETTE.up : c.priceDiffPct < 0 ? PALETTE.down : PALETTE.textMuted }}>
+                          {fmtPct(c.priceDiffPct)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
