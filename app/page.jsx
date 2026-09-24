@@ -1330,13 +1330,24 @@ export default function Page() {
   const mapComplexes = useMemo(() => {
     const seen = new Set();
     const list = [];
+    const latestByKey = new Map();
+    allTxFiltered.forEach((t) => {
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}${String(t.day ?? 0).padStart(2, '0')}`;
+      const prev = latestByKey.get(key);
+      if (price != null && (!prev || ym > prev.ym)) {
+        latestByKey.set(key, { ym, price, pyeong: isRent ? t.depositPerPyeong : t.pricePerPyeong, area: t.area });
+      }
+    });
     const addItem = (apt, dong, regionCode) => {
       if (!apt || !dong || !regionCode) return;
       const key = `${regionCode}|${dong}|${apt}`;
       if (seen.has(key)) return;
       seen.add(key);
       const coord = findDongCentroid(regionCode, dong);
-      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng });
+      const latest = latestByKey.get(key);
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area });
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
@@ -1347,7 +1358,7 @@ export default function Page() {
       addItem(c.apt, c.dong, c.regionCode);
     }
     return list.slice(0, MAX_MAP_COMPLEXES);
-  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter]);
+  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent]);
 
   const [globalSearch, setGlobalSearch] = useState('');
 

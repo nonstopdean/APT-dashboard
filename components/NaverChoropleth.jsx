@@ -206,21 +206,26 @@ export default function NaverChoropleth({
   // 하나의 숫자 배지로 묶어 보여준다 (호갱노노/아실처럼). 확대하면 묶음이 풀리면서 개별 마커가 나타난다.
   // handleZoomChangedImmediate가 이 함수를 호출하므로, 반드시 그보다 먼저 선언해야 한다.
   const syncNaverClusterer = () => {
-    if (!mapRef.current) return;
-    const show = mapRef.current.getZoom() >= NEAR_ZOOM_LEVEL;
-    clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
-    clustererRef.current = [];
+    const map = mapRef.current;
+    if (!map || !window.naver?.maps) return;
+    const show = map.getZoom() >= NEAR_ZOOM_LEVEL;
     if (!show) {
+      clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
+      clustererRef.current = [];
       clusterSignatureRef.current = '';
       markersRef.current.forEach(({ marker }) => marker.setMap(null));
       return;
     }
-    const zoom = mapRef.current.getZoom();
+    const zoom = map.getZoom();
     const markerSig = markersRef.current.map(({ key }) => key).sort().join(',');
     const signature = `${zoom}|${markerSig}`;
+    // 동일한 marker 집합/줌이면 기존 overlay를 그대로 유지한다.
     if (signature === clusterSignatureRef.current) return;
+
+    clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
+    clustererRef.current = [];
     clusterSignatureRef.current = signature;
-    // 격자 크기(도 단위): 확대할수록 작은 격자를 써서 묶음이 자연스럽게 풀리게 한다.
+
     const cellDeg = 0.0008 * Math.pow(2, 20 - zoom);
     const buckets = new Map();
     markersRef.current.forEach(({ marker, key }) => {
@@ -233,11 +238,11 @@ export default function NaverChoropleth({
     });
     buckets.forEach((group) => {
       if (group.length === 1) {
-        group[0].marker.setMap(mapRef.current);
+        group[0].marker.setMap(map);
         return;
       }
-      const lat = group.reduce((s, g) => s + g.lat, 0) / group.length;
-      const lng = group.reduce((s, g) => s + g.lng, 0) / group.length;
+      const lat = group.reduce((sum, g) => sum + g.lat, 0) / group.length;
+      const lng = group.reduce((sum, g) => sum + g.lng, 0) / group.length;
       const size = group.length;
       const bg = size < 10 ? 'rgba(178,58,46,0.88)' : size < 50 ? 'rgba(178,58,46,0.92)' : 'rgba(122,34,26,0.94)';
       const wh = size < 10 ? 38 : size < 50 ? 48 : 60;
@@ -249,10 +254,9 @@ export default function NaverChoropleth({
           anchor: new window.naver.maps.Point(wh / 2, wh / 2),
         },
       });
-      overlay.setMap(mapRef.current);
-      // 묶음을 누르면 그 위치로 확대해서 묶음이 풀리게 한다 (여태까진 눌러도 반응이 없었다).
+      overlay.setMap(map);
       window.naver.maps.Event.addListener(overlay, 'click', () => {
-        mapRef.current.morph(new window.naver.maps.LatLng(lat, lng), Math.min(mapRef.current.getZoom() + 2, 19));
+        map.morph(new window.naver.maps.LatLng(lat, lng), Math.min(map.getZoom() + 2, 19));
       });
       clustererRef.current.push({ overlay });
     });
@@ -491,18 +495,21 @@ export default function NaverChoropleth({
     const center = mapRef.current.getCenter();
     const centerLat = center?.lat?.() ?? 0;
     const centerLng = center?.lng?.() ?? 0;
+    // 좌표가 이미 있는 단지는 즉시 사용하고, 좌표가 없는 단지는 geocode 후보로 남긴다.
+    // 이전 버전처럼 좌표 없는 단지를 여기서 제외하면 카카오/서버 geocode fallback이 사실상 작동하지 않는다.
     const visibleComplexes = complexes.filter((c) => {
-      if (c.lat == null || c.lng == null) return false;
+      if (c.lat == null || c.lng == null) return true;
       return isInBounds({ lat: c.lat, lng: c.lng }, bounds);
     });
-    // 화면 중심에 가까운 단지를 우선 렌더링한다. 220개 제한에 걸려도
-    // 사용자가 보고 있는 중심부가 먼저 채워져 체감 로딩이 빨라진다.
+    // 확대도가 높을수록 화면에 실제로 보이는 단지를 더 많이 표시한다.
+    const zoom = mapRef.current.getZoom();
+    const maxMarkers = Math.min(360, Math.max(180, 180 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 30)));
     visibleComplexes.sort((a, b) => {
-      const da = (a.lat - centerLat) ** 2 + (a.lng - centerLng) ** 2;
-      const db = (b.lat - centerLat) ** 2 + (b.lng - centerLng) ** 2;
+      const da = a.lat == null || a.lng == null ? Number.POSITIVE_INFINITY : (a.lat - centerLat) ** 2 + (a.lng - centerLng) ** 2;
+      const db = b.lat == null || b.lng == null ? Number.POSITIVE_INFINITY : (b.lat - centerLat) ** 2 + (b.lng - centerLng) ** 2;
       return da - db;
     });
-    const candidate = visibleComplexes.slice(0, 220);
+    const candidate = visibleComplexes.slice(0, maxMarkers);
     const existingKeys = new Set(markersRef.current.map((m) => m.key));
     const wanted = new Set(candidate.map((c) => c.key));
 
@@ -541,8 +548,20 @@ export default function NaverChoropleth({
         if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
       }
       if (seq !== markerSyncSeqRef.current || !coord) return;
+      const priceText = Number.isFinite(c.latestPrice)
+        ? (c.latestPrice >= 10000 ? `${(c.latestPrice / 10000).toFixed(c.latestPrice >= 100000 ? 0 : 1)}억` : `${Math.round(c.latestPrice).toLocaleString()}만`)
+        : '';
+      const titleText = String(c.apt || '').replace(/[<>&"']/g, '');
+      const markerHtml = `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translateY(-2px);">` +
+        `<div style="padding:4px 7px;border-radius:8px;background:rgba(255,255,255,0.96);border:1px solid rgba(40,35,30,0.18);box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${titleText}${priceText ? `<span style="margin-left:5px;color:#b23a2e;">${priceText}</span>` : ''}</div>` +
+        `<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
       const marker = new window.naver.maps.Marker({
         position: new window.naver.maps.LatLng(coord.lat, coord.lng),
+        icon: {
+          content: markerHtml,
+          anchor: new window.naver.maps.Point(0, 24),
+        },
+        zIndex: 20,
       });
       window.naver.maps.Event.addListener(marker, 'click', () => {
         onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
