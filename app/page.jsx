@@ -236,6 +236,7 @@ export default function Page() {
   const [selectedApt, setSelectedApt] = useState(null);
   const [calcPriceInput, setCalcPriceInput] = useState('');
   const [nearbyRadius, setNearbyRadius] = useState(1000); // meters
+  const [pinnedComplexes, setPinnedComplexes] = useState([]); // [{apt, dong, regionCode}] 최대 5개
   const [userAlerts, setUserAlerts] = useState([]);
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
@@ -895,6 +896,10 @@ export default function Page() {
     const ym3 = ymShift(ymNow(), -2); // 이번 달 포함 최근 3개월
     const recent = aptHistory.filter((t) => ymOf(t) >= ym3);
     const recentPrices = recent.map(priceOf).filter((v) => v != null);
+    const ym3PrevStart = ymShift(ymNow(), -5);
+    const ym3PrevEnd = ymShift(ymNow(), -3);
+    const prev3mo = aptHistory.filter((t) => ymOf(t) >= ym3PrevStart && ymOf(t) <= ym3PrevEnd);
+    const volumeChangePct = prev3mo.length ? ((recent.length - prev3mo.length) / prev3mo.length) * 100 : null;
     const ymAgo = ymShift(ymNow(), -12);
     const yearAgo = aptHistory.filter((t) => ymOf(t) >= ymAgo && ymOf(t) <= ymShift(ymNow(), -10));
     const yearAgoPrices = yearAgo.map(priceOf).filter((v) => v != null);
@@ -916,6 +921,8 @@ export default function Page() {
       maxLabel: maxTx ? `${fmtArea(maxTx.area)} · ${maxTx.year}.${String(maxTx.month).padStart(2, '0')}` : '-',
       turnoverRate,
       last12moCount,
+      prev3moCount: prev3mo.length,
+      volumeChangePct,
     };
   }, [aptHistory, isRent, aptBasicInfo]);
 
@@ -1413,6 +1420,25 @@ export default function Page() {
       .slice(0, 20);
   }, [selectedApt, mapComplexes, nearbyRadius]);
 
+  // 반경 500m/1km/2km 별로 단지 개수·평균가·거래량을 한 번에 요약한다.
+  const radiusSummary = useMemo(() => {
+    if (!selectedApt) return null;
+    const selfKey = `${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`;
+    const selfCoord = (selectedApt.lat != null && selectedApt.lng != null)
+      ? { lat: selectedApt.lat, lng: selectedApt.lng }
+      : findDongCentroid(selectedApt.regionCode, selectedApt.dong);
+    if (!selfCoord) return null;
+    const withDist = mapComplexes
+      .filter((c) => c.key !== selfKey && c.lat != null && c.lng != null)
+      .map((c) => ({ ...c, distance: distanceMeters(selfCoord.lat, selfCoord.lng, c.lat, c.lng) }));
+    return [500, 1000, 2000].map((r) => {
+      const within = withDist.filter((c) => c.distance <= r);
+      const priced = within.filter((c) => c.latestPrice != null);
+      const avg = priced.length ? priced.reduce((s, c) => s + c.latestPrice, 0) / priced.length : null;
+      return { radius: r, count: within.length, avg };
+    });
+  }, [selectedApt, mapComplexes]);
+
   // "비슷한 단지"라고 단정하지 않고, 평형(±5평)이 비슷한 단지 중 평당가가 가까운 순으로
   // "비교 조건이 유사한 단지"를 찾는다 — 준공연도·세대수까지 반영한 정교한 유사도는 아니다.
   const similarComplexes = useMemo(() => {
@@ -1787,6 +1813,7 @@ export default function Page() {
   // O(거래건수 + 동 수)로 줄여서, 동이 많은 지역을 확대할 때 계산량을 크게 줄인다.
   const dongPriceIndex = useMemo(() => {
     const index = new Map();
+    const guIndex = new Map();
     allTx.forEach((t) => {
       if (!t?.regionCode || !t?.dong) return;
       const value = isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong;
@@ -1798,7 +1825,15 @@ export default function Page() {
       } else {
         index.set(key, { sum: value ?? 0, priced: value != null ? 1 : 0, count: 1 });
       }
+      const guPrev = guIndex.get(t.regionCode);
+      if (guPrev) {
+        guPrev.count += 1;
+        if (value != null) { guPrev.sum += value; guPrev.priced += 1; }
+      } else {
+        guIndex.set(t.regionCode, { sum: value ?? 0, priced: value != null ? 1 : 0, count: 1 });
+      }
     });
+    index.guFallback = guIndex;
     return index;
   }, [allTx, isRent]);
 
@@ -1810,9 +1845,15 @@ export default function Page() {
     // 어느 동이든 눌러서 그 구를 새로 선택할 수 있게 한다.
     const values = dongRawFeatures.map((f) => {
       const agg = dongPriceIndex.get(`${f.regionCode}|${normalizeDongName(f.name)}`);
-      if (!agg) return null;
-      if (mapColorMode === 'volume') return agg.count || null;
-      return agg.priced ? agg.sum / agg.priced : null;
+      if (mapColorMode === 'volume') {
+        if (agg?.count) return agg.count;
+        return null; // 거래량은 없으면 0이 맞는 값이라 구 평균으로 대체하면 오히려 왜곡된다.
+      }
+      if (agg?.priced) return agg.sum / agg.priced;
+      // 이 동 자체엔 실거래가 없어도, 같은 구 안에 데이터가 있으면 구 전체 평균으로 채운다 —
+      // 네이버 지도처럼 구 전체가 한 색으로 일관되게 보이도록.
+      const guAgg = dongPriceIndex.guFallback?.get(f.regionCode);
+      return guAgg?.priced ? guAgg.sum / guAgg.priced : null;
     });
     const available = values.filter((v) => v != null);
     const min = available.length ? Math.min(...available) : 0;
@@ -2598,6 +2639,50 @@ export default function Page() {
       </div>
       ) : viewMode === 'compare' ? (
       <div style={{ padding: '20px 20px 0' }}>
+        {pinnedComplexes.length > 0 && (
+          <div style={{ ...styles.card, marginBottom: 16 }} className="ui-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <h2 style={{ ...styles.sectionTitle, margin: 0 }}>단지 비교 ({pinnedComplexes.length}/5)</h2>
+              <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '5px 10px', fontSize: 11 }} onClick={() => setPinnedComplexes([])}>전체 비우기</button>
+            </div>
+            <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '4px 0 12px' }}>
+              단지 상세 화면의 "📊 단지 비교에 추가"로 담은 단지들이에요. 현재 조회된 실거래 기준이라 평형이 섞여 있을 수 있어요.
+            </p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>단지</th>
+                    <th style={styles.th}>최근가</th>
+                    <th style={styles.th}>평당가</th>
+                    <th style={styles.th}>변동률</th>
+                    <th style={styles.th}>거래량</th>
+                    <th style={styles.th}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pinnedComplexes.map((p) => {
+                    const row = complexCompare.find((c) => c.apt === p.apt && c.dong === p.dong && c.regionCode === p.regionCode);
+                    return (
+                      <tr key={`${p.regionCode}|${p.dong}|${p.apt}`}>
+                        <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer' }} onClick={() => setSelectedApt(p)}>
+                          {p.apt}<div style={{ fontSize: 10, color: PALETTE.textMuted }}>{labelFor(p.regionCode)} {p.dong}</div>
+                        </td>
+                        <td style={styles.td}>{row ? fmtManwon(isRent ? row.deposit : row.amount) : '-'}</td>
+                        <td style={styles.td}>{row?.unitPrice != null ? fmtManwon(Math.round(row.unitPrice)) : '-'}</td>
+                        <td style={{ ...styles.td, color: row?.change > 0 ? PALETTE.up : row?.change < 0 ? PALETTE.down : PALETTE.textPrimary }}>{row ? fmtPct(row.change) : '-'}</td>
+                        <td style={styles.td}>{row ? `${row.count}건` : '조회된 실거래 없음'}</td>
+                        <td style={styles.td}>
+                          <X size={13} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setPinnedComplexes((prev) => prev.filter((x) => !(x.apt === p.apt && x.dong === p.dong && x.regionCode === p.regionCode)))} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
         <div style={styles.card} className="ui-card">
           <h2 style={styles.sectionTitle}>비교분석</h2>
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
@@ -3989,6 +4074,16 @@ export default function Page() {
                 </div>
               </div>
             )}
+            {aptSummary?.volumeChangePct != null && Math.abs(aptSummary.volumeChangePct) >= 20 && (
+              <div style={{
+                background: aptSummary.volumeChangePct > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(59,111,224,0.08)',
+                borderRadius: 8, padding: '9px 12px', marginBottom: 14, fontSize: 12,
+              }}
+              >
+                {aptSummary.volumeChangePct > 0 ? '📈' : '📉'} 최근 3개월 거래 <b>{aptSummary.recentCount}건</b>, 이전 3개월 <b>{aptSummary.prev3moCount}건</b> — 거래량이{' '}
+                <b style={{ color: aptSummary.volumeChangePct > 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(aptSummary.volumeChangePct)}</b> 변했어요.
+              </div>
+            )}
             {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (() => {
               const price = calcPriceInput !== '' ? parseFloat(calcPriceInput) * 10000 : aptSummary.recentAvg;
               const tax = calcAcquisitionTax(price);
@@ -4120,6 +4215,26 @@ export default function Page() {
                 )}
               </div>
             )}
+            <div style={{ marginBottom: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {(() => {
+                const isPinned = pinnedComplexes.some((p) => p.apt === selectedApt.apt && p.dong === selectedApt.dong && p.regionCode === selectedApt.regionCode);
+                return (
+                  <button
+                    className="ui-btn"
+                    style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12, background: isPinned ? PALETTE.up : undefined }}
+                    disabled={!isPinned && pinnedComplexes.length >= 5}
+                    onClick={() => {
+                      const key = { apt: selectedApt.apt, dong: selectedApt.dong, regionCode: selectedApt.regionCode };
+                      setPinnedComplexes((prev) => (isPinned
+                        ? prev.filter((p) => !(p.apt === key.apt && p.dong === key.dong && p.regionCode === key.regionCode))
+                        : prev.length >= 5 ? prev : [...prev, key]));
+                    }}
+                  >
+                    {isPinned ? '✓ 비교 목록에 있음' : `📊 단지 비교에 추가 (${pinnedComplexes.length}/5)`}
+                  </button>
+                );
+              })()}
+            </div>
             <div style={{ marginBottom: 14 }}>
               {!alertFormOpen ? (
                 <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12 }} onClick={() => setAlertFormOpen(true)}>
@@ -4258,6 +4373,17 @@ export default function Page() {
                   </BarChart>
                 </ResponsiveContainer>
                 <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '2px 0 0', textAlign: 'center' }}>월별 거래건수</p>
+              </div>
+            )}
+            {radiusSummary && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+                {radiusSummary.map((r) => (
+                  <div key={r.radius} style={{ background: PALETTE.panelAlt, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.radius < 1000 ? `${r.radius}m` : `${r.radius / 1000}km`} 이내</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, marginTop: 2 }}>단지 {r.count}개</div>
+                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.avg != null ? `평균 ${fmtManwon(Math.round(r.avg))}` : '가격정보 없음'}</div>
+                  </div>
+                ))}
               </div>
             )}
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
