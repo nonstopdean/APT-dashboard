@@ -1647,9 +1647,11 @@ export default function Page() {
 
   const dongMapData = useMemo(() => {
     if (dongRawFeatures.length === 0) return null;
-    const selectedCodes = new Set(selected.flatMap((code) => expandRegionCode(code)));
-    const relevant = dongRawFeatures.filter((f) => selectedCodes.has(f.regionCode));
-    const values = relevant.map((f) => {
+    // 이미 선택된 지역의 동만 보여주면, 아직 선택 안 한 옆 동네는 지도에 동 도형 자체가 없어서
+    // 클릭해도 반응이 없는 것처럼 보인다. 그래서 이미 불러온 시/도 전체의 동을 다 그리되,
+    // 실거래 데이터가 있는(=이미 선택된) 동만 색이 들어가고 나머지는 연한 무채색으로 그린다 —
+    // 어느 동이든 눌러서 그 구를 새로 선택할 수 있게 한다.
+    const values = dongRawFeatures.map((f) => {
       const agg = dongPriceIndex.get(`${f.regionCode}|${normalizeDongName(f.name)}`);
       if (!agg) return null;
       if (mapColorMode === 'volume') return agg.count || null;
@@ -1659,12 +1661,12 @@ export default function Page() {
     const min = available.length ? Math.min(...available) : 0;
     const max = available.length ? Math.max(...available) : 1;
     return {
-      features: relevant.map((f) => ({ feature: f.feature, name: f.name, code: f.regionCode })),
+      features: dongRawFeatures.map((f) => ({ feature: f.feature, name: f.name, code: f.regionCode })),
       values,
       min,
       max,
     };
-  }, [dongRawFeatures, selected, dongPriceIndex, mapColorMode]);
+  }, [dongRawFeatures, dongPriceIndex, mapColorMode]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -2708,6 +2710,41 @@ export default function Page() {
         <div style={{ marginBottom: 18 }}>
           <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>시장분석센터</h1>
           <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래를 바탕으로 가격·거래량·신고가·고점대비 하락폭을 한 화면에서 확인합니다.</p>
+        </div>
+        <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card">
+          <label style={styles.label}>분석할 지역 추가</label>
+          <select
+            value={comparePickerValue}
+            onChange={(e) => addRegionAndFetch(e.target.value)}
+            style={{ ...styles.select, fontSize: 13, maxWidth: 320 }}
+          >
+            <option value="">시/도 - 시/군/구 선택</option>
+            {REGION_GROUPS.map((g) => {
+              const agg = SIDO_AGGREGATES.find((a) => a.sido === g.sido);
+              return (
+                <optgroup key={g.sido} label={g.sido}>
+                  {agg && <option key={agg.code} value={agg.code}>{agg.name}</option>}
+                  {g.items.map((it) => (
+                    <option key={it.code} value={it.code}>{it.name}</option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          </select>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            {selected.map((code) => (
+              <span key={code} style={styles.chip}>
+                {labelFor(code)}
+                <X size={11} style={{ cursor: 'pointer' }} onClick={() => removeRegion(code)} />
+              </span>
+            ))}
+            {selected.length === 0 && (
+              <span style={{ fontSize: 12, color: PALETTE.textMuted }}>선택된 지역이 없어요. 위에서 지역을 추가해보세요.</span>
+            )}
+          </div>
+          {status === 'loading' && (
+            <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 8 }}>불러오는 중...</p>
+          )}
         </div>
         <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} className="ui-card">
           <span style={{ fontSize: 12, fontWeight: 700 }}>분석기간</span>

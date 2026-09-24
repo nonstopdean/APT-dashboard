@@ -335,9 +335,11 @@ export default function NaverChoropleth({
   // "동" 단위 도형 생성 — dongFeatures는 선택된 지역의 시/도가 바뀔 때만 갱신되므로 별도 effect로 둔다.
   useEffect(() => {
     if (!mapRef.current || !window.naver?.maps) return undefined;
+    console.time('[지도] 동 도형 생성');
     dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
     dongPolygonsRef.current = [];
-    if (!dongFeatures || dongFeatures.length === 0) return undefined;
+    if (!dongFeatures || dongFeatures.length === 0) { console.timeEnd('[지도] 동 도형 생성'); return undefined; }
+    console.log(`[지도] 동 도형 ${dongFeatures.length}개 생성 시작`);
 
     dongFeatures.forEach((f, idx) => {
       if (!f.feature) return;
@@ -380,6 +382,7 @@ export default function NaverChoropleth({
       });
       dongPolygonsRef.current.push({ polygon, featureIndex: idx });
     });
+    console.timeEnd('[지도] 동 도형 생성');
 
     return () => {
       dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
