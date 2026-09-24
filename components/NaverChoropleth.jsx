@@ -7,7 +7,7 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues, onZoomTierChange, onViewportChange,
+  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -28,6 +28,7 @@ export default function NaverChoropleth({
   const onComplexSelectRef = useRef(onComplexSelect);
   const onZoomTierChangeRef = useRef(onZoomTierChange);
   const onViewportChangeRef = useRef(onViewportChange);
+  const onVisibleMarkerCountRef = useRef(onVisibleMarkerCount);
   const [loadFailed, setLoadFailed] = useState(false);
   const markerSyncTimerRef = useRef(null);
   const markerSyncSeqRef = useRef(0);
@@ -39,6 +40,7 @@ export default function NaverChoropleth({
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
   useEffect(() => { onZoomTierChangeRef.current = onZoomTierChange; }, [onZoomTierChange]);
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
+  useEffect(() => { onVisibleMarkerCountRef.current = onVisibleMarkerCount; }, [onVisibleMarkerCount]);
 
   // 현재 화면 범위를 부모(page.jsx)에 알려준다 — "단지 탐색" 목록을 화면에 보이는 단지로만
   // 좁혀서 보여줄 수 있게 한다 (호갱노노처럼 지도 이동 → 목록 자동 갱신).
@@ -227,6 +229,7 @@ export default function NaverChoropleth({
       clustererRef.current = [];
       clusterSignatureRef.current = '';
       markersRef.current.forEach(({ marker }) => marker.setMap(null));
+      onVisibleMarkerCountRef.current?.(0);
       return;
     }
     const zoom = map.getZoom();
@@ -273,6 +276,7 @@ export default function NaverChoropleth({
       });
       clustererRef.current.push({ overlay });
     });
+    onVisibleMarkerCountRef.current?.(markersRef.current.length);
   };
 
   // 줌 중에는 클러스터를 매 프레임 다시 만들지 않고, 잠깐 멈춘 뒤 한 번만 반영한다.

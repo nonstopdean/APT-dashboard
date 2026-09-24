@@ -1403,6 +1403,7 @@ export default function Page() {
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
+  const [visibleMarkerCount, setVisibleMarkerCount] = useState(null);
 
   // 지금 보고 있는 단지 주변(반경 내) 다른 단지들을 자동으로 찾아 비교한다 (아실/호갱노노 스타일).
   const nearbyComplexes = useMemo(() => {
@@ -1914,6 +1915,7 @@ export default function Page() {
             dongValues={dongMapData?.values}
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
+            onVisibleMarkerCount={setVisibleMarkerCount}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -1930,6 +1932,7 @@ export default function Page() {
             dongValues={dongMapData?.values}
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
+            onVisibleMarkerCount={setVisibleMarkerCount}
             height="100%"
           />
         ) : (
@@ -2548,7 +2551,15 @@ export default function Page() {
               {budgetMatches ? (
                 <><b>{budgetMatches.length.toLocaleString()}</b>개 단지가 예산 이내</>
               ) : (
-                <><b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회</>
+                <>
+                  <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
+                  {mapComplexes.length > 0 && (
+                    <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>
+                      단지 {mapComplexes.length}개 중 좌표확보 {mapComplexes.filter((c) => c.lat != null).length}개
+                      {visibleMarkerCount != null && ` · 화면표시 ${visibleMarkerCount}개`}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
