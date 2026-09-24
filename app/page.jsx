@@ -1709,6 +1709,7 @@ export default function Page() {
   };
 
   const [mapColorMode, setMapColorMode] = useState('price'); // 'price' | 'volume'
+  const [dongLayerOn, setDongLayerOn] = useState(true);
   const [ladderBaseline, setLadderBaseline] = useState(null);
   const [timelineMonth, setTimelineMonth] = useState(null); // null = 최신, 아니면 특정 'YYYYMM'
   const [tradeUpCurrentPrice, setTradeUpCurrentPrice] = useState('');
@@ -1770,7 +1771,8 @@ export default function Page() {
   useEffect(() => {
     // 확대를 많이 안 하면(구 단위로만 보고 있으면) "동" 데이터는 아예 필요 없으므로,
     // 실제로 확대했을 때만 받아온다 — 안 그러면 지역 선택할 때마다 큰 파일을 미리 받아와서 느려진다.
-    if (mapZoomTier === 'far') return undefined;
+    // "동 색칠 끄기"가 켜져 있으면 아예 받아오지도 않는다.
+    if (!dongLayerOn || mapZoomTier === 'far') return undefined;
     const neededSidos = new Set();
     selected.forEach((code) => {
       for (const g of REGION_GROUPS) {
@@ -1806,7 +1808,7 @@ export default function Page() {
       setDongRawFeatures((prev) => [...prev, ...results.flat()]);
     });
     return () => { cancelled = true; };
-  }, [selected, mapZoomTier]);
+  }, [selected, mapZoomTier, dongLayerOn]);
 
   // 동별 가격/거래량 집계는 지도를 그릴 때마다 allTx를 반복 filter하지 않도록
   // 최초 1회 인덱스로 만들어둔다. 기존 O(동 수 × 거래건수) 구조를
@@ -1814,6 +1816,7 @@ export default function Page() {
   const dongPriceIndex = useMemo(() => {
     const index = new Map();
     const guIndex = new Map();
+    if (!dongLayerOn) { index.guFallback = guIndex; return index; }
     allTx.forEach((t) => {
       if (!t?.regionCode || !t?.dong) return;
       const value = isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong;
@@ -1835,10 +1838,10 @@ export default function Page() {
     });
     index.guFallback = guIndex;
     return index;
-  }, [allTx, isRent]);
+  }, [allTx, isRent, dongLayerOn]);
 
   const dongMapData = useMemo(() => {
-    if (dongRawFeatures.length === 0) return null;
+    if (!dongLayerOn || dongRawFeatures.length === 0) return null;
     // 이미 선택된 지역의 동만 보여주면, 아직 선택 안 한 옆 동네는 지도에 동 도형 자체가 없어서
     // 클릭해도 반응이 없는 것처럼 보인다. 그래서 이미 불러온 시/도 전체의 동을 다 그리되,
     // 실거래 데이터가 있는(=이미 선택된) 동만 색이 들어가고 나머지는 연한 무채색으로 그린다 —
@@ -1864,7 +1867,7 @@ export default function Page() {
       min,
       max,
     };
-  }, [dongRawFeatures, dongPriceIndex, mapColorMode]);
+  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn]);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -2524,6 +2527,19 @@ export default function Page() {
                 )}
               </div>
             )}
+            <button
+              className="portal-pill"
+              onClick={() => setDongLayerOn((v) => !v)}
+              style={{
+                pointerEvents: 'auto', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
+                padding: '9px 12px', background: 'rgba(255,255,255,0.96)', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+                fontSize: 12, fontWeight: dongLayerOn ? 500 : 700,
+                color: dongLayerOn ? PALETTE.textSecondary : PALETTE.accent, whiteSpace: 'nowrap',
+              }}
+              title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
+            >
+              {dongLayerOn ? '🗺️ 동 색칠 켜짐' : '⚡ 동 색칠 끔 (가벼운 모드)'}
+            </button>
             <div className="map-status-card" style={{
               marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
               border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',

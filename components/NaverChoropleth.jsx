@@ -516,7 +516,7 @@ export default function NaverChoropleth({
     });
     // 확대도가 높을수록 화면에 실제로 보이는 단지를 더 많이 표시한다.
     const zoom = mapRef.current.getZoom();
-    const maxMarkers = Math.min(360, Math.max(180, 180 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 30)));
+    const maxMarkers = Math.min(600, Math.max(250, 250 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 40)));
     visibleComplexes.sort((a, b) => {
       const da = a.lat == null || a.lng == null ? Number.POSITIVE_INFINITY : (a.lat - centerLat) ** 2 + (a.lng - centerLng) ** 2;
       const db = b.lat == null || b.lng == null ? Number.POSITIVE_INFINITY : (b.lat - centerLat) ** 2 + (b.lng - centerLng) ** 2;
