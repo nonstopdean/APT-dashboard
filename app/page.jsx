@@ -805,6 +805,8 @@ export default function Page() {
   useEffect(() => {
     setAptHistory([]);
     setCalcPriceInput('');
+    setTradeUpCurrentPrice('');
+    setTradeUpLoanBalance('');
     if (!selectedApt) return undefined;
     let cancelled = false;
     setAptHistoryLoading(true);
@@ -1396,6 +1398,16 @@ export default function Page() {
       .slice(0, 20);
   }, [selectedApt, mapComplexes, nearbyRadius]);
 
+  // "이 가격에 살 수 있는 단지" 역지도 — 예산을 넣으면 그 이하 단지만 남긴다.
+  const budgetMatches = useMemo(() => {
+    if (!budgetSearchOpen || !budgetAmount) return null;
+    const maxManwon = parseFloat(budgetAmount) * 10000;
+    if (!Number.isFinite(maxManwon) || maxManwon <= 0) return null;
+    return mapComplexes
+      .filter((c) => c.latestPrice != null && c.latestPrice <= maxManwon)
+      .sort((a, b) => b.latestPrice - a.latestPrice);
+  }, [budgetSearchOpen, budgetAmount, mapComplexes]);
+
   // "단지 탐색" 패널을 현재 지도 화면 범위에 맞춰 보여준다 — 지도를 옮기면 목록도 같이 바뀐다.
   const mapPanelList = useMemo(() => {
     if (!mapViewportBounds) return complexCompare.slice(0, 40);
@@ -1634,13 +1646,19 @@ export default function Page() {
       months.forEach((ym) => { count += (rawByRegionMonth[`${code}_${ym}`] || []).length; });
       return count || null;
     }
-    const lastMonth = months[months.length - 1];
-    const items = rawByRegionMonth[`${code}_${lastMonth}`] || [];
+    const targetMonth = timelineMonth || months[months.length - 1];
+    const items = rawByRegionMonth[`${code}_${targetMonth}`] || [];
     const valid = items.map((r) => r.pricePerPyeong).filter(Boolean);
     return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
   };
 
   const [mapColorMode, setMapColorMode] = useState('price'); // 'price' | 'volume'
+  const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
+  const [budgetAmount, setBudgetAmount] = useState('');
+  const [ladderBaseline, setLadderBaseline] = useState(null);
+  const [timelineMonth, setTimelineMonth] = useState(null); // null = 최신, 아니면 특정 'YYYYMM'
+  const [tradeUpCurrentPrice, setTradeUpCurrentPrice] = useState('');
+  const [tradeUpLoanBalance, setTradeUpLoanBalance] = useState('');
   const [sidebarDrillSido, setSidebarDrillSido] = useState(null);
   const [regionSearch, setRegionSearch] = useState('');
   const [focusLatLng, setFocusLatLng] = useState(null);
@@ -1679,7 +1697,7 @@ export default function Page() {
       return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode]);
+  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode, timelineMonth]);
 
   const seoulMapData = useMemo(() => {
     if (!mapDisplayFeatures || !mapValues) return null;
@@ -1818,7 +1836,7 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={mapComplexes}
+            complexes={budgetMatches || mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -1834,7 +1852,7 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={mapComplexes}
+            complexes={budgetMatches || mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -2403,14 +2421,81 @@ export default function Page() {
                 ))}
               </div>
             )}
+            {!isRatio && !isRone && (
+              <div style={{
+                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+                background: 'rgba(255,255,255,0.96)', border: `1px solid ${budgetSearchOpen ? PALETTE.accent : PALETTE.border}`,
+                borderRadius: 12, padding: '5px 8px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+                backdropFilter: 'blur(8px)',
+              }}
+              >
+                <button
+                  className="portal-pill"
+                  onClick={() => setBudgetSearchOpen((v) => !v)}
+                  style={{
+                    border: 'none', borderRadius: 9, padding: '6px 10px', whiteSpace: 'nowrap',
+                    background: budgetSearchOpen ? PALETTE.accent : 'transparent',
+                    color: budgetSearchOpen ? '#fff' : PALETTE.textSecondary,
+                    fontSize: 12, fontWeight: budgetSearchOpen ? 700 : 500, cursor: 'pointer',
+                  }}
+                >
+                  💰 예산으로 찾기
+                </button>
+                {budgetSearchOpen && (
+                  <>
+                    <input
+                      type="number"
+                      placeholder="예: 6"
+                      value={budgetAmount}
+                      onChange={(e) => setBudgetAmount(e.target.value)}
+                      style={{ width: 60, padding: '5px 6px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                    />
+                    <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>억 이하</span>
+                  </>
+                )}
+              </div>
+            )}
             <div className="map-status-card" style={{
               marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
               border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
               boxShadow: '0 4px 18px rgba(0,0,0,0.10)', fontSize: 11.5, whiteSpace: 'nowrap',
             }}>
-              <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
+              {budgetMatches ? (
+                <><b>{budgetMatches.length.toLocaleString()}</b>개 단지가 예산 이내</>
+              ) : (
+                <><b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회</>
+              )}
             </div>
           </div>
+
+          {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
+          {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
+            <div style={{
+              position: 'absolute', bottom: 14, left: 14, right: 14, zIndex: 20,
+              display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
+              background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
+              borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+              backdropFilter: 'blur(8px)',
+            }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>🕰️ 타임머신</span>
+              <input
+                type="range"
+                min={0}
+                max={months.length - 1}
+                step={1}
+                value={timelineMonth ? months.indexOf(timelineMonth) : months.length - 1}
+                onChange={(e) => {
+                  const idx = parseInt(e.target.value, 10);
+                  setTimelineMonth(idx === months.length - 1 ? null : months[idx]);
+                }}
+                style={{ flex: 1, minWidth: 80 }}
+              />
+              <span style={{ fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', minWidth: 60, textAlign: 'right' }}>
+                {monthLabel(timelineMonth || months[months.length - 1])}{!timelineMonth && ' (최신)'}
+              </span>
+            </div>
+          )}
 
           {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
           {allTx.length > 0 && (
@@ -2443,13 +2528,15 @@ export default function Page() {
               </div>
               {!mapPanelMinimized && (
               <div style={{ overflowY: 'auto', height: 'calc(100% - 64px)' }}>
-                {mapViewportBounds && (
+                {!budgetMatches && mapViewportBounds && (
                   <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
                     현재 화면에 보이는 단지 {mapPanelList.length}개
                   </div>
                 )}
-                {mapPanelList.map((c, i) => {
+                {(budgetMatches || mapPanelList).map((c, i) => {
                   const coord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`) || codeToLatLng[c.regionCode];
+                  const priceVal = c.latestPrice ?? (isRent ? c.deposit : c.amount);
+                  const areaVal = c.latestArea ?? c.area;
                   return (
                     <button
                       key={`${c.regionCode}|${c.dong}|${c.apt}|${i}`}
@@ -2465,11 +2552,11 @@ export default function Page() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</div>
-                          <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong} · {c.count}건</div>
+                          <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong}{c.count != null ? ` · ${c.count}건` : ''}</div>
                         </div>
                         <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 800 }}>{fmtWon(isRent ? c.deposit : c.amount)}</div>
-                          <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>{fmtArea(c.area)}</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 800 }}>{priceVal != null ? fmtWon(priceVal) : '-'}</div>
+                          <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>{areaVal != null ? fmtArea(areaVal) : ''}</div>
                         </div>
                       </div>
                     </button>
@@ -2783,7 +2870,7 @@ export default function Page() {
           </div>
           <div style={{ ...styles.card, marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }} className="no-print">
             <div style={{ display: 'flex', gap: 6 }}>
-              {[['region', '지역 분석'], ['complex', '단지 분석']].map(([k, l]) => (
+              {[['region', '지역 분석'], ['complex', '단지 분석'], ['ladder', '가격 사다리']].map(([k, l]) => (
                 <button key={k} className="portal-pill" style={{ background: analyticsScope === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsScope === k ? '#fff' : PALETTE.textPrimary }} onClick={() => setAnalyticsScope(k)}>{l}</button>
               ))}
             </div>
@@ -2793,6 +2880,7 @@ export default function Page() {
               ))}
             </div>
           </div>
+          {analyticsScope !== 'ladder' && (
           <div style={styles.card} className="ui-card">
             <h2 style={styles.sectionTitle}>{analyticsScope === 'region' ? '지역별' : '단지별'} 분석 순위</h2>
             <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>선택한 지표를 기준으로 정렬한 수치 비교입니다.</p>
@@ -2834,6 +2922,51 @@ export default function Page() {
               </table>
             </div>
           </div>
+          )}
+          {analyticsScope === 'ladder' && (
+            <div style={styles.card} className="ui-card">
+              <h2 style={styles.sectionTitle}>가격 사다리</h2>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+                현재 조회된 단지를 평당가 순으로 늘어놓았어요. 하나를 클릭하면 다른 단지들이 그 단지보다 얼마나 비싸거나 저렴한지 보여줘요.
+              </p>
+              <div style={{ maxHeight: 560, overflowY: 'auto' }}>
+                {[...complexCompare].sort((a, b) => b.unitPrice - a.unitPrice).map((c) => {
+                  const key = `${c.regionCode}|${c.dong}|${c.apt}`;
+                  const baseline = ladderBaseline ? complexCompare.find((x) => `${x.regionCode}|${x.dong}|${x.apt}` === ladderBaseline) : null;
+                  const diff = baseline ? c.unitPrice - baseline.unitPrice : null;
+                  const isBaseline = key === ladderBaseline;
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => setLadderBaseline(isBaseline ? null : key)}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+                        padding: '9px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
+                        background: isBaseline ? 'rgba(239,68,68,0.10)' : 'transparent',
+                        border: `1px solid ${isBaseline ? PALETTE.accent : 'transparent'}`,
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700 }}>{c.apt}</span>
+                        <span style={{ fontSize: 10.5, color: PALETTE.textMuted, marginLeft: 6 }}>{labelFor(c.regionCode)} {c.dong}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                        {diff != null && !isBaseline && (
+                          <span style={{ fontSize: 11, color: diff > 0 ? PALETTE.up : diff < 0 ? PALETTE.down : PALETTE.textMuted }}>
+                            {diff > 0 ? '+' : ''}{fmtManwon(Math.round(diff))}/평
+                          </span>
+                        )}
+                        <b style={{ fontSize: 13 }}>{fmtManwon(Math.round(c.unitPrice))}/평</b>
+                      </div>
+                    </div>
+                  );
+                })}
+                {complexCompare.length === 0 && (
+                  <p style={{ fontSize: 12, color: PALETTE.textMuted }}>비교할 단지가 없어요. 지역을 선택해보세요.</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : viewMode === 'market' ? (
       <div style={{ padding: '20px 20px 44px', maxWidth: 1400, margin: '0 auto' }}>
@@ -3881,6 +4014,56 @@ export default function Page() {
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+            {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (
+              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>🔄 갈아타기 계산기 (참고용)</span>
+                <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '4px 0 10px' }}>
+                  지금 보고 있는 이 단지를 "갈아탈 집"으로 놓고, 현재 사시는 집 정보만 입력하면 추가로 필요한 자금을 계산해요.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>현재 집 예상 매도가(억원)</label>
+                    <input
+                      type="number" placeholder="예: 6.5" value={tradeUpCurrentPrice}
+                      onChange={(e) => setTradeUpCurrentPrice(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>대출 잔액(억원)</label>
+                    <input
+                      type="number" placeholder="예: 2" value={tradeUpLoanBalance}
+                      onChange={(e) => setTradeUpLoanBalance(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
+                    />
+                  </div>
+                </div>
+                {tradeUpCurrentPrice && (() => {
+                  const targetPrice = aptSummary.recentAvg; // 만원
+                  const currentPrice = parseFloat(tradeUpCurrentPrice) * 10000;
+                  const loanBalance = tradeUpLoanBalance ? parseFloat(tradeUpLoanBalance) * 10000 : 0;
+                  const sellCost = currentPrice * 0.005; // 중개보수 등 대략 0.5% 참고치
+                  const targetTax = calcAcquisitionTax(targetPrice);
+                  const usable = currentPrice - loanBalance - sellCost;
+                  const needed = targetPrice + (targetTax?.total || 0) - usable;
+                  return (
+                    <div style={{ background: PALETTE.panel, borderRadius: 8, padding: 10, fontSize: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>현재 집 매도가</span><span>{fmtManwon(currentPrice)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: PALETTE.down }}><span>− 대출 잔액</span><span>{fmtManwon(loanBalance)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: PALETTE.down }}><span>− 매도 중개보수(추정)</span><span>{fmtManwon(sellCost)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 700 }}><span>실제 사용 가능 자금</span><span>{fmtManwon(usable)}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: 6 }}><span>이 단지 필요자금(가격+취득세)</span><span>{fmtManwon(targetPrice + (targetTax?.total || 0))}</span></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 800, color: needed > 0 ? PALETTE.down : PALETTE.up }}>
+                        <span>{needed > 0 ? '추가로 필요한 자금' : '남는 자금'}</span><span>{fmtManwon(Math.abs(needed))}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                  중개보수·이사비·법무비 등은 대략치예요. 실제 자금 계획은 은행·중개사 확인이 필요해요.
+                </p>
               </div>
             )}
             {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
