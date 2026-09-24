@@ -1290,20 +1290,39 @@ export default function Page() {
     return out;
   }, [dongRawFeatures]);
 
+  // 법정동/행정동 이름이 안 맞을 때(예: 광안동 ↔ 광안4동), 매번 dongCentroids 전체를 훑지 않고
+  // "root(숫자 뗀 동 이름)" 기준으로 미리 인덱스를 만들어 O(1)로 찾는다.
+  const dongCentroidRootIndex = useMemo(() => {
+    const index = new Map();
+    Object.entries(dongCentroids).forEach(([key, coord]) => {
+      const sep = key.indexOf('|');
+      if (sep < 0) return;
+      const regionCode = key.slice(0, sep);
+      const dong = key.slice(sep + 1);
+      const root = dong.replace(/동$/, '');
+      if (!root) return;
+      const rootKey = `${regionCode}|${root}`;
+      const prev = index.get(rootKey);
+      if (prev) {
+        prev.lat += coord.lat; prev.lng += coord.lng; prev.count += 1;
+      } else {
+        index.set(rootKey, { lat: coord.lat, lng: coord.lng, count: 1 });
+      }
+    });
+    index.forEach((v) => { v.lat /= v.count; v.lng /= v.count; });
+    return index;
+  }, [dongCentroids]);
+
   const findDongCentroid = (regionCode, dong) => {
-    const exact = dongCentroids[`${regionCode}|${normalizeDongName(dong)}`];
+    const normalized = normalizeDongName(dong);
+    const exact = dongCentroids[`${regionCode}|${normalized}`];
     if (exact) return exact;
     // 국토부 실거래 데이터는 "법정동"(예: 광안동), 동 경계 지도는 "행정동"(예: 광안4동) 기준이라
-    // 이름이 정확히 안 맞는 경우가 있다 — 같은 지역 안에서 이름이 겹치는(앞부분이 같은) 동을 찾아
-    // 그 중심점들을 평균 내서 대략의 위치라도 잡아준다.
-    const root = normalizeDongName(dong).replace(/동$/, '');
+    // 이름이 정확히 안 맞는 경우가 있다 — 미리 만들어둔 root 인덱스에서 바로 찾는다.
+    const root = normalized.replace(/동$/, '');
     if (!root) return null;
-    const matches = Object.entries(dongCentroids)
-      .filter(([k]) => k.startsWith(`${regionCode}|`) && k.slice(regionCode.length + 1).startsWith(root));
-    if (matches.length === 0) return null;
-    const lat = matches.reduce((s, [, v]) => s + v.lat, 0) / matches.length;
-    const lng = matches.reduce((s, [, v]) => s + v.lng, 0) / matches.length;
-    return { lat, lng };
+    const hit = dongCentroidRootIndex.get(`${regionCode}|${root}`);
+    return hit ? { lat: hit.lat, lng: hit.lng } : null;
   };
 
   const MAX_MAP_COMPLEXES = 800;

@@ -14,7 +14,11 @@ export default function NaverChoropleth({
   const polygonsRef = useRef([]); // [{ polygon, featureIndex }] - 구 단위
   const dongPolygonsRef = useRef([]); // [{ polygon, featureIndex }] - 동 단위
   const markersRef = useRef([]); // [{ marker, key }]
-  const clustererRef = useRef([]); // [{ overlay }] - 확대 시 마커들을 묶어 보여주는 그리드 클러스터 오버레이
+  const clustererRef = useRef([]); // [{ overlay }]
+  const clusterSignatureRef = useRef('');
+  const districtMetaRef = useRef([]);
+  const dongMetaRef = useRef([]);
+  const polygonSyncTimerRef = useRef(null);
   const kakaoPlacesRef = useRef(null);
   const infoWindowRef = useRef(null);
   const valuesRef = useRef(values);
@@ -93,6 +97,22 @@ export default function NaverChoropleth({
     });
   });
 
+  const getFeatureBbox = (feature) => {
+    const coords = feature?.geometry?.coordinates;
+    if (!coords) return null;
+    const points = [];
+    const walk = (v) => {
+      if (!Array.isArray(v)) return;
+      if (v.length >= 2 && typeof v[0] === 'number' && typeof v[1] === 'number') { points.push(v); return; }
+      v.forEach(walk);
+    };
+    walk(coords);
+    if (!points.length) return null;
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    points.forEach(([lng, lat]) => { minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng); minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat); });
+    return { minLng, maxLng, minLat, maxLat };
+  };
+
   const styleFor = (idx) => {
     const value = valuesRef.current?.[idx];
     const hasValue = value != null;
@@ -140,10 +160,42 @@ export default function NaverChoropleth({
 
   const updateLayerVisibility = () => {
     if (!mapRef.current) return;
-    // 구 색칠은 언제나 유지한다 — "동" 데이터가 없거나 실패해도 지역 선택이 항상 되도록 하는 안전장치.
-    polygonsRef.current.forEach(({ polygon }) => polygon.setMap(mapRef.current));
     const tier = zoomTierRef.current;
+    // 구 레이어는 far에서만 실제 렌더링한다. 확대 단계에서는 경계가 불필요하게
+    // 위에 남아 GPU/Hit-test 비용을 차지하지 않도록 숨긴다.
+    polygonsRef.current.forEach(({ polygon }) => polygon.setMap(tier === 'far' ? mapRef.current : null));
     dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(tier !== 'far' ? mapRef.current : null));
+    syncPolygonViewport();
+  };
+
+  // Polygon 객체를 매번 만들고 버리지 않고, 현재 지도 화면(+30%)에 걸치는 도형만
+  // 실제 지도에 붙인다. 도형 객체 자체는 캐시하므로 확대/축소 때 재생성 비용이 없다.
+  const syncPolygonViewport = () => {
+    const map = mapRef.current;
+    if (!map || !window.naver?.maps) return;
+    const bounds = getExpandedBounds();
+    if (!bounds) return;
+    const tier = zoomTierRef.current;
+    const apply = (items, visible) => items.forEach(({ polygon, bbox }) => {
+      const shouldShow = visible && bboxIntersects(bounds, bbox);
+      polygon.setMap(shouldShow ? map : null);
+    });
+    apply(districtMetaRef.current, tier === 'far');
+    apply(dongMetaRef.current, tier !== 'far');
+  };
+
+  const bboxIntersects = (bounds, bbox) => {
+    if (!bounds || !bbox) return false;
+    const sw = bounds.getSW(); const ne = bounds.getNE();
+    return !(bbox.maxLat < sw.lat() || bbox.minLat > ne.lat() || bbox.maxLng < sw.lng() || bbox.minLng > ne.lng());
+  };
+
+  const schedulePolygonViewportSync = (delay = 60) => {
+    if (polygonSyncTimerRef.current) clearTimeout(polygonSyncTimerRef.current);
+    polygonSyncTimerRef.current = setTimeout(() => {
+      polygonSyncTimerRef.current = null;
+      syncPolygonViewport();
+    }, delay);
   };
 
   // 확대(구/단지 단위)하면 색칠은 옅어지다 빠지고 마커가 나타나고, 축소(전체 구역 단위)하면
@@ -159,11 +211,15 @@ export default function NaverChoropleth({
     clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
     clustererRef.current = [];
     if (!show) {
-      // 축소하면 개별 마커도 모두 지운다 — 안 그러면 묶음만 지워지고 마커가 남는다.
+      clusterSignatureRef.current = '';
       markersRef.current.forEach(({ marker }) => marker.setMap(null));
       return;
     }
     const zoom = mapRef.current.getZoom();
+    const markerSig = markersRef.current.map(({ key }) => key).sort().join(',');
+    const signature = `${zoom}|${markerSig}`;
+    if (signature === clusterSignatureRef.current) return;
+    clusterSignatureRef.current = signature;
     // 격자 크기(도 단위): 확대할수록 작은 격자를 써서 묶음이 자연스럽게 풀리게 한다.
     const cellDeg = 0.0008 * Math.pow(2, 20 - zoom);
     const buckets = new Map();
@@ -207,7 +263,8 @@ export default function NaverChoropleth({
     if (markerSyncTimerRef.current) clearTimeout(markerSyncTimerRef.current);
     markerSyncTimerRef.current = setTimeout(() => {
       markerSyncTimerRef.current = null;
-      syncNaverClusterer();
+      if (zoomTierRef.current === 'near') syncVisibleMarkers();
+      else syncNaverClusterer();
     }, delay);
   };
 
@@ -222,7 +279,7 @@ export default function NaverChoropleth({
       onZoomTierChangeRef.current?.(tier);
     }
     scheduleMarkerSync(120);
-    if (tier === 'near') syncVisibleMarkers();
+    schedulePolygonViewportSync(80);
   };
 
   const handleZoomChanged = () => {
@@ -258,6 +315,7 @@ export default function NaverChoropleth({
 
       polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
       polygonsRef.current = [];
+      districtMetaRef.current = [];
 
       features.forEach((f, idx) => {
         if (!f.feature) return;
@@ -293,14 +351,13 @@ export default function NaverChoropleth({
           );
           infoWindowRef.current.open(mapRef.current, e.coord);
         });
-        window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
-          infoWindowRef.current.setPosition(e.coord);
-        });
         window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
           polygon.setOptions(styleFor(idx));
           infoWindowRef.current.close();
         });
+        const bbox = getFeatureBbox(f.feature);
         polygonsRef.current.push({ polygon, featureIndex: idx });
+        districtMetaRef.current.push({ polygon, bbox });
       });
 
       applyAllStyles();
@@ -328,6 +385,14 @@ export default function NaverChoropleth({
     return () => {
       cancelled = true;
       polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+      dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+      clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
+      markersRef.current.forEach(({ marker }) => marker.setMap(null));
+      markersRef.current = [];
+      clustererRef.current = [];
+      clusterSignatureRef.current = '';
+      if (markerSyncTimerRef.current) clearTimeout(markerSyncTimerRef.current);
+      if (polygonSyncTimerRef.current) clearTimeout(polygonSyncTimerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [features, borderColor]);
@@ -335,57 +400,74 @@ export default function NaverChoropleth({
   // "동" 단위 도형 생성 — dongFeatures는 선택된 지역의 시/도가 바뀔 때만 갱신되므로 별도 effect로 둔다.
   useEffect(() => {
     if (!mapRef.current || !window.naver?.maps) return undefined;
-    console.time('[지도] 동 도형 생성');
     dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
     dongPolygonsRef.current = [];
-    if (!dongFeatures || dongFeatures.length === 0) { console.timeEnd('[지도] 동 도형 생성'); return undefined; }
-    console.log(`[지도] 동 도형 ${dongFeatures.length}개 생성 시작`);
+    dongMetaRef.current = [];
+    if (!dongFeatures || dongFeatures.length === 0) return undefined;
 
-    dongFeatures.forEach((f, idx) => {
-      if (!f.feature) return;
-      const geomType = f.feature.geometry.type;
-      const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
+    let disposed = false;
+    let cursor = 0;
+    const batchSize = 40;
+    const schedule = (fn) => {
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(fn, { timeout: 120 });
+      } else {
+        window.setTimeout(fn, 0);
+      }
+    };
+    const createBatch = () => {
+      if (disposed || !mapRef.current || !window.naver?.maps) return;
+      const end = Math.min(cursor + batchSize, dongFeatures.length);
+      for (; cursor < end; cursor += 1) {
+        const f = dongFeatures[cursor];
+        const idx = cursor;
+        if (!f?.feature) continue;
+        const geomType = f.feature.geometry.type;
+        const polys = geomType === 'Polygon' ? [f.feature.geometry.coordinates] : f.feature.geometry.coordinates;
+        const allPaths = polys.map((rings) => rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng)));
+        if (allPaths.length === 0) continue;
 
-      const allPaths = polys.map((rings) => rings[0].map(([lng, lat]) => new window.naver.maps.LatLng(lat, lng)));
-      if (allPaths.length === 0) return;
-
-      const polygon = new window.naver.maps.Polygon({
-        map: zoomTierRef.current !== 'far' ? mapRef.current : null,
-        paths: allPaths,
-        clickable: true,
-        ...dongStyleFor(idx),
-      });
-      const labelFor = () => {
-        const value = dongValuesRef.current?.[idx];
-        return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
-      };
-      window.naver.maps.Event.addListener(polygon, 'click', () => {
-        if (f.code) onSelectRef.current?.(f.code);
-      });
-      window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
-        const tier = zoomTierRef.current;
-        if (tier === 'far') return;
-        const value = dongValuesRef.current?.[idx];
-        const hasValue = value != null;
-        polygon.setOptions({ fillOpacity: hasValue ? (tier === 'near' ? 0.55 : 0.5) : 0.15, strokeWeight: 2 });
-        infoWindowRef.current?.setContent(
-          `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
-        );
-        infoWindowRef.current?.open(mapRef.current, e.coord);
-      });
-      window.naver.maps.Event.addListener(polygon, 'mousemove', (e) => {
-        infoWindowRef.current?.setPosition(e.coord);
-      });
-      window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
-        polygon.setOptions(dongStyleFor(idx));
-        infoWindowRef.current?.close();
-      });
-      dongPolygonsRef.current.push({ polygon, featureIndex: idx });
-    });
-    console.timeEnd('[지도] 동 도형 생성');
-
+        const polygon = new window.naver.maps.Polygon({
+          map: null,
+          paths: allPaths,
+          clickable: true,
+          ...dongStyleFor(idx),
+        });
+        const labelFor = () => {
+          const value = dongValuesRef.current?.[idx];
+          return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
+        };
+        window.naver.maps.Event.addListener(polygon, 'click', () => {
+          if (f.code) onSelectRef.current?.(f.code);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
+          const tier = zoomTierRef.current;
+          if (tier === 'far') return;
+          const value = dongValuesRef.current?.[idx];
+          const hasValue = value != null;
+          polygon.setOptions({ fillOpacity: hasValue ? (tier === 'near' ? 0.55 : 0.5) : 0.15, strokeWeight: 2 });
+          infoWindowRef.current?.setContent(
+            `<div style="padding:5px 10px;color:#fff;font-size:12px;white-space:nowrap;">${labelFor()}</div>`,
+          );
+          infoWindowRef.current?.open(mapRef.current, e.coord);
+        });
+        window.naver.maps.Event.addListener(polygon, 'mouseout', () => {
+          polygon.setOptions(dongStyleFor(idx));
+          infoWindowRef.current?.close();
+        });
+        const bbox = getFeatureBbox(f.feature);
+        dongPolygonsRef.current.push({ polygon, featureIndex: idx });
+        dongMetaRef.current.push({ polygon, bbox });
+      }
+      syncPolygonViewport();
+      if (cursor < dongFeatures.length && !disposed) schedule(createBatch);
+    };
+    schedule(createBatch);
     return () => {
+      disposed = true;
       dongPolygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
+      dongPolygonsRef.current = [];
+      dongMetaRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dongFeatures, borderColor]);
@@ -406,11 +488,20 @@ export default function NaverChoropleth({
     if (!mapRef.current || !window.naver?.maps || !complexes?.length || zoomTierRef.current !== 'near') return;
     const seq = ++markerSyncSeqRef.current;
     const bounds = getExpandedBounds();
+    const center = mapRef.current.getCenter();
+    const centerLat = center?.lat?.() ?? 0;
+    const centerLng = center?.lng?.() ?? 0;
     const visibleComplexes = complexes.filter((c) => {
       if (c.lat == null || c.lng == null) return false;
       return isInBounds({ lat: c.lat, lng: c.lng }, bounds);
     });
-    // 화면 + 여유 영역에서 최대 220개만 Marker화한다.
+    // 화면 중심에 가까운 단지를 우선 렌더링한다. 220개 제한에 걸려도
+    // 사용자가 보고 있는 중심부가 먼저 채워져 체감 로딩이 빨라진다.
+    visibleComplexes.sort((a, b) => {
+      const da = (a.lat - centerLat) ** 2 + (a.lng - centerLng) ** 2;
+      const db = (b.lat - centerLat) ** 2 + (b.lng - centerLng) ** 2;
+      return da - db;
+    });
     const candidate = visibleComplexes.slice(0, 220);
     const existingKeys = new Set(markersRef.current.map((m) => m.key));
     const wanted = new Set(candidate.map((c) => c.key));
@@ -475,10 +566,8 @@ export default function NaverChoropleth({
   useEffect(() => {
     if (!mapRef.current || !window.naver?.maps) return undefined;
     const listener = window.naver.maps.Event.addListener(mapRef.current, 'idle', () => {
-      if (zoomTierRef.current === 'near') {
-        scheduleMarkerSync(50);
-        syncVisibleMarkers();
-      }
+      schedulePolygonViewportSync(40);
+      if (zoomTierRef.current === 'near') scheduleMarkerSync(40);
     });
     return () => {
       if (listener?.remove) listener.remove();
