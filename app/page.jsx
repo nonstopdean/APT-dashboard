@@ -812,6 +812,7 @@ export default function Page() {
   const [historyAreaFilter, setHistoryAreaFilter] = useState('all');
   const [historyListLimit, setHistoryListLimit] = useState(30);
   const [trendViewMode, setTrendViewMode] = useState('single'); // 'single' | 'compare'
+  const [aptHistoryFullRange, setAptHistoryFullRange] = useState(false);
 
   useEffect(() => {
     setAptHistory([]);
@@ -819,11 +820,15 @@ export default function Page() {
     setTradeUpCurrentPrice('');
     setTradeUpLoanBalance('');
     setTradeUpTargetPrice('');
+    setAptHistoryFullRange(false);
     if (!selectedApt) return undefined;
     let cancelled = false;
     setAptHistoryLoading(true);
     const endYmH = ymNow();
-    const startYmH = ymShift(endYmH, -239); // 최대 20년치 — 국토부 실거래가 공개 시작(2006년) 즈음까지
+    // 처음엔 최근 3년치만 가볍게 불러온다 — 20년 전체를 한 번에 부르면 이 구 전체 거래를
+    // 20년치 다 받아온 다음 이 단지만 걸러내는 구조라 느려진다. 더 오래된 기록은
+    // "더 오래된 기록 불러오기" 버튼을 눌렀을 때만 추가로 받아온다.
+    const startYmH = ymShift(endYmH, -35);
     const endpointH = isSilv
       ? '/api/silv-trades'
       : propertyType === 'offi'
@@ -854,6 +859,40 @@ export default function Page() {
       .finally(() => { if (!cancelled) setAptHistoryLoading(false); });
     return () => { cancelled = true; };
   }, [selectedApt, isSilv, propertyType, isRent]);
+
+  // "더 오래된 기록 불러오기"를 눌렀을 때만 20년 전체를 추가로 받아온다.
+  const loadFullAptHistory = () => {
+    if (!selectedApt || aptHistoryLoading) return;
+    setAptHistoryLoading(true);
+    const endYmH = ymNow();
+    const startYmH = ymShift(endYmH, -239); // 국토부 실거래가 공개 시작(2006년) 즈음까지
+    const endpointH = isSilv
+      ? '/api/silv-trades'
+      : propertyType === 'offi'
+        ? (isRent ? '/api/offi-rents' : '/api/offi-trades')
+        : (isRent ? '/api/rents' : '/api/trades');
+    fetch(`${endpointH}?codes=${selectedApt.regionCode}&start=${startYmH}&end=${endYmH}`)
+      .then((res) => res.json())
+      .then((json) => {
+        const months2 = json?.months || [];
+        const rows = [];
+        months2.forEach((ym) => {
+          (json?.data?.[`${selectedApt.regionCode}_${ym}`] || []).forEach((r) => {
+            rows.push({ ...r, regionCode: selectedApt.regionCode });
+          });
+        });
+        const filtered = rows.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong);
+        filtered.sort((a, b) => {
+          const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
+          const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
+          return db.localeCompare(da);
+        });
+        setAptHistory(filtered);
+        setAptHistoryFullRange(true);
+      })
+      .catch(() => {})
+      .finally(() => setAptHistoryLoading(false));
+  };
 
   // 매매를 보고 있어도 이 단지의 전세가율을 같이 보여주기 위해, 최근 12개월 전세 실거래를
   // 가볍게 따로 받아온다 (isRent가 이미 전세면 따로 받을 필요 없다).
@@ -4156,7 +4195,7 @@ export default function Page() {
                   </div>
                 </div>
                 <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>3년 내 최고가</div>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{aptHistoryFullRange ? '전체기간 최고가' : '최근 3년 최고가'}</div>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</div>
                   <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{aptSummary.maxLabel}</div>
                 </div>
@@ -4179,8 +4218,19 @@ export default function Page() {
               </div>
             )}
             {aptSummary && (
-              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '-8px 0 14px' }}>
-                기준일 {new Date().toLocaleDateString('ko-KR')} · 이 단지 거래 표본 {aptHistory.length}건(최대 20년치) · 국토교통부 실거래가 공개자료
+              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '-8px 0 6px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span>
+                  기준일 {new Date().toLocaleDateString('ko-KR')} · 이 단지 거래 표본 {aptHistory.length}건({aptHistoryFullRange ? '최대 20년치' : '최근 3년치'}) · 국토교통부 실거래가 공개자료
+                </span>
+                {!aptHistoryFullRange && (
+                  <button
+                    onClick={loadFullAptHistory}
+                    disabled={aptHistoryLoading}
+                    style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: '2px 8px', fontSize: 9.5, background: 'transparent', color: PALETTE.accent, cursor: 'pointer' }}
+                  >
+                    {aptHistoryLoading ? '불러오는 중...' : '더 오래된 기록 불러오기(최대 20년)'}
+                  </button>
+                )}
               </p>
             )}
             {aptSummary?.volumeChangePct != null && Math.abs(aptSummary.volumeChangePct) >= 20 && (
