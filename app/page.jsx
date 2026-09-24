@@ -68,6 +68,16 @@ function fmtArea(area) {
 }
 
 // 억 단위로 안 바꾸고 항상 만원 단위 그대로 보여준다.
+// 두 좌표 사이의 실제 거리(미터)를 계산한다 — 주변 단지 비교에 사용.
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function fmtManwon(manwon) {
   if (manwon == null || Number.isNaN(manwon)) return '-';
   return `${Math.round(manwon).toLocaleString()}만원`;
@@ -215,6 +225,7 @@ export default function Page() {
   const [mapError, setMapError] = useState('');
   const [selectedApt, setSelectedApt] = useState(null);
   const [calcPriceInput, setCalcPriceInput] = useState('');
+  const [nearbyRadius, setNearbyRadius] = useState(1000); // meters
   const [userAlerts, setUserAlerts] = useState([]);
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
@@ -729,12 +740,19 @@ export default function Page() {
     return all.filter((t) => {
       if (unitSizeFilter !== 'all') {
         const p = t.pyeong;
-        if (p == null) return false;
+        const a = t.area;
         if (unitSizeFilter === 'u20' && !(p < 20)) return false;
         if (unitSizeFilter === '20s' && !(p >= 20 && p < 30)) return false;
         if (unitSizeFilter === '30s' && !(p >= 30 && p < 40)) return false;
         if (unitSizeFilter === '40s' && !(p >= 40 && p < 50)) return false;
         if (unitSizeFilter === '50p' && !(p >= 50)) return false;
+        // 정확한 전용면적(㎡) 기준 — 같은 평형끼리 비교할 때는 "30평대"보다 이게 더 정확하다.
+        // 실거래가는 84.97㎡처럼 딱 떨어지지 않는 경우가 많아 ±2㎡ 오차를 허용한다.
+        if (unitSizeFilter.startsWith('sqm')) {
+          if (a == null) return false;
+          const target = parseInt(unitSizeFilter.slice(3), 10);
+          if (Math.abs(a - target) > 2) return false;
+        } else if (p == null) return false;
       }
       if (buildYearFilter !== 'all') {
         if (!t.buildYear) return false;
@@ -1360,6 +1378,36 @@ export default function Page() {
     return list.slice(0, MAX_MAP_COMPLEXES);
   }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent]);
 
+  const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
+
+  // 지금 보고 있는 단지 주변(반경 내) 다른 단지들을 자동으로 찾아 비교한다 (아실/호갱노노 스타일).
+  const nearbyComplexes = useMemo(() => {
+    if (!selectedApt) return [];
+    const selfKey = `${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`;
+    const selfCoord = (selectedApt.lat != null && selectedApt.lng != null)
+      ? { lat: selectedApt.lat, lng: selectedApt.lng }
+      : findDongCentroid(selectedApt.regionCode, selectedApt.dong);
+    if (!selfCoord) return [];
+    return mapComplexes
+      .filter((c) => c.key !== selfKey && c.lat != null && c.lng != null)
+      .map((c) => ({ ...c, distance: distanceMeters(selfCoord.lat, selfCoord.lng, c.lat, c.lng) }))
+      .filter((c) => c.distance <= nearbyRadius)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 20);
+  }, [selectedApt, mapComplexes, nearbyRadius]);
+
+  // "단지 탐색" 패널을 현재 지도 화면 범위에 맞춰 보여준다 — 지도를 옮기면 목록도 같이 바뀐다.
+  const mapPanelList = useMemo(() => {
+    if (!mapViewportBounds) return complexCompare.slice(0, 40);
+    const filtered = complexCompare.filter((c) => {
+      const m = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`);
+      if (!m || m.lat == null || m.lng == null) return false;
+      return m.lat >= mapViewportBounds.swLat && m.lat <= mapViewportBounds.neLat
+        && m.lng >= mapViewportBounds.swLng && m.lng <= mapViewportBounds.neLng;
+    });
+    return filtered.slice(0, 60);
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds]);
+
   const [globalSearch, setGlobalSearch] = useState('');
 
   // 조회해둔 거래 내역 안에서 단지 이름을 바로 찾아보는 사이드바 검색 (아실 앱의 단지 검색처럼).
@@ -1644,6 +1692,7 @@ export default function Page() {
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [mapZoomTier, setMapZoomTier] = useState('far');
   const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
+  const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
   const loadedSidosRef = useRef(new Set());
 
   useEffect(() => {
@@ -1774,6 +1823,7 @@ export default function Page() {
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
             onZoomTierChange={setMapZoomTier}
+            onViewportChange={setMapViewportBounds}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -1789,6 +1839,7 @@ export default function Page() {
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
             onZoomTierChange={setMapZoomTier}
+            onViewportChange={setMapViewportBounds}
             height="100%"
           />
         ) : (
@@ -1939,6 +1990,12 @@ export default function Page() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6 }}>
             {[['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상']].map(([k, l]) => (
               <div key={k} style={{ ...styles.toggleBtn(unitSizeFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setUnitSizeFilter(k)}>{l}</div>
+            ))}
+          </div>
+          <p style={{ fontSize: 10, color: PALETTE.textMuted, margin: '6px 0 4px' }}>정확한 전용면적으로 비교 (±2㎡)</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(60px, 1fr))', gap: 6 }}>
+            {[['sqm59', '59㎡'], ['sqm74', '74㎡'], ['sqm84', '84㎡'], ['sqm101', '101㎡']].map(([k, l]) => (
+              <div key={k} style={{ ...styles.toggleBtn(unitSizeFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setUnitSizeFilter(unitSizeFilter === k ? 'all' : k)}>{l}</div>
             ))}
           </div>
         </div>
@@ -2386,8 +2443,13 @@ export default function Page() {
               </div>
               {!mapPanelMinimized && (
               <div style={{ overflowY: 'auto', height: 'calc(100% - 64px)' }}>
-                {complexCompare.slice(0, 40).map((c, i) => {
-                  const coord = codeToLatLng[c.regionCode];
+                {mapViewportBounds && (
+                  <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
+                    현재 화면에 보이는 단지 {mapPanelList.length}개
+                  </div>
+                )}
+                {mapPanelList.map((c, i) => {
+                  const coord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`) || codeToLatLng[c.regionCode];
                   return (
                     <button
                       key={`${c.regionCode}|${c.dong}|${c.apt}|${i}`}
@@ -3979,6 +4041,56 @@ export default function Page() {
                 <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '2px 0 0', textAlign: 'center' }}>월별 거래건수</p>
               </div>
             )}
+            <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>주변 단지 비교</span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[[500, '500m'], [1000, '1km'], [2000, '2km']].map(([r, l]) => (
+                    <button
+                      key={r}
+                      onClick={() => setNearbyRadius(r)}
+                      style={{
+                        border: `1px solid ${nearbyRadius === r ? PALETTE.accent : PALETTE.border}`,
+                        background: nearbyRadius === r ? 'rgba(239,68,68,0.10)' : 'transparent',
+                        color: nearbyRadius === r ? PALETTE.up : PALETTE.textSecondary,
+                        borderRadius: 8, padding: '3px 9px', fontSize: 11, cursor: 'pointer',
+                      }}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {nearbyComplexes.length === 0 ? (
+                <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: 0 }}>이 반경 안에 좌표가 확인된 다른 단지가 없어요. 반경을 넓혀보세요.</p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...styles.th, fontSize: 10.5 }}>단지</th>
+                        <th style={{ ...styles.th, fontSize: 10.5 }}>거리</th>
+                        <th style={{ ...styles.th, fontSize: 10.5 }}>최근 거래가</th>
+                        <th style={{ ...styles.th, fontSize: 10.5 }}>평당가</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nearbyComplexes.map((c) => (
+                        <tr key={c.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}>
+                          <td style={{ ...styles.td, fontSize: 11.5, color: PALETTE.accent }}>{c.apt}<div style={{ fontSize: 9.5, color: PALETTE.textMuted }}>{c.dong}</div></td>
+                          <td style={{ ...styles.td, fontSize: 11.5 }}>{c.distance < 1000 ? `${Math.round(c.distance)}m` : `${(c.distance / 1000).toFixed(1)}km`}</td>
+                          <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPrice != null ? fmtManwon(c.latestPrice) : '-'}</td>
+                          <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPyeong != null ? fmtManwon(Math.round(c.latestPyeong)) : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                동 중심좌표 기준 거리라 실제 위치와 다소 차이가 있을 수 있어요.
+              </p>
+            </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>

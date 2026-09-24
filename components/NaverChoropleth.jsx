@@ -7,7 +7,7 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues, onZoomTierChange,
+  dongFeatures, dongValues, onZoomTierChange, onViewportChange,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -27,6 +27,7 @@ export default function NaverChoropleth({
   const onSelectRef = useRef(onSelect);
   const onComplexSelectRef = useRef(onComplexSelect);
   const onZoomTierChangeRef = useRef(onZoomTierChange);
+  const onViewportChangeRef = useRef(onViewportChange);
   const [loadFailed, setLoadFailed] = useState(false);
   const markerSyncTimerRef = useRef(null);
   const markerSyncSeqRef = useRef(0);
@@ -37,6 +38,18 @@ export default function NaverChoropleth({
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
   useEffect(() => { onZoomTierChangeRef.current = onZoomTierChange; }, [onZoomTierChange]);
+  useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
+
+  // 현재 화면 범위를 부모(page.jsx)에 알려준다 — "단지 탐색" 목록을 화면에 보이는 단지로만
+  // 좁혀서 보여줄 수 있게 한다 (호갱노노처럼 지도 이동 → 목록 자동 갱신).
+  const reportViewport = () => {
+    const map = mapRef.current;
+    if (!map || !onViewportChangeRef.current) return;
+    const b = map.getBounds();
+    if (!b) return;
+    const sw = b.getSW(); const ne = b.getNE();
+    onViewportChangeRef.current({ swLat: sw.lat(), swLng: sw.lng(), neLat: ne.lat(), neLng: ne.lng() });
+  };
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
   // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
@@ -587,6 +600,7 @@ export default function NaverChoropleth({
     const listener = window.naver.maps.Event.addListener(mapRef.current, 'idle', () => {
       schedulePolygonViewportSync(40);
       if (zoomTierRef.current === 'near') scheduleMarkerSync(40);
+      reportViewport();
     });
     return () => {
       if (listener?.remove) listener.remove();
