@@ -782,6 +782,7 @@ export default function Page() {
   const [aptHistoryLoading, setAptHistoryLoading] = useState(false);
   const [historyAreaFilter, setHistoryAreaFilter] = useState('all');
   const [historyListLimit, setHistoryListLimit] = useState(30);
+  const [trendViewMode, setTrendViewMode] = useState('single'); // 'single' | 'compare'
 
   useEffect(() => {
     setAptHistory([]);
@@ -871,6 +872,10 @@ export default function Page() {
     const yoyChange = recentAvg != null && yearAgoAvg ? ((recentAvg - yearAgoAvg) / yearAgoAvg) * 100 : null;
     const sorted = [...aptHistory].sort((a, b) => (priceOf(b) ?? 0) - (priceOf(a) ?? 0));
     const maxTx = sorted[0];
+    const ym12 = ymShift(ymNow(), -11);
+    const last12moCount = aptHistory.filter((t) => ymOf(t) >= ym12).length;
+    const households = aptBasicInfo?.households ? parseInt(String(aptBasicInfo.households).replace(/[^0-9]/g, ''), 10) : null;
+    const turnoverRate = households ? (last12moCount / households) * 100 : null;
     return {
       recentAvg,
       recentCount: recent.length,
@@ -878,8 +883,10 @@ export default function Page() {
       yoyChange,
       maxPrice: maxTx ? priceOf(maxTx) : null,
       maxLabel: maxTx ? `${fmtArea(maxTx.area)} · ${maxTx.year}.${String(maxTx.month).padStart(2, '0')}` : '-',
+      turnoverRate,
+      last12moCount,
     };
-  }, [aptHistory, isRent]);
+  }, [aptHistory, isRent, aptBasicInfo]);
 
   // 같은 단지라도 전용면적(평형)마다 가격이 다르므로, 아실처럼 면적대별로 나눠서 볼 수 있게 한다.
   const aptHistoryAreaOptions = useMemo(() => {
@@ -953,6 +960,31 @@ export default function Page() {
     });
     return Object.keys(byMonth).sort().map((ym) => ({ ym: monthLabel(ym), 건수: byMonth[ym] }));
   }, [aptHistoryFiltered]);
+
+  // 평형대별로 겹쳐 볼 수 있는 다중 라인 데이터 — 한 그래프 안에서 30평대/40평대 등을 동시에 비교한다.
+  const aptTrendByArea = useMemo(() => {
+    if (aptHistoryAreaOptions.length < 2) return { data: [], seriesKeys: [] };
+    const byMonth = {};
+    aptHistory.forEach((t) => {
+      if (t.pyeong == null) return;
+      const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
+      if (price == null) return;
+      const bucket = Math.floor(t.pyeong / 10) * 10;
+      const seriesKey = `${bucket}평대`;
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
+      ((byMonth[ym] ||= {})[seriesKey] ||= []).push(price);
+    });
+    const seriesKeys = aptHistoryAreaOptions.map((o) => o.label);
+    const data = Object.keys(byMonth).sort().map((ym) => {
+      const row = { ym: monthLabel(ym) };
+      seriesKeys.forEach((k) => {
+        const vals = byMonth[ym][k];
+        row[k] = vals ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+      });
+      return row;
+    });
+    return { data, seriesKeys };
+  }, [aptHistory, aptHistoryAreaOptions, isRent]);
 
   // 단지별로 묶어서, 가장 최근 거래 기준으로 여러 단지를 한눈에 비교할 수 있는 목록.
   // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
@@ -2152,7 +2184,7 @@ export default function Page() {
 
   return (
     <div style={styles.page}>
-      <div style={{
+      <div className="no-print" style={{
         position: 'sticky', top: 0, zIndex: 200,
         display: 'flex', alignItems: 'center', gap: 18,
         padding: '0 16px', height: 58, background: '#1A1A1A',
@@ -2606,11 +2638,16 @@ export default function Page() {
       </div>
       ) : viewMode === 'analytics' ? (
         <div style={{ padding: '20px 20px 40px', maxWidth: 1400, margin: '0 auto' }}>
-          <div style={{ marginBottom: 18 }}>
-            <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>순위·통계 분석</h1>
-            <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래 데이터를 기준으로 가격수준·변동률·거래량·가격범위를 비교합니다.</p>
+          <div style={{ marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>순위·통계 분석</h1>
+              <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래 데이터를 기준으로 가격수준·변동률·거래량·가격범위를 비교합니다.</p>
+            </div>
+            <button className="ui-btn no-print" style={{ ...styles.btn, width: 'auto', padding: '8px 14px', fontSize: 12.5 }} onClick={() => window.print()}>
+              📄 PDF로 내보내기
+            </button>
           </div>
-          <div style={{ ...styles.card, marginBottom: 14 }} className="ui-card">
+          <div style={{ ...styles.card, marginBottom: 14 }} className="ui-card no-print">
             <label style={styles.label}>분석할 지역 추가</label>
             <select
               value={comparePickerValue}
@@ -2651,7 +2688,7 @@ export default function Page() {
             <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>조회 거래량</div><div style={styles.kpiValue}>{analyticsKpis.volume.toLocaleString()}건</div></div>
             <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>변동률 중앙값</div><div style={styles.kpiValue}>{fmtPct(analyticsKpis.median)}</div></div>
           </div>
-          <div style={{ ...styles.card, marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ ...styles.card, marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }} className="no-print">
             <div style={{ display: 'flex', gap: 6 }}>
               {[['region', '지역 분석'], ['complex', '단지 분석']].map(([k, l]) => (
                 <button key={k} className="portal-pill" style={{ background: analyticsScope === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsScope === k ? '#fff' : PALETTE.textPrimary }} onClick={() => setAnalyticsScope(k)}>{l}</button>
@@ -2707,11 +2744,16 @@ export default function Page() {
         </div>
       ) : viewMode === 'market' ? (
       <div style={{ padding: '20px 20px 44px', maxWidth: 1400, margin: '0 auto' }}>
-        <div style={{ marginBottom: 18 }}>
-          <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>시장분석센터</h1>
-          <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래를 바탕으로 가격·거래량·신고가·고점대비 하락폭을 한 화면에서 확인합니다.</p>
+        <div style={{ marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>시장분석센터</h1>
+            <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래를 바탕으로 가격·거래량·신고가·고점대비 하락폭을 한 화면에서 확인합니다.</p>
+          </div>
+          <button className="ui-btn no-print" style={{ ...styles.btn, width: 'auto', padding: '8px 14px', fontSize: 12.5 }} onClick={() => window.print()}>
+            📄 PDF로 내보내기
+          </button>
         </div>
-        <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card">
+        <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card no-print">
           <label style={styles.label}>분석할 지역 추가</label>
           <select
             value={comparePickerValue}
@@ -2746,7 +2788,7 @@ export default function Page() {
             <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 8 }}>불러오는 중...</p>
           )}
         </div>
-        <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} className="ui-card">
+        <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }} className="ui-card no-print">
           <span style={{ fontSize: 12, fontWeight: 700 }}>분석기간</span>
           {['3', '6', '12'].map((v) => (
             <button key={v} className="portal-pill" onClick={() => setAnalyticsPeriod(v)} style={{ background: analyticsPeriod === v ? PALETTE.accent : PALETTE.panelAlt, color: analyticsPeriod === v ? '#fff' : PALETTE.textPrimary }}>{v}개월</button>
@@ -2764,7 +2806,7 @@ export default function Page() {
             <div key={l} style={styles.card} className="ui-card"><div style={styles.kpiLabel}>{l}</div><div style={{ ...styles.kpiValue, fontSize: 20 }}>{v}</div></div>
           ))}
         </div>
-        <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card">
+        <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card no-print">
           {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
             <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
           ))}
@@ -3664,7 +3706,7 @@ export default function Page() {
               {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
             </p>
             {aptSummary && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
                 <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
                   <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
@@ -3683,6 +3725,13 @@ export default function Page() {
                   <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>3년 내 최고가</div>
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</div>
                   <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{aptSummary.maxLabel}</div>
+                </div>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 거래건수 ÷ 세대수 × 100. 세대수 대비 거래가 얼마나 활발한지 보는 참고 지표예요.">
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>거래회전율(최근 1년)</div>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.turnoverRate != null ? `${aptSummary.turnoverRate.toFixed(1)}%` : '-'}</div>
+                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
+                    {aptSummary.turnoverRate != null ? `거래 ${aptSummary.last12moCount}건 / 세대수 ${aptBasicInfo?.households}` : '세대수 정보 없음'}
+                  </div>
                 </div>
               </div>
             )}
@@ -3827,7 +3876,25 @@ export default function Page() {
                 ))}
               </div>
             )}
-            {aptTrendData.length > 1 && (
+            {aptHistoryAreaOptions.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                {[['single', '단일 평형'], ['compare', '평형별 겹쳐보기']].map(([k, l]) => (
+                  <button
+                    key={k}
+                    onClick={() => setTrendViewMode(k)}
+                    style={{
+                      border: `1px solid ${trendViewMode === k ? PALETTE.accent : PALETTE.border}`,
+                      background: trendViewMode === k ? 'rgba(239,68,68,0.10)' : 'transparent',
+                      color: trendViewMode === k ? PALETTE.up : PALETTE.textSecondary,
+                      borderRadius: 8, padding: '4px 10px', fontSize: 11.5, cursor: 'pointer',
+                    }}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
+            {trendViewMode === 'single' && aptTrendData.length > 1 && (
               <div style={{ width: '100%', height: 160, marginBottom: 16 }}>
                 <ResponsiveContainer>
                   <LineChart data={aptTrendData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -3840,6 +3907,26 @@ export default function Page() {
                       formatter={(v) => `${v.toLocaleString()}만원`}
                     />
                     <Line type="monotone" dataKey="가격" stroke={PALETTE.accent} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {trendViewMode === 'compare' && aptTrendByArea.data.length > 1 && (
+              <div style={{ width: '100%', height: 180, marginBottom: 16 }}>
+                <ResponsiveContainer>
+                  <LineChart data={aptTrendByArea.data} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={46} />
+                    <Tooltip
+                      contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => (v == null ? '-' : `${v.toLocaleString()}만원`)}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {aptTrendByArea.seriesKeys.map((k, i) => (
+                      <Line key={k} type="monotone" dataKey={k} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                    ))}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -3920,6 +4007,10 @@ export default function Page() {
       )}
 
       <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { background: #fff !important; }
+        }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
