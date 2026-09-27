@@ -19,6 +19,7 @@ export default function KakaoChoropleth({
   const clustererRef = useRef(null); // 단지 마커 클러스터러 (아실/호갱노노처럼 겹치는 단지를 묶어서 보여줌)
   const placesRef = useRef(null);
   const onComplexSelectRef = useRef(onComplexSelect);
+  const complexesRef = useRef(complexes);
   const onZoomTierChangeRef = useRef(onZoomTierChange);
   const valuesRef = useRef(values);
   const dongValuesRef = useRef(dongValues);
@@ -33,6 +34,7 @@ export default function KakaoChoropleth({
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
+  useEffect(() => { complexesRef.current = complexes; }, [complexes]);
 
   const zoomTierRef = useRef('far'); // 'far'(구) | 'mid'(동) | 'near'(동, 연하게 + 마커)
 
@@ -44,9 +46,11 @@ export default function KakaoChoropleth({
       // 확대된 상태에서는 구 색칠을 완전히 숨긴다. "동" 데이터가 비어있는 구간에서는 동을
       // 눌러도 반응이 없을 수 있으므로, near(마커 활성) 단계가 아닐 때는 이 투명한 구 도형을
       // 계속 클릭 가능하게 남겨서 "구를 고르는" 동작이 항상 되게 한다. near 단계에서는
-      // 단지 마커 클릭을 가로채지 않도록 꺼둔다.
+      // 단지 마커 클릭을 가로채지 않도록 꺼두는 게 원칙이지만, 마커가 하나도 없으면
+      // (아직 아무 지역도 선택 안 함) 가로챌 게 없으므로 계속 클릭 가능하게 둔다.
+      const noMarkersYet = !complexesRef.current?.length;
       return {
-        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid',
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid' || noMarkersYet,
       };
     }
     return {

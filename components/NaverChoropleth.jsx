@@ -26,6 +26,7 @@ export default function NaverChoropleth({
   const colorForRef = useRef(colorFor);
   const onSelectRef = useRef(onSelect);
   const onComplexSelectRef = useRef(onComplexSelect);
+  const complexesRef = useRef(complexes);
   const onZoomTierChangeRef = useRef(onZoomTierChange);
   const onViewportChangeRef = useRef(onViewportChange);
   const onVisibleMarkerCountRef = useRef(onVisibleMarkerCount);
@@ -38,6 +39,11 @@ export default function NaverChoropleth({
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
+  useEffect(() => { complexesRef.current = complexes; }, [complexes]);
+  useEffect(() => {
+    if (zoomTierRef.current !== 'far') applyAllStyles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!complexes?.length]);
   useEffect(() => { onZoomTierChangeRef.current = onZoomTierChange; }, [onZoomTierChange]);
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
   useEffect(() => { onVisibleMarkerCountRef.current = onVisibleMarkerCount; }, [onVisibleMarkerCount]);
@@ -136,9 +142,11 @@ export default function NaverChoropleth({
       // 확대된 상태에서는 완전히 투명해진다. "동" 데이터가 비어있는 구간(예: 아파트가 적은
       // 원도심)에서는 동을 눌러도 반응이 없을 수 있으므로, near(마커 활성) 단계가 아닐 때는
       // 이 투명한 구 도형을 계속 클릭 가능하게 남겨서 "구를 고르는" 동작이 항상 되게 한다.
-      // near 단계에서는 단지 마커 클릭을 가로채지 않도록 꺼둔다.
+      // near 단계에서는 단지 마커 클릭을 가로채지 않도록 꺼두는 게 원칙이지만, 애초에 마커가
+      // 하나도 없으면(아직 아무 지역도 선택 안 함) 가로챌 게 없으므로 그때는 계속 클릭 가능하게 둔다.
+      const noMarkersYet = !complexesRef.current?.length;
       return {
-        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid',
+        strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid' || noMarkersYet,
       };
     }
     return {
@@ -191,11 +199,15 @@ export default function NaverChoropleth({
     const bounds = getExpandedBounds();
     if (!bounds) return;
     const tier = zoomTierRef.current;
+    // styleFor()가 "마커가 아직 하나도 없으면 구를 계속 클릭 가능하게 둔다"고 정해도,
+    // 여기서 구 도형 자체를 지도에서 완전히 떼어내 버리면(setMap(null)) 그 클릭 설정이 무의미해진다
+    // — 도형이 지도에 없으면 이벤트 자체가 안 걸린다. 그래서 같은 예외를 여기도 적용한다.
+    const noMarkersYet = !complexesRef.current?.length;
     const apply = (items, visible) => items.forEach(({ polygon, bbox }) => {
       const shouldShow = visible && bboxIntersects(bounds, bbox);
       polygon.setMap(shouldShow ? map : null);
     });
-    apply(districtMetaRef.current, tier === 'far');
+    apply(districtMetaRef.current, tier === 'far' || noMarkersYet);
     apply(dongMetaRef.current, tier !== 'far');
   };
 
