@@ -78,6 +78,50 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function slopeClass(deg) {
+  if (deg == null) return '';
+  if (deg < 5) return '평탄';
+  if (deg < 15) return '완경사';
+  if (deg < 25) return '중경사';
+  return '급경사';
+}
+
+// 동지(12/21) 하루 동안 각 방향(향) 창면이 직사광을 받는 시간을 천문 계산으로 구한다.
+// 대기굴절·지형 음영은 무시한 근사치라서 ±10분 내외 오차가 있고, 건물 배치는 반영되지 않는다.
+function computeWinterSun(latDeg, lngDeg) {
+  const rad = Math.PI / 180;
+  const lat = latDeg * rad;
+  const decl = -23.44 * rad;
+  const H0 = Math.acos(Math.max(-1, Math.min(1, -Math.tan(lat) * Math.tan(decl)))) / rad; // 일출/일몰 시각각
+  const noon = 12 + (135 - lngDeg) * 4 / 60; // KST 기준 태양정중시각 (한국 표준자오선 135°E)
+  const fmtHm = (h) => {
+    let m = Math.round(h * 60);
+    const hh = Math.floor(m / 60);
+    m %= 60;
+    return `${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+  const noonAlt = 90 - Math.abs(latDeg - decl / rad);
+  const facades = [['남향', 180], ['남동향', 135], ['동향', 90], ['남서향', 225], ['서향', 270]].map(([label, D]) => {
+    let cnt = 0;
+    const step = 1 / 6; // 10분 간격
+    for (let t = noon - H0 / 15; t <= noon + H0 / 15; t += step) {
+      const H = (t - noon) * 15 * rad;
+      const sinAlt = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(H);
+      if (sinAlt <= 0) continue;
+      const A = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(lat) - Math.tan(decl) * Math.cos(lat));
+      const az = (180 + A / rad + 360) % 360; // 북쪽 기준 시계방향 방위각
+      if (Math.abs(az - D) < 90) cnt += 1;
+    }
+    return { label, hours: Math.round(cnt * step * 10) / 10 };
+  });
+  return {
+    sunrise: fmtHm(noon - H0 / 15),
+    sunset: fmtHm(noon + H0 / 15),
+    noonAlt: Math.round(noonAlt),
+    facades,
+  };
+}
+
 function fmtManwon(manwon) {
   if (manwon == null || Number.isNaN(manwon)) return '-';
   return `${Math.round(manwon).toLocaleString()}만원`;
@@ -924,6 +968,49 @@ export default function Page() {
   const [gongsiInfo, setGongsiInfo] = useState(null);
   const [gongsiLoading, setGongsiLoading] = useState(false);
   const [gongsiError, setGongsiError] = useState('');
+
+  // 지형(경사도)·동지 일조 — 단지 좌표만 있으면 외부 키 없이 계산할 수 있다.
+  // 경사도는 Open-Meteo 고도 API(무료, 키 불필요)로 중심점과 동·서·남·북 약 170m 지점의 고도를 읽어 추정한다.
+  const [terrainInfo, setTerrainInfo] = useState(null);
+  const [terrainLoading, setTerrainLoading] = useState(false);
+  useEffect(() => {
+    setTerrainInfo(null);
+    if (!selectedApt) return undefined;
+    const centroid = findDongCentroid(selectedApt.regionCode, selectedApt.dong);
+    const lat = selectedApt.lat ?? centroid?.lat;
+    const lng = selectedApt.lng ?? centroid?.lng;
+    if (lat == null || lng == null) return undefined;
+    let cancelled = false;
+    setTerrainLoading(true);
+    (async () => {
+      try {
+        const dLat = 0.0015; // 약 166m
+        const dLng = dLat / Math.max(0.2, Math.cos(lat * Math.PI / 180));
+        const pts = [[lat, lng], [lat + dLat, lng], [lat - dLat, lng], [lat, lng + dLng], [lat, lng - dLng]];
+        const qs = `latitude=${pts.map((p) => p[0].toFixed(5)).join(',')}&longitude=${pts.map((p) => p[1].toFixed(5)).join(',')}`;
+        const res = await fetch(`https://api.open-meteo.com/v1/elevation?${qs}`);
+        const json = await res.json();
+        const el = Array.isArray(json?.elevation) ? json.elevation : null;
+        if (cancelled || !el || el.length !== 5) return;
+        const pairNs = Math.abs(el[1] - el[2]); // 남-북 두 지점(약 333m) 고도차
+        const pairEw = Math.abs(el[3] - el[4]); // 동-서 두 지점 고도차
+        const slope = Math.atan(Math.max(pairNs, pairEw) / 333) * 180 / Math.PI;
+        setTerrainInfo({ lat, lng, center: el[0], el, slope });
+      } catch (e) {
+        // 고도 조회 실패 시에도 일조 계산은 좌표만으로 가능하게 한다.
+        setTerrainInfo({ lat, lng, center: null, el: null, slope: null });
+      } finally {
+        if (!cancelled) setTerrainLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApt]);
+
+  const winterSun = useMemo(() => {
+    if (!terrainInfo) return null;
+    return computeWinterSun(terrainInfo.lat, terrainInfo.lng);
+  }, [terrainInfo]);
 
   useEffect(() => {
     setGongsiInfo(null);
@@ -4334,6 +4421,26 @@ export default function Page() {
             })()}
             {gongsiLoading && (
               <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>공시가격 조회 중...</p>
+            )}
+            {terrainLoading && (
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>지형·일조 정보 계산 중...</p>
+            )}
+            {terrainInfo && winterSun && (
+              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>⛰️ 경사도 · ☀️ 동지 일조 (참고용 근사치)</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {terrainInfo.center != null && <span style={styles.chip}>중심 고도 약 {Math.round(terrainInfo.center)}m</span>}
+                  {terrainInfo.slope != null && <span style={styles.chip}>경사 약 {terrainInfo.slope.toFixed(1)}° ({slopeClass(terrainInfo.slope)})</span>}
+                  {winterSun.facades.map((f) => (
+                    <span key={f.label} style={styles.chip}>{f.label} {f.hours.toFixed(1)}시간</span>
+                  ))}
+                </div>
+                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                  동지(12/21) 기준 일출 {winterSun.sunrise} · 일몰 {winterSun.sunset} · 정오 태양고도 약 {winterSun.noonAlt}°.
+                  일조시간은 단지 좌표의 천문 계산값이고, 경사도는 중심점에서 동·서·남·북 약 170m 지점 고도(Open-Meteo) 차이로 추정했어요.
+                  건물 배치·지형 음영은 반영되지 않은 근사치라 실제 일조와 다를 수 있어요.
+                </p>
+              </div>
             )}
             {gongsiInfo?.rows?.length > 0 && (
               <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
