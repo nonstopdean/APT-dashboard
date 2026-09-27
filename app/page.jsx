@@ -972,6 +972,9 @@ export default function Page() {
     const recentAvg = recentPrices.length ? recentPrices.reduce((s, v) => s + v, 0) / recentPrices.length : null;
     const yearAgoAvg = yearAgoPrices.length ? yearAgoPrices.reduce((s, v) => s + v, 0) / yearAgoPrices.length : null;
     const yoyChange = recentAvg != null && yearAgoAvg ? ((recentAvg - yearAgoAvg) / yearAgoAvg) * 100 : null;
+    // 비교 표본이 너무 적으면(어느 한쪽이 2건 이하) 등락률이 우연한 한두 건 차이일 수 있으므로
+    // 화면에서 확정적인 변동률 대신 "표본 부족"이라고 알려주는 게 더 정직하다.
+    const yoyLowSample = recentPrices.length < 3 || yearAgoPrices.length < 3;
     const sorted = [...aptHistory].sort((a, b) => (priceOf(b) ?? 0) - (priceOf(a) ?? 0));
     const maxTx = sorted[0];
     const ym12 = ymShift(ymNow(), -11);
@@ -983,6 +986,9 @@ export default function Page() {
       recentCount: recent.length,
       yearAgoAvg,
       yoyChange,
+      yoyLowSample,
+      recentSampleN: recentPrices.length,
+      yearAgoSampleN: yearAgoPrices.length,
       maxPrice: maxTx ? priceOf(maxTx) : null,
       maxLabel: maxTx ? `${fmtArea(maxTx.area)} · ${maxTx.year}.${String(maxTx.month).padStart(2, '0')}` : '-',
       turnoverRate,
@@ -1468,6 +1474,7 @@ export default function Page() {
 
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
   const [priceMoveFilter, setPriceMoveFilter] = useState('all'); // 'all' | 'high' | 'drop'
+  const [mapFocusKeys, setMapFocusKeys] = useState(null); // Set<string> | null
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
   const [visibleMarkerCount, setVisibleMarkerCount] = useState(null);
@@ -1542,6 +1549,12 @@ export default function Page() {
       return priceMoveFilter === 'high' ? change >= 5 : change <= -5;
     });
   }, [priceMoveFilter, mapComplexes, complexCompare]);
+
+  // "비교 조건이 유사한 단지"나 "주변 단지"에서 "지도에서 보기"를 누르면, 그 단지들만 지도에 남긴다.
+  const mapFocusMatches = useMemo(() => {
+    if (!mapFocusKeys) return null;
+    return mapComplexes.filter((c) => mapFocusKeys.has(c.key));
+  }, [mapFocusKeys, mapComplexes]);
 
   // "단지 탐색" 패널을 현재 지도 화면 범위에 맞춰 보여준다 — 지도를 옮기면 목록도 같이 바뀐다.
   const mapPanelList = useMemo(() => {
@@ -1991,7 +2004,7 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={budgetMatches || priceMoveMatches || mapComplexes}
+            complexes={mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -2008,7 +2021,7 @@ export default function Page() {
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={budgetMatches || priceMoveMatches || mapComplexes}
+            complexes={mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -2653,7 +2666,12 @@ export default function Page() {
               border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
               boxShadow: '0 4px 18px rgba(0,0,0,0.10)', fontSize: 11.5, whiteSpace: 'nowrap',
             }}>
-              {budgetMatches ? (
+              {mapFocusMatches ? (
+                <>
+                  <b>{mapFocusMatches.length.toLocaleString()}</b>개 단지 · 비교 목록만 보는 중{' '}
+                  <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline' }} onClick={() => setMapFocusKeys(null)}>전체 보기</span>
+                </>
+              ) : budgetMatches ? (
                 <><b>{budgetMatches.length.toLocaleString()}</b>개 단지가 예산 이내</>
               ) : priceMoveMatches ? (
                 <><b>{priceMoveMatches.length.toLocaleString()}</b>개 단지 · {priceMoveFilter === 'high' ? '신고가 후보(변동률 +5%↑)' : '하락 후보(변동률 -5%↓)'}</>
@@ -4185,13 +4203,21 @@ export default function Page() {
                   <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
                   <div style={{ fontSize: 10, color: PALETTE.textMuted }}>거래 {aptSummary.recentCount}건</div>
                 </div>
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title={`최근 3개월 표본 ${aptSummary.recentSampleN}건, 1년 전 표본 ${aptSummary.yearAgoSampleN}건`}>
                   <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>1년 전 대비</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: aptSummary.yoyChange > 0 ? PALETTE.up : aptSummary.yoyChange < 0 ? PALETTE.down : PALETTE.textPrimary }}>
-                    {aptSummary.yoyChange != null ? fmtPct(aptSummary.yoyChange) : '-'}
-                  </div>
+                  {aptSummary.yoyChange == null ? (
+                    <div style={{ fontSize: 15, fontWeight: 800, color: PALETTE.textMuted }}>-</div>
+                  ) : aptSummary.yoyLowSample ? (
+                    <div style={{ fontSize: 13, fontWeight: 700, color: PALETTE.textMuted }}>표본 부족</div>
+                  ) : (
+                    <div style={{ fontSize: 15, fontWeight: 800, color: aptSummary.yoyChange > 0 ? PALETTE.up : aptSummary.yoyChange < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                      {fmtPct(aptSummary.yoyChange)}
+                    </div>
+                  )}
                   <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
-                    {aptSummary.yearAgoAvg != null ? `1년 전 평균 ${fmtManwon(aptSummary.yearAgoAvg)}` : '비교 기준 없음'}
+                    {aptSummary.yearAgoAvg != null
+                      ? `1년 전 평균 ${fmtManwon(aptSummary.yearAgoAvg)}${aptSummary.yoyLowSample ? ` (표본 ${aptSummary.recentSampleN}·${aptSummary.yearAgoSampleN}건)` : ''}`
+                      : '비교 기준 없음'}
                   </div>
                 </div>
                 <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
@@ -4597,7 +4623,22 @@ export default function Page() {
             </div>
             {similarComplexes.length > 0 && (
               <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>비교 조건이 유사한 단지</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700 }}>비교 조건이 유사한 단지</span>
+                  <button
+                    className="ui-btn"
+                    style={{ ...styles.btn, width: 'auto', padding: '4px 9px', fontSize: 10.5 }}
+                    onClick={() => {
+                      const keys = new Set(similarComplexes.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`));
+                      keys.add(`${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`);
+                      setMapFocusKeys(keys);
+                      setSelectedApt(null);
+                      setViewMode('map');
+                    }}
+                  >
+                    🗺️ 지도에서 보기
+                  </button>
+                </div>
                 <p style={{ fontSize: 10, color: PALETTE.textMuted, margin: '4px 0 8px' }}>
                   평형(±5평)이 비슷한 단지 중 평당가가 가까운 순이에요. 준공연도·세대수까지 반영한 정밀한 유사도는 아니에요.
                 </p>
