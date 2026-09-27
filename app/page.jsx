@@ -282,6 +282,27 @@ export default function Page() {
   const [nearbyRadius, setNearbyRadius] = useState(1000); // meters
   const [pinnedComplexes, setPinnedComplexes] = useState([]); // [{apt, dong, regionCode}] 최대 5개
   const [userAlerts, setUserAlerts] = useState([]);
+  const [myListings, setMyListings] = useState([]); // 사용자가 직접 기록한 매물 호가 (localStorage)
+  const [listingForm, setListingForm] = useState({ apt: '', dong: '', area: '', floor: '', price: '', memo: '', status: '관심' });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('myListings') || '[]');
+      if (Array.isArray(saved)) setMyListings(saved);
+    } catch (e) { /* 저장된 값이 손상된 경우 무시 */ }
+  }, []);
+  const saveListings = (next) => {
+    setMyListings(next);
+    try { localStorage.setItem('myListings', JSON.stringify(next)); } catch (e) { /* 저장 실패는 조용히 무시 */ }
+  };
+  const addListing = () => {
+    if (!listingForm.apt || !listingForm.price) return;
+    const entry = { ...listingForm, id: `${Date.now()}`, checkedAt: new Date().toISOString().slice(0, 10) };
+    saveListings([entry, ...myListings]);
+    setListingForm({ apt: '', dong: '', area: '', floor: '', price: '', memo: '', status: '관심' });
+  };
+  const removeListing = (id) => saveListings(myListings.filter((l) => l.id !== id));
+  const updateListingStatus = (id, status) => saveListings(myListings.map((l) => (l.id === id ? { ...l, status } : l)));
+
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
   const [alertDirection, setAlertDirection] = useState('below');
@@ -1627,6 +1648,18 @@ export default function Page() {
   }, [budgetSearchOpen, budgetAmount, mapComplexes]);
 
   // 신고가/하락 단지만 지도에 남긴다 — complexCompare의 최근 거래 대비 변동률(change)을 기준으로 한다.
+  // 사용자가 적어둔 매물 호가를, 현재 조회된 실거래 중 같은 단지명·비슷한 면적의 최근 거래와 비교한다.
+  const myListingsWithComparison = useMemo(() => myListings.map((l) => {
+    const areaNum = l.area ? parseFloat(l.area) : null;
+    const matches = complexCompare.filter((c) => c.apt === l.apt && (!areaNum || !c.area || Math.abs(c.area - areaNum) <= 3));
+    const recentMatch = matches[0]; // complexCompare는 이미 최근 거래 기준으로 채워져 있다
+    const priceManwon = parseFloat(l.price) * 10000;
+    const diff = recentMatch?.unitPrice != null && areaNum
+      ? priceManwon - recentMatch.unitPrice * (areaNum / 3.3058)
+      : null;
+    return { ...l, recentMatch, diff };
+  }), [myListings, complexCompare]);
+
   const priceMoveMatches = useMemo(() => {
     if (priceMoveFilter === 'all') return null;
     const changeByKey = new Map(complexCompare.map((c) => [`${c.regionCode}|${c.dong}|${c.apt}`, c.change]));
@@ -3669,6 +3702,68 @@ export default function Page() {
                 </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ ...styles.card, marginTop: 16 }} className="ui-card">
+          <h2 style={styles.sectionTitle}>매물 호가 기록</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            실제로 보고 있는 매물 호가를 적어두면, 현재 조회된 실거래와 비교해줘요. 이 기기(브라우저)에만 저장돼요.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, marginBottom: 10 }}>
+            <input placeholder="단지명" value={listingForm.apt} onChange={(e) => setListingForm({ ...listingForm, apt: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            <input placeholder="동(예: 화명동)" value={listingForm.dong} onChange={(e) => setListingForm({ ...listingForm, dong: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            <input placeholder="전용면적(㎡)" type="number" value={listingForm.area} onChange={(e) => setListingForm({ ...listingForm, area: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            <input placeholder="층" value={listingForm.floor} onChange={(e) => setListingForm({ ...listingForm, floor: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            <input placeholder="호가(억원)" type="number" value={listingForm.price} onChange={(e) => setListingForm({ ...listingForm, price: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            <select value={listingForm.status} onChange={(e) => setListingForm({ ...listingForm, status: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }}>
+              {['관심', '보류', '제외'].map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <input placeholder="메모 (예: 급매, 수리 필요 등)" value={listingForm.memo} onChange={(e) => setListingForm({ ...listingForm, memo: e.target.value })} style={{ ...styles.select, fontSize: 12.5, flex: 1 }} />
+            <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '8px 16px' }} onClick={addListing} disabled={!listingForm.apt || !listingForm.price}>+ 기록</button>
+          </div>
+          {myListingsWithComparison.length === 0 ? (
+            <p style={{ fontSize: 13, color: PALETTE.textMuted }}>아직 기록한 매물이 없어요.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {myListingsWithComparison.map((l) => (
+                <div key={l.id} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {l.apt} <span style={{ fontWeight: 400, color: PALETTE.textMuted, fontSize: 11 }}>({l.dong} {l.area}㎡ {l.floor && `${l.floor}층`})</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
+                        호가 {fmtManwon(parseFloat(l.price) * 10000)} · 확인일 {l.checkedAt}
+                        {l.memo && <span style={{ color: PALETTE.textMuted }}> · {l.memo}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <select value={l.status} onChange={(e) => updateListingStatus(l.id, e.target.value)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: `1px solid ${PALETTE.border}` }}>
+                        {['관심', '보류', '제외'].map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeListing(l.id)} />
+                    </div>
+                  </div>
+                  {l.recentMatch ? (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}`, fontSize: 11.5 }}>
+                      같은 단지 최근 실거래 평당가 <b>{fmtManwon(Math.round(l.recentMatch.unitPrice))}</b>
+                      {l.diff != null && (
+                        <span style={{ marginLeft: 8, color: l.diff > 0 ? PALETTE.down : PALETTE.up }}>
+                          호가가 추정 실거래가보다 {l.diff > 0 ? '+' : ''}{fmtManwon(Math.round(l.diff))} {l.diff > 0 ? '높음' : '낮음'}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${PALETTE.border}`, fontSize: 10.5, color: PALETTE.textMuted }}>
+                      같은 이름의 단지가 현재 조회된 실거래에 없어요. 그 지역을 선택하면 비교할 수 있어요.
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
