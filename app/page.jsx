@@ -3533,7 +3533,7 @@ export default function Page() {
         </div>
 
         <div style={{ ...styles.card, marginTop: 16 }} className="ui-card">
-          <h2 style={styles.sectionTitle}>가격 알림</h2>
+          <h2 style={styles.sectionTitle}>관심 단지 현황 · 가격 알림</h2>
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
             단지 상세 화면에서 등록한 알림이에요. 매일 자동으로 확인해서 조건을 만족하면 알려드려요.
           </p>
@@ -3543,22 +3543,45 @@ export default function Page() {
             </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {userAlerts.map((a) => (
+              {userAlerts.map((a) => {
+                const key = `${a.regionCode}|${a.dong}|${a.apt}`;
+                const live = complexCompare.find((c) => `${c.regionCode}|${c.dong}|${c.apt}` === key);
+                return (
                 <div key={a.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   background: PALETTE.panelAlt, borderRadius: 10, padding: '10px 12px',
                 }}
                 >
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{a.apt} <span style={{ fontWeight: 400, color: PALETTE.textMuted, fontSize: 11 }}>({a.regionName} {a.dong})</span></div>
-                    <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
-                      {fmtManwon(a.targetPrice)} {a.direction === 'above' ? '이상' : '이하'}
-                      {a.firedAt && <span style={{ color: PALETTE.up, marginLeft: 6 }}>✓ 알림 발송됨</span>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: a.apt, dong: a.dong, regionCode: a.regionCode })}>
+                        {a.apt} <span style={{ fontWeight: 400, color: PALETTE.textMuted, fontSize: 11 }}>({a.regionName} {a.dong})</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
+                        알림가 {fmtManwon(a.targetPrice)} {a.direction === 'above' ? '이상' : '이하'}
+                        {a.firedAt && <span style={{ color: PALETTE.up, marginLeft: 6 }}>✓ 알림 발송됨</span>}
+                      </div>
                     </div>
+                    <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeUserAlert(a.id)} />
                   </div>
-                  <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeUserAlert(a.id)} />
+                  {live ? (
+                    <div style={{ display: 'flex', gap: 12, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}`, fontSize: 11.5 }}>
+                      <span>최근가 <b>{fmtWon(isRent ? live.deposit : live.amount)}</b></span>
+                      <span>거래 <b>{live.count}건</b></span>
+                      <span style={{ color: live.change > 0 ? PALETTE.up : live.change < 0 ? PALETTE.down : PALETTE.textSecondary }}>변동 <b>{fmtPct(live.change)}</b></span>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${PALETTE.border}`, fontSize: 10.5, color: PALETTE.textMuted }}>
+                      <span
+                        style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                        onClick={() => addRegionAndFetch(a.regionCode)}
+                      >
+                        이 지역을 선택하면 최신 거래 정보가 보여요 →
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
