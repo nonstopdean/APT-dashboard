@@ -17,6 +17,7 @@ import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
 
 const DEFAULT_SELECTED = [];
+const LISTING_STATUSES = ['관심', '현장확인', '협의중', '보류', '제외'];
 const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 const SIDO_SHORT_NAMES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'];
 const SIDO_FULL_TO_SHORT = {
@@ -282,6 +283,7 @@ export default function Page() {
   const [nearbyRadius, setNearbyRadius] = useState(1000); // meters
   const [pinnedComplexes, setPinnedComplexes] = useState([]); // [{apt, dong, regionCode}] 최대 5개
   const [userAlerts, setUserAlerts] = useState([]);
+  const [scenario, setScenario] = useState({ price: '', cash: '', rate: '4.0', years: '30', listingId: '' });
   const [myListings, setMyListings] = useState([]); // 사용자가 직접 기록한 매물 호가 (localStorage)
   const [listingForm, setListingForm] = useState({ apt: '', dong: '', area: '', floor: '', price: '', memo: '', status: '관심' });
   useEffect(() => {
@@ -296,12 +298,20 @@ export default function Page() {
   };
   const addListing = () => {
     if (!listingForm.apt || !listingForm.price) return;
-    const entry = { ...listingForm, id: `${Date.now()}`, checkedAt: new Date().toISOString().slice(0, 10) };
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = { ...listingForm, id: `${Date.now()}`, checkedAt: today, history: [{ status: listingForm.status, date: today }] };
     saveListings([entry, ...myListings]);
     setListingForm({ apt: '', dong: '', area: '', floor: '', price: '', memo: '', status: '관심' });
   };
   const removeListing = (id) => saveListings(myListings.filter((l) => l.id !== id));
-  const updateListingStatus = (id, status) => saveListings(myListings.map((l) => (l.id === id ? { ...l, status } : l)));
+  const updateListingStatus = (id, status) => {
+    const today = new Date().toISOString().slice(0, 10);
+    saveListings(myListings.map((l) => (
+      l.id === id && l.status !== status
+        ? { ...l, status, history: [...(l.history || []), { status, date: today }] }
+        : l
+    )));
+  };
 
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
@@ -1649,16 +1659,44 @@ export default function Page() {
 
   // 신고가/하락 단지만 지도에 남긴다 — complexCompare의 최근 거래 대비 변동률(change)을 기준으로 한다.
   // 사용자가 적어둔 매물 호가를, 현재 조회된 실거래 중 같은 단지명·비슷한 면적의 최근 거래와 비교한다.
+  // 호가를 같은 단지·비슷한 전용면적(±3㎡)·비슷한 층(±5층, 층 정보가 있을 때)의 실제 거래와 비교한다.
+  // 맞는 거래가 2건 미만이면 억지로 추정하지 않고 "비교 자료 부족"으로 표시한다.
   const myListingsWithComparison = useMemo(() => myListings.map((l) => {
     const areaNum = l.area ? parseFloat(l.area) : null;
-    const matches = complexCompare.filter((c) => c.apt === l.apt && (!areaNum || !c.area || Math.abs(c.area - areaNum) <= 3));
-    const recentMatch = matches[0]; // complexCompare는 이미 최근 거래 기준으로 채워져 있다
+    const floorNum = l.floor ? parseInt(l.floor, 10) : null;
     const priceManwon = parseFloat(l.price) * 10000;
-    const diff = recentMatch?.unitPrice != null && areaNum
-      ? priceManwon - recentMatch.unitPrice * (areaNum / 3.3058)
-      : null;
-    return { ...l, recentMatch, diff };
-  }), [myListings, complexCompare]);
+    if (isRent || isRatio || isRone) {
+      return { ...l, comparable: false, reason: '매매 조회 상태에서 비교할 수 있어요.', priceManwon };
+    }
+    const matched = allTxFiltered
+      .filter((t) => t.apt === l.apt && (!l.dong || t.dong === l.dong))
+      .filter((t) => !areaNum || t.area == null || Math.abs(t.area - areaNum) <= 3)
+      .filter((t) => {
+        if (floorNum == null || !Number.isFinite(floorNum)) return true;
+        const f = parseInt(t.floor, 10);
+        return !Number.isFinite(f) || Math.abs(f - floorNum) <= 5;
+      })
+      .filter((t) => t.amount != null)
+      .sort((a, b) => {
+        const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day ?? 0).padStart(2, '0')}`;
+        const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day ?? 0).padStart(2, '0')}`;
+        return db.localeCompare(da);
+      });
+    if (matched.length < 2) {
+      return { ...l, comparable: false, matchCount: matched.length, reason: '비교 자료 부족 (같은 단지·비슷한 면적/층 거래 2건 미만)', priceManwon };
+    }
+    const recent = matched.slice(0, 5);
+    const avg = recent.reduce((sum, t) => sum + t.amount, 0) / recent.length;
+    const latest = matched[0];
+    const nowYm = ymNow();
+    const monthsAgo = (parseInt(nowYm.slice(0, 4), 10) * 12 + parseInt(nowYm.slice(4), 10))
+      - (latest.year * 12 + latest.month);
+    const diff = priceManwon - avg;
+    return {
+      ...l, comparable: true, matchCount: matched.length, usedCount: recent.length, avg, diff, priceManwon,
+      diffPct: (diff / avg) * 100, latestYm: `${latest.year}.${String(latest.month).padStart(2, '0')}`, monthsAgo,
+    };
+  }), [myListings, allTxFiltered, isRent, isRatio, isRone]);
 
   const priceMoveMatches = useMemo(() => {
     if (priceMoveFilter === 'all') return null;
@@ -3718,7 +3756,7 @@ export default function Page() {
             <input placeholder="층" value={listingForm.floor} onChange={(e) => setListingForm({ ...listingForm, floor: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
             <input placeholder="호가(억원)" type="number" value={listingForm.price} onChange={(e) => setListingForm({ ...listingForm, price: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
             <select value={listingForm.status} onChange={(e) => setListingForm({ ...listingForm, status: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }}>
-              {['관심', '보류', '제외'].map((s) => <option key={s} value={s}>{s}</option>)}
+              {LISTING_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
             </select>
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -3743,29 +3781,118 @@ export default function Page() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <select value={l.status} onChange={(e) => updateListingStatus(l.id, e.target.value)} style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: `1px solid ${PALETTE.border}` }}>
-                        {['관심', '보류', '제외'].map((s) => <option key={s} value={s}>{s}</option>)}
+                        {LISTING_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
                       </select>
                       <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeListing(l.id)} />
                     </div>
                   </div>
-                  {l.recentMatch ? (
+                  {l.history && l.history.length > 1 && (
+                    <div style={{ marginTop: 6, fontSize: 10, color: PALETTE.textMuted }}>
+                      상태 변경 {l.history.length - 1}회 · {l.history.map((h) => `${h.date.slice(5)} ${h.status}`).join(' → ')}
+                    </div>
+                  )}
+                  {l.comparable ? (
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}`, fontSize: 11.5 }}>
-                      같은 단지 최근 실거래 평당가 <b>{fmtManwon(Math.round(l.recentMatch.unitPrice))}</b>
-                      {l.diff != null && (
-                        <span style={{ marginLeft: 8, color: l.diff > 0 ? PALETTE.down : PALETTE.up }}>
-                          호가가 추정 실거래가보다 {l.diff > 0 ? '+' : ''}{fmtManwon(Math.round(l.diff))} {l.diff > 0 ? '높음' : '낮음'}
-                        </span>
-                      )}
+                      비슷한 최근 실거래 {l.usedCount}건 평균 <b>{fmtManwon(Math.round(l.avg))}</b>
+                      <span style={{ marginLeft: 8, color: l.diff > 0 ? PALETTE.down : PALETTE.up }}>
+                        호가와 차이 {l.diff > 0 ? '+' : ''}{fmtManwon(Math.round(l.diff))} ({l.diffPct > 0 ? '+' : ''}{l.diffPct.toFixed(1)}%)
+                      </span>
+                      <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>
+                        가장 최근 매칭 거래 {l.latestYm}{l.monthsAgo > 0 ? ` (${l.monthsAgo}개월 전)` : ''}
+                        {l.monthsAgo >= 6 ? ' · 오래된 거래라 현재 시세와 차이가 클 수 있어요' : ''}
+                        · 협상 여지나 적정가를 판단하는 값이 아니라 참고용 차이예요.
+                      </div>
                     </div>
                   ) : (
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${PALETTE.border}`, fontSize: 10.5, color: PALETTE.textMuted }}>
-                      같은 이름의 단지가 현재 조회된 실거래에 없어요. 그 지역을 선택하면 비교할 수 있어요.
+                      {l.reason || '비교 자료 부족'} 해당 지역을 선택해 조회하면 비교할 수 있어요.
                     </div>
                   )}
                 </div>
               ))}
             </div>
           )}
+        </div>
+
+        <div style={{ ...styles.card, marginTop: 16 }} className="ui-card">
+          <h2 style={styles.sectionTitle}>자금 계획 시나리오 (월 상환액)</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            매매가와 보유 현금을 넣으면 취득세를 더한 초기 필요자금과, 금리별 월 상환액(원리금균등)을 비교해줘요.
+            세금·대출 규정은 개인 조건과 시점에 따라 달라서, 실제 심사·세무 계산을 대체하지 않는 가정 기반 참고용이에요.
+          </p>
+          {myListings.length > 0 && (
+            <select
+              value={scenario.listingId}
+              onChange={(e) => {
+                const l = myListings.find((x) => x.id === e.target.value);
+                setScenario({ ...scenario, listingId: e.target.value, price: l ? l.price : scenario.price });
+              }}
+              style={{ ...styles.select, fontSize: 12.5, marginBottom: 8, maxWidth: 360 }}
+            >
+              <option value="">기록한 매물에서 불러오기 (선택)</option>
+              {myListings.map((l) => <option key={l.id} value={l.id}>{l.apt} {l.area && `${l.area}㎡`} · {l.price}억</option>)}
+            </select>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>매매가(억원)</label>
+              <input type="number" value={scenario.price} onChange={(e) => setScenario({ ...scenario, price: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>보유 현금(억원)</label>
+              <input type="number" value={scenario.cash} onChange={(e) => setScenario({ ...scenario, cash: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>기준 금리(%)</label>
+              <input type="number" step="0.1" value={scenario.rate} onChange={(e) => setScenario({ ...scenario, rate: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>상환기간(년)</label>
+              <input type="number" value={scenario.years} onChange={(e) => setScenario({ ...scenario, years: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            </div>
+          </div>
+          {(() => {
+            const priceM = parseFloat(scenario.price) * 10000;
+            if (!Number.isFinite(priceM) || priceM <= 0) return null;
+            const cashM = (parseFloat(scenario.cash) || 0) * 10000;
+            const tax = calcAcquisitionTax(priceM);
+            const totalNeed = priceM + (tax?.total || 0);
+            const loan = Math.max(0, totalNeed - cashM);
+            const years = parseFloat(scenario.years);
+            const baseRate = parseFloat(scenario.rate);
+            const n = Math.round(years * 12);
+            const monthly = (annualPct) => {
+              if (!loan || !Number.isFinite(n) || n <= 0) return 0;
+              const r = annualPct / 100 / 12;
+              if (r === 0) return loan / n;
+              return (loan * r) / (1 - (1 + r) ** -n);
+            };
+            const rates = [baseRate - 1, baseRate, baseRate + 1].filter((r) => Number.isFinite(r) && r >= 0);
+            return (
+              <div style={{ background: PALETTE.panelAlt, borderRadius: 8, padding: 12, fontSize: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>매매가</span><span>{fmtManwon(priceM)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>+ 취득세 등 (추정)</span><span>{fmtManwon(Math.round(tax?.total || 0))}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 700 }}><span>초기 필요자금</span><span>{fmtManwon(Math.round(totalNeed))}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>− 보유 현금</span><span>{fmtManwon(cashM)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 800, color: loan > 0 ? PALETTE.down : PALETTE.up }}>
+                  <span>{loan > 0 ? '필요한 대출(가정)' : '대출 없이 가능'}</span><span>{fmtManwon(Math.round(loan))}</span>
+                </div>
+                {loan > 0 && (
+                  <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: `repeat(${rates.length}, 1fr)`, gap: 6 }}>
+                    {rates.map((r) => (
+                      <div key={r} style={{ background: PALETTE.panel, borderRadius: 8, padding: '8px 6px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>금리 {r.toFixed(1)}%</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 800, marginTop: 2 }}>월 {fmtManwon(Math.round(monthly(r)))}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                  원리금균등 방식 가정이에요. 실제 대출 가능액은 소득·DSR·LTV·규제지역 여부에 따라 달라지고, 중개보수·이사비 등은 포함하지 않았어요.
+                </p>
+              </div>
+            );
+          })()}
         </div>
       </div>
       ) : (
