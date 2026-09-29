@@ -1003,6 +1003,25 @@ export default function Page() {
   // 지형(경사도)·동지 일조 — 단지 좌표만 있으면 외부 키 없이 계산할 수 있다.
   // 경사도는 Open-Meteo 고도 API(무료, 키 불필요)로 중심점과 동·서·남·북 약 170m 지점의 고도를 읽어 추정한다.
   const [terrainInfo, setTerrainInfo] = useState(null);
+  const [poiInfo, setPoiInfo] = useState(null);
+  const [poiLoading, setPoiLoading] = useState(false);
+  useEffect(() => {
+    setPoiInfo(null);
+    if (!selectedApt) return undefined;
+    const centroid = findDongCentroid(selectedApt.regionCode, selectedApt.dong);
+    const lat = selectedApt.lat ?? centroid?.lat;
+    const lng = selectedApt.lng ?? centroid?.lng;
+    if (lat == null || lng == null) return undefined;
+    let cancelled = false;
+    setPoiLoading(true);
+    fetch(`/api/poi?lat=${lat}&lng=${lng}&radius=500`)
+      .then((res) => res.json())
+      .then((json) => { if (!cancelled && !json.error) setPoiInfo(json); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPoiLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApt]);
   const [terrainLoading, setTerrainLoading] = useState(false);
   useEffect(() => {
     setTerrainInfo(null);
@@ -4716,6 +4735,25 @@ export default function Page() {
                 </p>
               </div>
             )}
+            {poiLoading && (
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>주변시설 조회 중...</p>
+            )}
+            {poiInfo?.results?.length > 0 && (
+              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>🏪 반경 {poiInfo.radius}m 주변시설</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 8 }}>
+                  {poiInfo.results.map((r) => (
+                    <div key={r.code} title={r.sample?.join(', ')} style={{ background: PALETTE.panel, borderRadius: 8, padding: '8px 6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800 }}>{r.count != null ? `${r.count}개` : '-'}</div>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                  단지 좌표 기준 반경 {poiInfo.radius}m 이내 개수예요 (카카오맵 장소 검색). 실제 도보 접근성과는 차이가 있을 수 있어요.
+                </p>
+              </div>
+            )}
             {gongsiInfo?.rows?.length > 0 && (
               <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700 }}>공동주택 공시가격 (브이월드)</span>
@@ -4796,6 +4834,14 @@ export default function Page() {
                 {aptBasicInfo?.households && <span style={styles.chip}>세대수 {aptBasicInfo.households}</span>}
                 {aptBasicInfo?.dongCount && <span style={styles.chip}>{aptBasicInfo.dongCount}개동</span>}
                 {aptBasicInfo?.useDate && <span style={styles.chip}>준공 {String(aptBasicInfo.useDate).slice(0, 4)}년</span>}
+                {aptBasicInfo?.useDate && (() => {
+                  const buildY = parseInt(String(aptBasicInfo.useDate).slice(0, 4), 10);
+                  if (!Number.isFinite(buildY)) return null;
+                  const age = new Date().getFullYear() - buildY;
+                  const label = age <= 5 ? '신축' : age <= 10 ? '준신축' : age <= 20 ? '구축' : '노후단지';
+                  const color = age <= 5 ? PALETTE.up : age <= 10 ? PALETTE.accent : age <= 20 ? PALETTE.textSecondary : PALETTE.down;
+                  return <span style={{ ...styles.chip, color, borderColor: color }}>{label} (준공 {age}년차)</span>;
+                })()}
                 {aptBasicInfo?.builder && <span style={styles.chip}>시공 {aptBasicInfo.builder}</span>}
                 {nearestStationInfo && (
                   <span style={styles.chip}>
