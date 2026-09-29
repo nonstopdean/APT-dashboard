@@ -7,13 +7,14 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount,
+  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, stations,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const polygonsRef = useRef([]); // [{ polygon, featureIndex }] - 구 단위
   const dongPolygonsRef = useRef([]); // [{ polygon, featureIndex }] - 동 단위
   const markersRef = useRef([]); // [{ marker, key }]
+  const stationMarkersRef = useRef([]);
   const clustererRef = useRef([]); // [{ overlay }]
   const clusterSignatureRef = useRef('');
   const districtMetaRef = useRef([]);
@@ -636,6 +637,31 @@ export default function NaverChoropleth({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complexes]);
+
+  // 지하철역 레이어 — 화면 범위 안의 역만 부모가 넘겨주므로 단순히 그대로 그린다.
+  useEffect(() => {
+    if (!mapRef.current || !window.naver?.maps) return undefined;
+    stationMarkersRef.current.forEach((m) => m.setMap(null));
+    stationMarkersRef.current = [];
+    if (!stations || stations.length === 0) return undefined;
+    const html = (name) => `
+      <div style="display:flex;align-items:center;gap:3px;background:#fff;border:1.5px solid #2F6FE0;border-radius:12px;padding:2px 7px;box-shadow:0 1px 4px rgba(0,0,0,0.2);white-space:nowrap;">
+        <span style="font-size:11px;">🚇</span><span style="font-size:10.5px;font-weight:700;color:#2F6FE0;">${name}</span>
+      </div>`;
+    stations.forEach((s) => {
+      const marker = new window.naver.maps.Marker({
+        position: new window.naver.maps.LatLng(s.lat, s.lng),
+        map: mapRef.current,
+        icon: { content: html(s.n), anchor: new window.naver.maps.Point(10, 10) },
+        zIndex: 50,
+      });
+      stationMarkersRef.current.push(marker);
+    });
+    return () => {
+      stationMarkersRef.current.forEach((m) => m.setMap(null));
+      stationMarkersRef.current = [];
+    };
+  }, [stations]);
 
   if (!process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID) return null;
   if (loadFailed) {

@@ -11,7 +11,7 @@ import {
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode, isRegulatedByCode } from '../lib/regions';
 import { fetchDongGeoForSido, normalizeDongName } from '../lib/dong-geo';
-import { nearestStation } from '../lib/subway';
+import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
@@ -1595,6 +1595,7 @@ export default function Page() {
   const [mapFocusKeys, setMapFocusKeys] = useState(null); // Set<string> | null
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
+  const [subwayLayerOn, setSubwayLayerOn] = useState(false);
   const [visibleMarkerCount, setVisibleMarkerCount] = useState(null);
 
   // 지금 보고 있는 단지 주변(반경 내) 다른 단지들을 자동으로 찾아 비교한다 (아실/호갱노노 스타일).
@@ -1695,6 +1696,7 @@ export default function Page() {
     return {
       ...l, comparable: true, matchCount: matched.length, usedCount: recent.length, avg, diff, priceManwon,
       diffPct: (diff / avg) * 100, latestYm: `${latest.year}.${String(latest.month).padStart(2, '0')}`, monthsAgo,
+      matchedRegionCode: latest.regionCode, matchedDong: latest.dong,
     };
   }), [myListings, allTxFiltered, isRent, isRatio, isRone]);
 
@@ -1715,6 +1717,15 @@ export default function Page() {
   }, [mapFocusKeys, mapComplexes]);
 
   // "단지 탐색" 패널을 현재 지도 화면 범위에 맞춰 보여준다 — 지도를 옮기면 목록도 같이 바뀐다.
+  // 지도 화면 범위 안의 지하철역만 골라서 레이어로 보여준다 (전국 역을 다 그리면 무거워진다).
+  const visibleStations = useMemo(() => {
+    if (!subwayLayerOn || !mapViewportBounds) return [];
+    return allStations().filter((s) => (
+      s.lat >= mapViewportBounds.swLat && s.lat <= mapViewportBounds.neLat
+      && s.lng >= mapViewportBounds.swLng && s.lng <= mapViewportBounds.neLng
+    )).slice(0, 200);
+  }, [subwayLayerOn, mapViewportBounds]);
+
   const mapPanelList = useMemo(() => {
     if (!mapViewportBounds) return complexCompare.slice(0, 40);
     const filtered = complexCompare.filter((c) => {
@@ -2169,6 +2180,7 @@ export default function Page() {
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
+            stations={visibleStations}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -2795,6 +2807,19 @@ export default function Page() {
               title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
             >
               {dongLayerOn ? '🗺️ 동 색칠 켜짐' : '⚡ 동 색칠 끔 (가벼운 모드)'}
+            </button>
+            <button
+              className="portal-pill"
+              onClick={() => setSubwayLayerOn((v) => !v)}
+              style={{
+                pointerEvents: 'auto', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
+                padding: '9px 12px', background: 'rgba(255,255,255,0.96)', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+                fontSize: 12, fontWeight: subwayLayerOn ? 700 : 500,
+                color: subwayLayerOn ? PALETTE.accent : PALETTE.textSecondary, whiteSpace: 'nowrap',
+              }}
+              title="화면에 보이는 범위의 지하철역을 지도에 표시해요"
+            >
+              🚇 지하철역{subwayLayerOn ? ' 켜짐' : ''}
             </button>
             {!isRent && !isRatio && !isRone && (
               <div style={{
@@ -3526,7 +3551,12 @@ export default function Page() {
             {advancedAnalytics.momentum.map((r, i) => (
               <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '42px 1fr 100px 90px', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}`, alignItems: 'center' }}>
                 <b>{i + 1}</b>
-                <span style={{ fontSize: 12, fontWeight: 700, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>{r.apt}<small style={{ display: 'block', fontWeight: 400, color: PALETTE.textMuted }}>{r.dong}</small></span>
+                <span style={{ fontSize: 12, fontWeight: 700, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>
+                  {r.apt}
+                  <small style={{ display: 'block', fontWeight: 400, color: PALETTE.textMuted }}>
+                    {r.dong} · 표본 {r.volume}건{r.volume <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
+                  </small>
+                </span>
                 <span>{fmtWon(r.latest)}</span>
                 <b style={{ color: r.mom >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(r.mom)}</b>
               </div>
@@ -3580,19 +3610,25 @@ export default function Page() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>신고가 후보</h2>
+              <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>기간 내 마지막 거래가 그 단지의 가장 비쌌던 거래일 때예요. 표본이 적으면 우연일 수 있어요.</p>
               {advancedAnalytics.highs.map((r) => (
                 <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
                   <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.up }}>{fmtWon(r.latest)}</span>
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.dong} · 최고가 갱신</div>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>
+                    {r.dong} · 최고가 갱신 · 표본 {r.volume}건{r.volume <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
+                  </div>
                 </div>
               ))}
             </div>
             <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>고점 대비 하락폭</h2>
+              <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>표본이 적으면 우연한 한두 건 차이일 수 있어요.</p>
               {advancedAnalytics.drawdowns.map((r) => (
                 <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
                   <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.down }}>{fmtPct(r.drawdown)}</span>
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.dong} · 현재 {fmtWon(r.latest)} / 고점 {fmtWon(r.high)}</div>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>
+                    {r.dong} · 현재 {fmtWon(r.latest)} / 고점 {fmtWon(r.high)} · 표본 {r.volume}건{r.volume <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
+                  </div>
                 </div>
               ))}
             </div>
@@ -3802,6 +3838,22 @@ export default function Page() {
                         {l.monthsAgo >= 6 ? ' · 오래된 거래라 현재 시세와 차이가 클 수 있어요' : ''}
                         · 협상 여지나 적정가를 판단하는 값이 아니라 참고용 차이예요.
                       </div>
+                      {(() => {
+                        const pinKey = { apt: l.apt, dong: l.matchedDong, regionCode: l.matchedRegionCode };
+                        const isPinned = pinnedComplexes.some((p) => p.apt === pinKey.apt && p.dong === pinKey.dong && p.regionCode === pinKey.regionCode);
+                        return (
+                          <button
+                            className="ui-btn"
+                            style={{ ...styles.btn, width: 'auto', padding: '4px 9px', fontSize: 10.5, marginTop: 6, background: isPinned ? PALETTE.up : undefined }}
+                            disabled={!isPinned && pinnedComplexes.length >= 5}
+                            onClick={() => setPinnedComplexes((prev) => (isPinned
+                              ? prev.filter((p) => !(p.apt === pinKey.apt && p.dong === pinKey.dong && p.regionCode === pinKey.regionCode))
+                              : prev.length >= 5 ? prev : [...prev, pinKey]))}
+                          >
+                            {isPinned ? '✓ 비교 목록에 있음' : `📊 비교 목록에 추가 (${pinnedComplexes.length}/5)`}
+                          </button>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${PALETTE.border}`, fontSize: 10.5, color: PALETTE.textMuted }}>
