@@ -313,6 +313,31 @@ export default function Page() {
     )));
   };
 
+  // 현장답사 체크리스트 — 온라인 통계에 없는 방문 확인 정보를 이 기기에만 저장한다.
+  const VISIT_CHECK_ITEMS = ['주차', '소음', '일조', '관리상태', '동간거리', '주변환경'];
+  const VISIT_RATINGS = ['좋음', '보통', '나쁨'];
+  const [myVisits, setMyVisits] = useState([]);
+  const [visitForm, setVisitForm] = useState({
+    apt: '', dong: '', memo: '', checks: Object.fromEntries(VISIT_CHECK_ITEMS.map((k) => [k, ''])),
+  });
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('myVisits') || '[]');
+      if (Array.isArray(saved)) setMyVisits(saved);
+    } catch (e) { /* 저장된 값이 손상된 경우 무시 */ }
+  }, []);
+  const saveVisits = (next) => {
+    setMyVisits(next);
+    try { localStorage.setItem('myVisits', JSON.stringify(next)); } catch (e) { /* 저장 실패는 조용히 무시 */ }
+  };
+  const addVisit = () => {
+    if (!visitForm.apt) return;
+    const entry = { ...visitForm, id: `${Date.now()}`, visitedAt: new Date().toISOString().slice(0, 10) };
+    saveVisits([entry, ...myVisits]);
+    setVisitForm({ apt: '', dong: '', memo: '', checks: Object.fromEntries(VISIT_CHECK_ITEMS.map((k) => [k, ''])) });
+  };
+  const removeVisit = (id) => saveVisits(myVisits.filter((v) => v.id !== id));
+
   const [alertFormOpen, setAlertFormOpen] = useState(false);
   const [alertTargetPrice, setAlertTargetPrice] = useState('');
   const [alertDirection, setAlertDirection] = useState('below');
@@ -3879,6 +3904,66 @@ export default function Page() {
                       {l.reason || '비교 자료 부족'} 해당 지역을 선택해 조회하면 비교할 수 있어요.
                     </div>
                   )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ ...styles.card, marginTop: 16 }} className="ui-card">
+          <h2 style={styles.sectionTitle}>현장답사 체크리스트</h2>
+          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+            직접 가서 확인한 내용을 기록해두면 나중에 단지끼리 비교할 때 도움이 돼요. 이 기기(브라우저)에만 저장돼요.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8, marginBottom: 10 }}>
+            <input placeholder="단지명" value={visitForm.apt} onChange={(e) => setVisitForm({ ...visitForm, apt: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+            <input placeholder="동(선택)" value={visitForm.dong} onChange={(e) => setVisitForm({ ...visitForm, dong: e.target.value })} style={{ ...styles.select, fontSize: 12.5 }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10 }}>
+            {VISIT_CHECK_ITEMS.map((item) => (
+              <div key={item}>
+                <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{item}</label>
+                <select
+                  value={visitForm.checks[item]}
+                  onChange={(e) => setVisitForm({ ...visitForm, checks: { ...visitForm.checks, [item]: e.target.value } })}
+                  style={{ ...styles.select, fontSize: 12.5 }}
+                >
+                  <option value="">-</option>
+                  {VISIT_RATINGS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <input placeholder="메모 (예: 남향 위주 동, 엘리베이터 대기 김)" value={visitForm.memo} onChange={(e) => setVisitForm({ ...visitForm, memo: e.target.value })} style={{ ...styles.select, fontSize: 12.5, flex: 1 }} />
+            <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '8px 16px' }} onClick={addVisit} disabled={!visitForm.apt}>+ 기록</button>
+          </div>
+          {myVisits.length === 0 ? (
+            <p style={{ fontSize: 13, color: PALETTE.textMuted }}>아직 기록한 답사가 없어요.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {myVisits.map((v) => (
+                <div key={v.id} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {v.apt} <span style={{ fontWeight: 400, color: PALETTE.textMuted, fontSize: 11 }}>{v.dong && `(${v.dong})`} · 방문일 {v.visitedAt}</span>
+                      </div>
+                      {v.memo && <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>{v.memo}</div>}
+                    </div>
+                    <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer', flexShrink: 0 }} onClick={() => removeVisit(v.id)} />
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {VISIT_CHECK_ITEMS.filter((item) => v.checks?.[item]).map((item) => {
+                      const val = v.checks[item];
+                      const color = val === '좋음' ? PALETTE.up : val === '나쁨' ? PALETTE.down : PALETTE.textSecondary;
+                      return (
+                        <span key={item} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: PALETTE.panel, color }}>
+                          {item} {val}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
