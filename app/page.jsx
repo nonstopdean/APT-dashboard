@@ -345,6 +345,17 @@ export default function Page() {
     return null;
   }, [selected]);
 
+  const currentSidoFull = useMemo(() => {
+    if (selected.length === 0) return null;
+    const firstCode = selected[0];
+    for (const g of REGION_GROUPS) {
+      if (g.items.some((it) => it.code === firstCode) || SIDO_AGGREGATES.some((a) => a.code === firstCode && a.sido === g.sido)) {
+        return g.sido;
+      }
+    }
+    return null;
+  }, [selected]);
+
   useEffect(() => {
     setSubscriptions([]);
     if (!currentSidoShort) return undefined;
@@ -1627,6 +1638,30 @@ export default function Page() {
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
   const [subwayLayerOn, setSubwayLayerOn] = useState(false);
+  const [schoolLayerOn, setSchoolLayerOn] = useState(false);
+  const [schoolLocations, setSchoolLocations] = useState([]);
+  const [schoolLocationsLoading, setSchoolLocationsLoading] = useState(false);
+  const schoolLocationsCacheRef = useRef({}); // sido(전체이름) -> schools[]
+
+  useEffect(() => {
+    if (!schoolLayerOn || !currentSidoFull) { setSchoolLocations([]); return undefined; }
+    const cached = schoolLocationsCacheRef.current[currentSidoFull];
+    if (cached) { setSchoolLocations(cached); return undefined; }
+    let cancelled = false;
+    setSchoolLocationsLoading(true);
+    fetch(`/api/school-locations?sido=${encodeURIComponent(currentSidoFull)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const schools = json?.schools || [];
+        schoolLocationsCacheRef.current[currentSidoFull] = schools;
+        setSchoolLocations(schools);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSchoolLocationsLoading(false); });
+    return () => { cancelled = true; };
+  }, [schoolLayerOn, currentSidoFull]);
+
   const [visibleMarkerCount, setVisibleMarkerCount] = useState(null);
 
   // 지금 보고 있는 단지 주변(반경 내) 다른 단지들을 자동으로 찾아 비교한다 (아실/호갱노노 스타일).
@@ -1767,6 +1802,14 @@ export default function Page() {
       && s.lng >= mapViewportBounds.swLng && s.lng <= mapViewportBounds.neLng
     )).slice(0, 200);
   }, [subwayLayerOn, mapViewportBounds]);
+
+  const visibleSchoolLocations = useMemo(() => {
+    if (!schoolLayerOn || !mapViewportBounds) return [];
+    return schoolLocations.filter((s) => (
+      s.lat >= mapViewportBounds.swLat && s.lat <= mapViewportBounds.neLat
+      && s.lng >= mapViewportBounds.swLng && s.lng <= mapViewportBounds.neLng
+    )).slice(0, 200);
+  }, [schoolLayerOn, mapViewportBounds, schoolLocations]);
 
   const mapPanelList = useMemo(() => {
     if (!mapViewportBounds) return complexCompare.slice(0, 40);
@@ -2636,6 +2679,8 @@ export default function Page() {
           setSelectedApt={setSelectedApt} dongMapData={dongMapData} setMapZoomTier={setMapZoomTier}
           setMapViewportBounds={setMapViewportBounds} setVisibleMarkerCount={setVisibleMarkerCount}
           visibleStations={visibleStations}
+          schoolLayerOn={schoolLayerOn} setSchoolLayerOn={setSchoolLayerOn}
+          visibleSchoolLocations={visibleSchoolLocations} schoolLocationsLoading={schoolLocationsLoading}
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}

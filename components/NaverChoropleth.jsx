@@ -7,7 +7,7 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, stations,
+  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, stations, schools,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -15,6 +15,7 @@ export default function NaverChoropleth({
   const dongPolygonsRef = useRef([]); // [{ polygon, featureIndex }] - 동 단위
   const markersRef = useRef([]); // [{ marker, key }]
   const stationMarkersRef = useRef([]);
+  const schoolMarkersRef = useRef([]);
   const clustererRef = useRef([]); // [{ overlay }]
   const clusterSignatureRef = useRef('');
   const districtMetaRef = useRef([]);
@@ -662,6 +663,31 @@ export default function NaverChoropleth({
       stationMarkersRef.current = [];
     };
   }, [stations]);
+
+  // 학교 레이어 — 역과 같은 방식: 화면 범위 안의 학교만 부모가 넘겨주면 그대로 그린다.
+  useEffect(() => {
+    if (!mapRef.current || !window.naver?.maps) return undefined;
+    schoolMarkersRef.current.forEach((m) => m.setMap(null));
+    schoolMarkersRef.current = [];
+    if (!schools || schools.length === 0) return undefined;
+    const html = (name, kind) => `
+      <div style="display:flex;align-items:center;gap:3px;background:#fff;border:1.5px solid #2E9E5B;border-radius:12px;padding:2px 7px;box-shadow:0 1px 4px rgba(0,0,0,0.2);white-space:nowrap;">
+        <span style="font-size:11px;">🏫</span><span style="font-size:10.5px;font-weight:700;color:#2E9E5B;">${name}${kind ? ` (${kind})` : ''}</span>
+      </div>`;
+    schools.forEach((s) => {
+      const marker = new window.naver.maps.Marker({
+        position: new window.naver.maps.LatLng(s.lat, s.lng),
+        map: mapRef.current,
+        icon: { content: html(s.name, s.kind), anchor: new window.naver.maps.Point(10, 10) },
+        zIndex: 49,
+      });
+      schoolMarkersRef.current.push(marker);
+    });
+    return () => {
+      schoolMarkersRef.current.forEach((m) => m.setMap(null));
+      schoolMarkersRef.current = [];
+    };
+  }, [schools]);
 
   if (!process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID) return null;
   if (loadFailed) {

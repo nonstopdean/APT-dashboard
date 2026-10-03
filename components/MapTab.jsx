@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
@@ -15,6 +15,7 @@ export default function MapTab({
   mapError, seoulMapData, addRegionAndFetch, focusLatLng,
   mapFocusMatches, budgetMatches, priceMoveMatches, mapComplexes,
   setSelectedApt, dongMapData, setMapZoomTier, setMapViewportBounds, setVisibleMarkerCount, visibleStations,
+  schoolLayerOn, setSchoolLayerOn, visibleSchoolLocations, schoolLocationsLoading,
   dealType, setDealTypeSafe, isRone, isRatio, isRent,
   mapColorMode, setMapColorMode,
   budgetSearchOpen, setBudgetSearchOpen, budgetAmount, setBudgetAmount,
@@ -28,6 +29,8 @@ export default function MapTab({
   mapViewportBounds, mapPanelList,
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
 }) {
+  const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>{content}</div>
@@ -73,6 +76,7 @@ export default function MapTab({
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
             stations={visibleStations}
+            schools={visibleSchoolLocations}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -188,27 +192,6 @@ export default function MapTab({
               </button>
             ))}
           </div>
-          {!isRone && !isRatio && (
-            <div style={{
-              pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 4,
-              background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
-              borderRadius: 12, padding: 5, boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
-              backdropFilter: 'blur(8px)',
-            }}
-            >
-              {[['price', '가격'], ['volume', '거래량']].map(([key, label]) => (
-                <button key={key} className="portal-pill" onClick={() => setMapColorMode(key)} style={{
-                  border: 'none', borderRadius: 9, padding: '8px 12px', whiteSpace: 'nowrap',
-                  background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
-                  color: mapColorMode === key ? '#fff' : PALETTE.textSecondary,
-                  fontSize: 12, fontWeight: mapColorMode === key ? 700 : 500, cursor: 'pointer',
-                }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
           {!isRatio && !isRone && (
             <div style={{
               pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6,
@@ -243,55 +226,92 @@ export default function MapTab({
               )}
             </div>
           )}
-          <button
-            className="portal-pill"
-            onClick={() => setDongLayerOn((v) => !v)}
-            style={{
-              pointerEvents: 'auto', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
-              padding: '9px 12px', background: 'rgba(255,255,255,0.96)', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
-              fontSize: 12, fontWeight: dongLayerOn ? 500 : 700,
-              color: dongLayerOn ? PALETTE.textSecondary : PALETTE.accent, whiteSpace: 'nowrap',
-            }}
-            title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
-          >
-            {dongLayerOn ? '🗺️ 동 색칠 켜짐' : '⚡ 동 색칠 끔 (가벼운 모드)'}
-          </button>
-          <button
-            className="portal-pill"
-            onClick={() => setSubwayLayerOn((v) => !v)}
-            style={{
-              pointerEvents: 'auto', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
-              padding: '9px 12px', background: 'rgba(255,255,255,0.96)', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
-              fontSize: 12, fontWeight: subwayLayerOn ? 700 : 500,
-              color: subwayLayerOn ? PALETTE.accent : PALETTE.textSecondary, whiteSpace: 'nowrap',
-            }}
-            title="화면에 보이는 범위의 지하철역을 지도에 표시해요"
-          >
-            🚇 지하철역{subwayLayerOn ? ' 켜짐' : ''}
-          </button>
-          {!isRent && !isRatio && !isRone && (
-            <div style={{
-              pointerEvents: 'auto', display: 'flex', gap: 2,
-              background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
-              borderRadius: 12, padding: 4, boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
-            }}
+          <div style={{ pointerEvents: 'auto', position: 'relative' }}>
+            <button
+              className="portal-pill"
+              onClick={() => setLayerPanelOpen((v) => !v)}
+              style={{
+                border: `1px solid ${layerPanelOpen ? PALETTE.accent : PALETTE.border}`, borderRadius: 12,
+                padding: '9px 12px', background: 'rgba(255,255,255,0.96)', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+                fontSize: 12, fontWeight: 700,
+                color: layerPanelOpen ? PALETTE.accent : PALETTE.textPrimary, whiteSpace: 'nowrap',
+              }}
             >
-              {[['all', '전체'], ['high', '📈 신고가'], ['drop', '📉 하락']].map(([k, l]) => (
-                <button
-                  key={k}
-                  onClick={() => setPriceMoveFilter(k)}
-                  style={{
-                    border: 'none', borderRadius: 9, padding: '6px 9px', whiteSpace: 'nowrap',
-                    background: priceMoveFilter === k ? PALETTE.textPrimary : 'transparent',
-                    color: priceMoveFilter === k ? '#fff' : PALETTE.textSecondary,
-                    fontSize: 11.5, fontWeight: priceMoveFilter === k ? 700 : 500, cursor: 'pointer',
-                  }}
+              🗂️ 레이어
+            </button>
+            {layerPanelOpen && (
+              <div style={{
+                position: 'absolute', top: '110%', left: 0, width: 230, zIndex: 25,
+                background: 'rgba(255,255,255,0.98)', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.14)', padding: 10, backdropFilter: 'blur(10px)',
+              }}
+              >
+                {!isRone && !isRatio && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>색칠 기준</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[['price', '가격'], ['volume', '거래량']].map(([key, label]) => (
+                        <button key={key} onClick={() => setMapColorMode(key)} style={{
+                          flex: 1, border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
+                          background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
+                          color: mapColorMode === key ? '#fff' : PALETTE.textSecondary,
+                          fontSize: 11.5, fontWeight: mapColorMode === key ? 700 : 500, cursor: 'pointer',
+                        }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div
+                  onClick={() => setDongLayerOn((v) => !v)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+                  title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
                 >
-                  {l}
-                </button>
-              ))}
-            </div>
-          )}
+                  <span style={{ fontSize: 12 }}>🗺️ 동 경계·색칠</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: dongLayerOn ? PALETTE.up : PALETTE.textMuted }}>{dongLayerOn ? '켜짐' : '꺼짐'}</span>
+                </div>
+                <div
+                  onClick={() => setSubwayLayerOn((v) => !v)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+                  title="화면에 보이는 범위의 지하철역을 지도에 표시해요"
+                >
+                  <span style={{ fontSize: 12 }}>🚇 지하철역</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: subwayLayerOn ? PALETTE.up : PALETTE.textMuted }}>{subwayLayerOn ? '켜짐' : '꺼짐'}</span>
+                </div>
+                <div
+                  onClick={() => setSchoolLayerOn((v) => !v)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+                  title="화면에 보이는 범위의 초·중학교를 지도에 표시해요"
+                >
+                  <span style={{ fontSize: 12 }}>🏫 학교{schoolLocationsLoading ? ' (불러오는 중)' : ''}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: schoolLayerOn ? PALETTE.up : PALETTE.textMuted }}>{schoolLayerOn ? '켜짐' : '꺼짐'}</span>
+                </div>
+                {!isRent && !isRatio && !isRone && (
+                  <div style={{ marginTop: 6, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
+                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>단지 필터</div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {[['all', '전체'], ['high', '📈 신고가'], ['drop', '📉 하락']].map(([k, l]) => (
+                        <button
+                          key={k}
+                          onClick={() => setPriceMoveFilter(k)}
+                          style={{
+                            flex: 1, border: `1px solid ${priceMoveFilter === k ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
+                            background: priceMoveFilter === k ? PALETTE.textPrimary : 'transparent',
+                            color: priceMoveFilter === k ? '#fff' : PALETTE.textSecondary,
+                            fontSize: 11, fontWeight: priceMoveFilter === k ? 700 : 500, cursor: 'pointer',
+                          }}
+                        >
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="map-status-card" style={{
             marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
             border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
