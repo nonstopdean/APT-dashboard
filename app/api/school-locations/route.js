@@ -25,9 +25,15 @@ export async function GET(request) {
     const numOfRows = 1000;
     // 한 시/도에 학교가 많아도(서울 1,300여 개 등) 넉넉히 받아오되, 과도한 호출은 막는다.
     for (let i = 0; i < 5; i += 1) {
+      // debug 모드에서는 lnmadr 대신 schoolNm 등 다른 조합도 ?debugParam=값 형태로 바로 테스트할 수 있게 한다.
+      const debugParamName = searchParams.get('debugParamName');
+      const debugParamValue = searchParams.get('debugParamValue');
+      const filterParam = (debug && debugParamName)
+        ? `&${debugParamName}=${encodeURIComponent(debugParamValue || '')}`
+        : `&cddcNm=${encodeURIComponent(`${sido}교육청`)}`;
       const url = `https://api.data.go.kr/openapi/tn_pubr_public_elesch_mskul_lc_api`
         + `?serviceKey=${apiKey}&pageNo=${pageNo}&numOfRows=${numOfRows}&type=json`
-        + `&lnmadr=${encodeURIComponent(sido)}`;
+        + filterParam;
       // eslint-disable-next-line no-await-in-loop
       const res = await fetch(url);
       // eslint-disable-next-line no-await-in-loop
@@ -38,7 +44,7 @@ export async function GET(request) {
       if (debug) {
         return Response.json({ status: res.status, url, rawTextSnippet: rawText.slice(0, 2000), parsed: json });
       }
-      const items = json?.response?.body?.items;
+      const items = json?.body?.items ?? json?.response?.body?.items;
       const rows = Array.isArray(items) ? items : (items?.item ? (Array.isArray(items.item) ? items.item : [items.item]) : []);
       if (rows.length === 0) break;
       rows.forEach((r) => {
@@ -50,7 +56,7 @@ export async function GET(request) {
           address: r.lnmadr || r.rdnmadr,
         });
       });
-      const totalCount = parseInt(json?.response?.body?.totalCount, 10) || 0;
+      const totalCount = parseInt(json?.body?.totalCount ?? json?.response?.body?.totalCount, 10) || 0;
       if (schools.length >= totalCount || rows.length < numOfRows) break;
       pageNo += 1;
     }
