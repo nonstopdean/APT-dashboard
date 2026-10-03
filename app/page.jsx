@@ -477,6 +477,33 @@ export default function Page() {
     return () => { cancelled = true; };
   }, [currentSidoShort]);
 
+  const [migrationRows, setMigrationRows] = useState([]);
+  const [migrationLoading, setMigrationLoading] = useState(false);
+  const migrationCacheRef = useRef({}); // sido -> rows
+
+  useEffect(() => {
+    setMigrationRows([]);
+    if (!currentSidoShort) return undefined;
+    const cached = migrationCacheRef.current[currentSidoShort];
+    if (cached) {
+      setMigrationRows(cached);
+      return undefined;
+    }
+    let cancelled = false;
+    setMigrationLoading(true);
+    fetch(`/api/migration?sido=${encodeURIComponent(currentSidoShort)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        const rows = json?.rows || [];
+        migrationCacheRef.current[currentSidoShort] = rows;
+        setMigrationRows(rows);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setMigrationLoading(false); });
+    return () => { cancelled = true; };
+  }, [currentSidoShort]);
+
   const aptListCacheRef = useRef({}); // regionCode -> [{kaptCode, kaptName}]
 
   useEffect(() => {
@@ -1679,18 +1706,29 @@ export default function Page() {
 
   // "비슷한 단지"라고 단정하지 않고, 평형(±5평)이 비슷한 단지 중 평당가가 가까운 순으로
   // "비교 조건이 유사한 단지"를 찾는다 — 준공연도·세대수까지 반영한 정교한 유사도는 아니다.
+  // 평형·가격뿐 아니라 거리까지 반영해서 "비슷한 조건"을 찾고, 왜 추천됐는지 이유(거리·평형차·가격차)를
+  // 같이 계산해둔다 — 세대수·준공연도는 현재 열어본 단지에만 있어서 전체 비교에는 아직 못 쓴다.
   const similarComplexes = useMemo(() => {
     if (!selectedApt) return [];
     const selfKey = `${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`;
     const self = complexCompare.find((c) => `${c.regionCode}|${c.dong}|${c.apt}` === selfKey);
     if (!self || self.unitPrice == null || self.pyeong == null) return [];
+    const selfCoord = mapComplexCoordByKey.get(selfKey);
     return complexCompare
       .filter((c) => `${c.regionCode}|${c.dong}|${c.apt}` !== selfKey)
       .filter((c) => c.unitPrice != null && c.pyeong != null && Math.abs(c.pyeong - self.pyeong) <= 5)
-      .map((c) => ({ ...c, priceDiffPct: ((c.unitPrice - self.unitPrice) / self.unitPrice) * 100 }))
-      .sort((a, b) => Math.abs(a.priceDiffPct) - Math.abs(b.priceDiffPct))
+      .map((c) => {
+        const cCoord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`);
+        const distance = (selfCoord && cCoord) ? distanceMeters(selfCoord.lat, selfCoord.lng, cCoord.lat, cCoord.lng) : null;
+        const priceDiffPct = ((c.unitPrice - self.unitPrice) / self.unitPrice) * 100;
+        const pyeongDiff = c.pyeong - self.pyeong;
+        // 점수가 낮을수록 "더 비슷함" — 가격차(%)·거리(km로 환산)·평형차를 단순 합산한다.
+        const score = Math.abs(priceDiffPct) + (distance != null ? distance / 1000 : 3) * 2 + Math.abs(pyeongDiff) * 0.5;
+        return { ...c, priceDiffPct, pyeongDiff, distance, score };
+      })
+      .sort((a, b) => a.score - b.score)
       .slice(0, 6);
-  }, [selectedApt, complexCompare]);
+  }, [selectedApt, complexCompare, mapComplexCoordByKey]);
 
   // "이 가격에 살 수 있는 단지" 역지도 — 예산을 넣으면 그 이하 단지만 남긴다.
   const budgetMatches = useMemo(() => {
@@ -4138,6 +4176,64 @@ export default function Page() {
           );
         })()}
 
+        {migrationLoading && migrationRows.length === 0 && (
+          <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }} className="ui-card">
+            인구이동 추이 불러오는 중...
+          </div>
+        )}
+        {migrationRows.length > 1 && (() => {
+          const byItem = {};
+          migrationRows.forEach((r) => { (byItem[r.itmName] ||= []).push(r); });
+          const itemNames = Object.keys(byItem);
+          const months = [...new Set(migrationRows.map((r) => r.ym))].sort();
+          const chartData = months.map((ym) => {
+            const row = { ym: `${ym.slice(0, 4)}.${ym.slice(4, 6)}` };
+            itemNames.forEach((name) => {
+              const hit = byItem[name].find((r) => r.ym === ym);
+              if (hit) row[name] = hit.value;
+            });
+            return row;
+          });
+          return (
+            <div style={styles.card} className="ui-card">
+              <h2 style={{ ...styles.sectionTitle, marginBottom: 4 }}>{currentSidoShort} 인구이동 추이 (KOSIS)</h2>
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '0 0 8px' }}>
+                국가데이터처 국내인구이동통계 기준, 최근 {months.length}개월
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                {itemNames.map((name, i) => {
+                  const last = byItem[name][byItem[name].length - 1];
+                  return (
+                    <span key={name} style={{ ...styles.chip, color: LINE_COLORS[i % LINE_COLORS.length], borderColor: LINE_COLORS[i % LINE_COLORS.length] }}>
+                      {name} {last?.value?.toLocaleString()}명
+                    </span>
+                  );
+                })}
+              </div>
+              <div style={{ width: '100%', height: 180 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={56}
+                      tickFormatter={(v) => v.toLocaleString()} domain={['auto', 'auto']} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => `${v?.toLocaleString()}명`} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    {itemNames.map((name, i) => (
+                      <Line key={name} type="monotone" dataKey={name} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={false} connectNulls />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
+                항목명은 통계청 KOSIS가 제공하는 명칭을 그대로 표시했어요.
+              </p>
+            </div>
+          );
+        })()}
+
         {subscriptionsLoading && subscriptions.length === 0 && (
           <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }} className="ui-card">
             분양(청약) 정보 불러오는 중...
@@ -5175,9 +5271,9 @@ export default function Page() {
                   </button>
                 </div>
                 <p style={{ fontSize: 10, color: PALETTE.textMuted, margin: '4px 0 8px' }}>
-                  평형(±5평)이 비슷한 단지 중 평당가가 가까운 순이에요. 준공연도·세대수까지 반영한 정밀한 유사도는 아니에요.
+                  평형(±5평)·가격·거리를 종합해 가까운 순이에요. 준공연도·세대수는 아직 전체 비교에 못 써요(지금 보는 단지에만 있어요).
                 </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8 }}>
                   {similarComplexes.map((c) => (
                     <div
                       key={`${c.regionCode}|${c.dong}|${c.apt}`}
@@ -5191,6 +5287,10 @@ export default function Page() {
                         <span style={{ fontSize: 10, color: c.priceDiffPct > 0 ? PALETTE.up : c.priceDiffPct < 0 ? PALETTE.down : PALETTE.textMuted }}>
                           {fmtPct(c.priceDiffPct)}
                         </span>
+                      </div>
+                      <div style={{ fontSize: 9.5, color: PALETTE.textMuted, marginTop: 3 }}>
+                        {c.distance != null && `${c.distance < 1000 ? `${Math.round(c.distance)}m` : `${(c.distance / 1000).toFixed(1)}km`} · `}
+                        평형 {c.pyeongDiff > 0 ? '+' : ''}{c.pyeongDiff.toFixed(0)}평
                       </div>
                     </div>
                   ))}
