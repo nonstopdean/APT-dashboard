@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
+import PinnedCompareDrawer from './PinnedCompareDrawer';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, monthLabel } from '../lib/ui-helpers';
 
@@ -9,6 +10,7 @@ import { PALETTE, fmtWon, fmtArea, monthLabel } from '../lib/ui-helpers';
 // viewMode === 'map' 블록과 renderSeoulMap()을 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 export default function MapTab({
   selectedApt,
+  pinnedComplexes, setPinnedComplexes, complexCompare,
   panelOpen, setPanelOpen, sidebarInner, styles,
   mapError, seoulMapData, addRegionAndFetch, focusLatLng,
   mapFocusMatches, budgetMatches, priceMoveMatches, mapComplexes,
@@ -157,6 +159,11 @@ export default function MapTab({
 
       <div style={{ position: 'relative', flex: 1, touchAction: 'none', minWidth: 0 }}>
         {renderSeoulMap()}
+
+        <PinnedCompareDrawer
+          pinnedComplexes={pinnedComplexes} setPinnedComplexes={setPinnedComplexes}
+          complexCompare={complexCompare} setSelectedApt={setSelectedApt} isRent={isRent}
+        />
 
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
         <div className="map-portal-toolbar" style={{

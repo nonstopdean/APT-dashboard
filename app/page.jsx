@@ -2628,6 +2628,7 @@ export default function Page() {
       {viewMode === 'map' ? (
         <MapTab
           selectedApt={selectedApt}
+          pinnedComplexes={pinnedComplexes} setPinnedComplexes={setPinnedComplexes} complexCompare={complexCompare}
           panelOpen={panelOpen} setPanelOpen={setPanelOpen} sidebarInner={sidebarInner} styles={styles}
           mapError={mapError} seoulMapData={seoulMapData} addRegionAndFetch={addRegionAndFetch} focusLatLng={focusLatLng}
           mapFocusMatches={mapFocusMatches} budgetMatches={budgetMatches} priceMoveMatches={priceMoveMatches}
