@@ -16,16 +16,17 @@ import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
+import SubscriptionsTab from '../components/SubscriptionsTab';
+import AnalyticsTab from '../components/AnalyticsTab';
 import {
   LINE_COLORS, PALETTE, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, slopeClass, labelFor,
-  fmtWon, monthLabel,
+  fmtWon, monthLabel, SIDO_SHORT_NAMES,
 } from '../lib/ui-helpers';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
 
 const DEFAULT_SELECTED = [];
 const LISTING_STATUSES = ['관심', '현장확인', '협의중', '보류', '제외'];
-const SIDO_SHORT_NAMES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'];
 const SIDO_FULL_TO_SHORT = {
   서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주',
   대전광역시: '대전', 울산광역시: '울산', 세종특별자치시: '세종', 경기도: '경기', 강원특별자치도: '강원',
@@ -2661,247 +2662,23 @@ export default function Page() {
           styles={styles}
         />
       ) : viewMode === 'subscriptions' ? (
-      <div style={{ padding: '20px 20px 0' }}>
-        <div style={styles.card} className="ui-card">
-          <h2 style={styles.sectionTitle}>분양(청약) 정보</h2>
-          <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
-            한국부동산원 청약홈 기준, 최근 1년 내 아파트 모집공고예요. 지역을 골라서 확인하세요.
-          </p>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-            <div style={{ maxWidth: 220, flex: 1, minWidth: 160 }}>
-              <select
-                value={subsTabSido}
-                onChange={(e) => setSubsTabSido(e.target.value)}
-                style={{ ...styles.select, fontSize: 13 }}
-              >
-                {SIDO_SHORT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <div style={styles.toggleBtn(subsSubView === 'list')} onClick={() => setSubsSubView('list')}>분양공고 목록</div>
-              <div style={styles.toggleBtn(subsSubView === 'supply')} onClick={() => setSubsSubView('supply')}>입주물량(공급)</div>
-            </div>
-          </div>
-          {subsTabLoading && (
-            <p style={{ fontSize: 12, color: PALETTE.textMuted }}>불러오는 중...</p>
-          )}
-          {!subsTabLoading && subsTabRows.length === 0 && (
-            <p style={{ fontSize: 12, color: PALETTE.textMuted }}>최근 1년 내 모집공고가 없어요.</p>
-          )}
-          {subsSubView === 'supply' && subsTabRows.length > 0 && (
-            <>
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-                {subsTabSido} 지역, 입주예정월 기준 신규 공급 세대수예요. 아파트 청약 공고에 나온 세대수만 반영돼요.
-              </p>
-              <div style={{ width: '100%', height: 260 }}>
-                <ResponsiveContainer>
-                  <BarChart data={supplyByMonth} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
-                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={44} allowDecimals={false} />
-                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                      labelStyle={{ color: PALETTE.textPrimary }}
-                      formatter={(v) => `${v.toLocaleString()}세대`} />
-                    <Bar dataKey="세대수" fill={PALETTE.accent} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-          {subsSubView === 'list' && subsTabRows.length > 0 && (
-            <div style={{ maxHeight: 520, overflowY: 'auto', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>주택명</th>
-                    <th style={styles.th}>위치</th>
-                    <th style={styles.th}>공급규모</th>
-                    <th style={styles.th}>모집공고일</th>
-                    <th style={styles.th}>청약접수</th>
-                    <th style={styles.th}>입주예정</th>
-                    <th style={styles.th}>시공사</th>
-                    <th style={styles.th}>규제</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subsTabRows.map((s, i) => (
-                    <tr key={i}>
-                      <td style={styles.td}>
-                        {s.url ? (
-                          <a href={s.url} target="_blank" rel="noreferrer" style={{ color: PALETTE.accent }}>{s.houseName}</a>
-                        ) : s.houseName}
-                      </td>
-                      <td style={styles.td}>{s.address}</td>
-                      <td style={styles.td}>{s.totalUnits}세대</td>
-                      <td style={styles.td}>{s.announceDate}</td>
-                      <td style={styles.td}>{s.receiptStart} ~ {s.receiptEnd}</td>
-                      <td style={styles.td}>{s.moveInMonth}</td>
-                      <td style={styles.td}>{s.builder}</td>
-                      <td style={styles.td}>
-                        {(s.isSpeculationOverheated || s.isAdjustmentTarget) && (
-                          <span style={{ ...styles.chip, padding: '2px 8px', fontSize: 11 }}>규제</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
+        <SubscriptionsTab
+          subsTabSido={subsTabSido} setSubsTabSido={setSubsTabSido}
+          subsSubView={subsSubView} setSubsSubView={setSubsSubView}
+          subsTabLoading={subsTabLoading} subsTabRows={subsTabRows} supplyByMonth={supplyByMonth}
+          styles={styles}
+        />
       ) : viewMode === 'analytics' ? (
-        <div style={{ padding: '20px 20px 40px', maxWidth: 1400, margin: '0 auto' }}>
-          <div style={{ marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
-            <div>
-              <h1 className="dash-title" style={{ ...styles.sectionTitle, fontSize: 26, marginBottom: 5 }}>순위·통계 분석</h1>
-              <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: 0 }}>현재 조회한 실거래 데이터를 기준으로 가격수준·변동률·거래량·가격범위를 비교합니다.</p>
-            </div>
-            <button className="ui-btn no-print" style={{ ...styles.btn, width: 'auto', padding: '8px 14px', fontSize: 12.5 }} onClick={() => window.print()}>
-              📄 PDF로 내보내기
-            </button>
-          </div>
-          <div style={{ ...styles.card, marginBottom: 14 }} className="ui-card no-print">
-            <label style={styles.label}>분석할 지역 추가</label>
-            <select
-              value={comparePickerValue}
-              onChange={(e) => addRegionAndFetch(e.target.value)}
-              style={{ ...styles.select, fontSize: 13, maxWidth: 320 }}
-            >
-              <option value="">시/도 - 시/군/구 선택</option>
-              {REGION_GROUPS.map((g) => {
-                const agg = SIDO_AGGREGATES.find((a) => a.sido === g.sido);
-                return (
-                  <optgroup key={g.sido} label={g.sido}>
-                    {agg && <option key={agg.code} value={agg.code}>{agg.name}</option>}
-                    {g.items.map((it) => (
-                      <option key={it.code} value={it.code}>{it.name}</option>
-                    ))}
-                  </optgroup>
-                );
-              })}
-            </select>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-              {selected.map((code) => (
-                <span key={code} style={styles.chip}>
-                  {labelFor(code)}
-                  <X size={11} style={{ cursor: 'pointer' }} onClick={() => removeRegion(code)} />
-                </span>
-              ))}
-              {selected.length === 0 && (
-                <span style={{ fontSize: 12, color: PALETTE.textMuted }}>선택된 지역이 없어요. 위에서 지역을 추가해보세요.</span>
-              )}
-            </div>
-            {status === 'loading' && (
-              <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 8 }}>불러오는 중...</p>
-            )}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
-            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>분석 대상</div><div style={styles.kpiValue}>{analyticsKpis.count.toLocaleString()}개</div></div>
-            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>최근 평균 {unitLabel}</div><div style={styles.kpiValue}>{analyticsKpis.avg != null ? fmtWon(analyticsKpis.avg) : '-'}</div></div>
-            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>조회 거래량</div><div style={styles.kpiValue}>{analyticsKpis.volume.toLocaleString()}건</div></div>
-            <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>변동률 중앙값</div><div style={styles.kpiValue}>{fmtPct(analyticsKpis.median)}</div></div>
-          </div>
-          <div style={{ ...styles.card, marginBottom: 14, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }} className="no-print">
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[['region', '지역 분석'], ['complex', '단지 분석'], ['ladder', '가격 사다리']].map(([k, l]) => (
-                <button key={k} className="portal-pill" style={{ background: analyticsScope === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsScope === k ? '#fff' : PALETTE.textPrimary }} onClick={() => setAnalyticsScope(k)}>{l}</button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[['change', '기간 변동률'], ['price', '가격수준'], ['volume', '거래량'], ['range', '가격범위']].map(([k, l]) => (
-                <button key={k} className="portal-pill" style={{ background: analyticsMetric === k ? PALETTE.accent : PALETTE.panelAlt, color: analyticsMetric === k ? '#fff' : PALETTE.textPrimary }} onClick={() => setAnalyticsMetric(k)}>{l}</button>
-              ))}
-            </div>
-          </div>
-          {analyticsScope !== 'ladder' && (
-          <div style={styles.card} className="ui-card">
-            <h2 style={styles.sectionTitle}>{analyticsScope === 'region' ? '지역별' : '단지별'} 분석 순위</h2>
-            <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>선택한 지표를 기준으로 정렬한 수치 비교입니다.</p>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>순번</th>
-                    <th style={styles.th}>{analyticsScope === 'region' ? '지역' : '단지'}</th>
-                    <th style={styles.th}>최근 {unitLabel}</th>
-                    <th style={styles.th}>기간 변동률</th>
-                    <th style={styles.th}>거래량</th>
-                    <th style={styles.th}>최저 거래가</th>
-                    <th style={styles.th}>최고 거래가</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {analyticsSorted.map((r, i) => (
-                    <tr key={r.key}>
-                      <td style={styles.td}>{i + 1}</td>
-                      <td
-                        style={{ ...styles.td, color: analyticsScope === 'complex' ? PALETTE.accent : PALETTE.textPrimary, cursor: analyticsScope === 'complex' ? 'pointer' : 'default' }}
-                        onClick={() => analyticsScope === 'complex' && setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}
-                      >
-                        {r.name}
-                        {r.sub && <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{r.sub}</div>}
-                      </td>
-                      <td style={styles.td}>{r.latest != null ? fmtWon(r.latest) : '-'}</td>
-                      <td style={{ ...styles.td, color: r.change > 0 ? PALETTE.up : r.change < 0 ? PALETTE.down : PALETTE.textSecondary }}>{fmtPct(r.change)}</td>
-                      <td style={styles.td}>{r.volume.toLocaleString()}건</td>
-                      <td style={styles.td}>{r.min != null ? fmtManwon(r.min) : '-'}</td>
-                      <td style={styles.td}>{r.max != null ? fmtManwon(r.max) : '-'}</td>
-                    </tr>
-                  ))}
-                  {analyticsSorted.length === 0 && (
-                    <tr><td style={styles.td} colSpan={7}>분석할 데이터가 없습니다. 먼저 지역을 선택하고 조회해주세요.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          )}
-          {analyticsScope === 'ladder' && (
-            <div style={styles.card} className="ui-card">
-              <h2 style={styles.sectionTitle}>가격 사다리</h2>
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-                현재 조회된 단지를 평당가 순으로 늘어놓았어요. 하나를 클릭하면 다른 단지들이 그 단지보다 얼마나 비싸거나 저렴한지 보여줘요.
-              </p>
-              <div style={{ maxHeight: 560, overflowY: 'auto' }}>
-                {[...complexCompare].sort((a, b) => b.unitPrice - a.unitPrice).map((c) => {
-                  const key = `${c.regionCode}|${c.dong}|${c.apt}`;
-                  const baseline = ladderBaseline ? complexCompare.find((x) => `${x.regionCode}|${x.dong}|${x.apt}` === ladderBaseline) : null;
-                  const diff = baseline ? c.unitPrice - baseline.unitPrice : null;
-                  const isBaseline = key === ladderBaseline;
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => setLadderBaseline(isBaseline ? null : key)}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
-                        padding: '9px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
-                        background: isBaseline ? 'rgba(239,68,68,0.10)' : 'transparent',
-                        border: `1px solid ${isBaseline ? PALETTE.accent : 'transparent'}`,
-                      }}
-                    >
-                      <div style={{ minWidth: 0 }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 700 }}>{c.apt}</span>
-                        <span style={{ fontSize: 10.5, color: PALETTE.textMuted, marginLeft: 6 }}>{labelFor(c.regionCode)} {c.dong}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                        {diff != null && !isBaseline && (
-                          <span style={{ fontSize: 11, color: diff > 0 ? PALETTE.up : diff < 0 ? PALETTE.down : PALETTE.textMuted }}>
-                            {diff > 0 ? '+' : ''}{fmtManwon(Math.round(diff))}/평
-                          </span>
-                        )}
-                        <b style={{ fontSize: 13 }}>{fmtManwon(Math.round(c.unitPrice))}/평</b>
-                      </div>
-                    </div>
-                  );
-                })}
-                {complexCompare.length === 0 && (
-                  <p style={{ fontSize: 12, color: PALETTE.textMuted }}>비교할 단지가 없어요. 지역을 선택해보세요.</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <AnalyticsTab
+          comparePickerValue={comparePickerValue} addRegionAndFetch={addRegionAndFetch}
+          selected={selected} removeRegion={removeRegion} status={status}
+          analyticsKpis={analyticsKpis} unitLabel={unitLabel}
+          analyticsScope={analyticsScope} setAnalyticsScope={setAnalyticsScope}
+          analyticsMetric={analyticsMetric} setAnalyticsMetric={setAnalyticsMetric}
+          analyticsSorted={analyticsSorted} setSelectedApt={setSelectedApt}
+          complexCompare={complexCompare} ladderBaseline={ladderBaseline} setLadderBaseline={setLadderBaseline}
+          styles={styles}
+        />
       ) : viewMode === 'market' ? (
       <div style={{ padding: '20px 20px 44px', maxWidth: 1400, margin: '0 auto' }}>
         <div style={{ marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
