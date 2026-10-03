@@ -17,6 +17,8 @@ export async function GET(request) {
     return Response.json({ error: 'sido가 필요합니다.' }, { status: 400 });
   }
 
+  const debug = searchParams.get('debug') === '1';
+
   try {
     const schools = [];
     let pageNo = 1;
@@ -29,7 +31,13 @@ export async function GET(request) {
       // eslint-disable-next-line no-await-in-loop
       const res = await fetch(url);
       // eslint-disable-next-line no-await-in-loop
-      const json = await res.json();
+      const rawText = await res.text();
+      let json;
+      try { json = JSON.parse(rawText); } catch (e) { json = null; }
+      // debug=1이면 실제 응답 구조를 그대로 보여준다 — 파싱 가정이 맞는지 확인하는 용도.
+      if (debug) {
+        return Response.json({ status: res.status, url, rawTextSnippet: rawText.slice(0, 2000), parsed: json });
+      }
       const items = json?.response?.body?.items;
       const rows = Array.isArray(items) ? items : (items?.item ? (Array.isArray(items.item) ? items.item : [items.item]) : []);
       if (rows.length === 0) break;
