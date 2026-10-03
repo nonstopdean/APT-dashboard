@@ -186,7 +186,7 @@ export default function Page() {
   const isRatio = dealType === 'ratio';
   const isSilv = dealType === 'silv';
   const [panelOpen, setPanelOpen] = useState(true);
-  const [viewMode, setViewMode] = useState('normal'); // 'normal' | 'map'
+  const [viewMode, setViewMode] = useState('map'); // 'normal' | 'map' — 지도를 기본 화면으로
   const [startYm, setStartYm] = useState(ymShift(ymNow(), -5));
   const [endYm, setEndYm] = useState(ymNow());
   const [selected, setSelected] = useState(DEFAULT_SELECTED);

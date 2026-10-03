@@ -160,8 +160,8 @@ export default function MapTab({
 
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
         <div className="map-portal-toolbar" style={{
-          position: 'absolute', top: 14, left: 14, right: 14, zIndex: 20,
-          display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none',
+          position: 'absolute', top: 14, left: 14, right: selectedApt ? 434 : 14, zIndex: 20,
+          display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none', transition: 'right 0.15s ease',
         }}>
           <div style={{
             pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 4,
@@ -316,11 +316,11 @@ export default function MapTab({
         {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
         {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
           <div style={{
-            position: 'absolute', bottom: 14, left: 14, right: 14, zIndex: 20,
+            position: 'absolute', bottom: 14, left: 14, right: selectedApt ? 434 : 14, zIndex: 20,
             display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
             background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
-            backdropFilter: 'blur(8px)',
+            backdropFilter: 'blur(8px)', transition: 'right 0.15s ease',
           }}
           >
             <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>🕰️ 타임머신</span>
