@@ -8,6 +8,7 @@ import { PALETTE, fmtWon, fmtArea, monthLabel } from '../lib/ui-helpers';
 // 지도 탭 전체(왼쪽 패널 + 지도 + 툴바 + 단지 탐색 패널). app/page.jsx 안에 있던
 // viewMode === 'map' 블록과 renderSeoulMap()을 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 export default function MapTab({
+  selectedApt,
   panelOpen, setPanelOpen, sidebarInner, styles,
   mapError, seoulMapData, addRegionAndFetch, focusLatLng,
   mapFocusMatches, budgetMatches, priceMoveMatches, mapComplexes,
@@ -342,7 +343,8 @@ export default function MapTab({
         )}
 
         {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
-        {allTx.length > 0 && (
+        {/* 단지 상세 패널이 오른쪽에 떠 있을 때는 겹치지 않게 숨긴다. */}
+        {allTx.length > 0 && !selectedApt && (
           <div className="map-complex-panel" style={{
             position: 'absolute', top: 72, right: 14, width: 292, zIndex: 19,
             bottom: mapPanelMinimized ? 'auto' : 18,

@@ -8,9 +8,12 @@ import {
   PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
 } from '../lib/ui-helpers';
 
-// 단지 상세 모달. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
+// 단지 상세. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 // selectedApt가 있을 때만 부모(page.jsx)가 이 컴포넌트를 렌더링한다.
+// variant="panel"이면(지도 탭) 화면을 가리는 모달 대신, 지도는 계속 보이게 오른쪽에 붙는
+// 패널로 뜬다. 그 외 탭에서는 기존처럼 가운데 모달로 뜬다.
 export default function ComplexDetail({
+  variant = 'modal',
   selectedApt, setSelectedApt,
   aptHistory, aptHistoryLoading, aptHistoryFullRange, aptHistoryFiltered, aptHistoryAreaOptions, loadFullAptHistory,
   aptSummary, aptTrendData, aptTrendByArea, aptVolumeData,
@@ -33,20 +36,28 @@ export default function ComplexDetail({
   trendViewMode, setTrendViewMode,
   styles,
 }) {
+  const isPanel = variant === 'panel';
   return (
     <div
-      style={{
+      style={isPanel ? {
+        position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 40, pointerEvents: 'none',
+        display: 'flex', padding: 0,
+      } : {
         position: 'fixed', inset: 0, background: 'rgba(30,28,24,0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16,
       }}
-      onClick={() => setSelectedApt(null)}
+      onClick={isPanel ? undefined : () => setSelectedApt(null)}
     >
       <div
-        style={{
+        style={isPanel ? {
+          background: PALETTE.panel, padding: 20, width: 420, maxWidth: '100%', height: '100%',
+          overflowY: 'auto', borderLeft: `1px solid ${PALETTE.border}`,
+          boxShadow: '-8px 0 24px rgba(0,0,0,0.14)', pointerEvents: 'auto',
+        } : {
           background: PALETTE.panel, borderRadius: 18, padding: 20, width: '100%', maxWidth: 640,
           maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${PALETTE.border}`,
         }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={isPanel ? undefined : (e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h2 style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>

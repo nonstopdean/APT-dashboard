@@ -2627,6 +2627,7 @@ export default function Page() {
 
       {viewMode === 'map' ? (
         <MapTab
+          selectedApt={selectedApt}
           panelOpen={panelOpen} setPanelOpen={setPanelOpen} sidebarInner={sidebarInner} styles={styles}
           mapError={mapError} seoulMapData={seoulMapData} addRegionAndFetch={addRegionAndFetch} focusLatLng={focusLatLng}
           mapFocusMatches={mapFocusMatches} budgetMatches={budgetMatches} priceMoveMatches={priceMoveMatches}
@@ -3368,6 +3369,7 @@ export default function Page() {
 
       {selectedApt && (
         <ComplexDetail
+          variant={viewMode === 'map' ? 'panel' : 'modal'}
           selectedApt={selectedApt} setSelectedApt={setSelectedApt}
           aptHistory={aptHistory} aptHistoryLoading={aptHistoryLoading} aptHistoryFullRange={aptHistoryFullRange}
           aptHistoryFiltered={aptHistoryFiltered} aptHistoryAreaOptions={aptHistoryAreaOptions}
