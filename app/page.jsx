@@ -13,12 +13,15 @@ import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandReg
 import { fetchDongGeoForSido, normalizeDongName } from '../lib/dong-geo';
 import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
+import ComplexDetail from '../components/ComplexDetail';
+import {
+  LINE_COLORS, PALETTE, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, slopeClass, labelFor,
+} from '../lib/ui-helpers';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
 
 const DEFAULT_SELECTED = [];
 const LISTING_STATUSES = ['관심', '현장확인', '협의중', '보류', '제외'];
-const LINE_COLORS = ['#C79A46', '#5B8AA6', '#B85C4A', '#6B8F5E', '#8B7EC8', '#C4763A'];
 const SIDO_SHORT_NAMES = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'];
 const SIDO_FULL_TO_SHORT = {
   서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주',
@@ -27,19 +30,6 @@ const SIDO_FULL_TO_SHORT = {
   경상남도: '경남', 제주특별자치도: '제주',
 };
 
-const PALETTE = {
-  bg: '#F5F5F3',
-  panel: '#FFFFFF',
-  panelAlt: '#F1F1EF',
-  border: '#E6E5E1',
-  borderStrong: '#D2D0CA',
-  textPrimary: '#18181B',
-  textSecondary: '#6B6B67',
-  textMuted: '#9C9B96',
-  up: '#EF4444',
-  down: '#3B6FE0',
-  accent: '#EF4444',
-};
 const ACCENT_TEXT = '#FFFFFF';
 
 function fmtWon(manwon) {
@@ -49,23 +39,11 @@ function fmtWon(manwon) {
   return `${Math.round(manwon).toLocaleString()}만`;
 }
 
-function fmtPct(v) {
-  if (v == null || Number.isNaN(v)) return '-';
-  const s = v > 0 ? '+' : '';
-  return `${s}${v.toFixed(1)}%`;
-}
-
 // 국토부 API는 전용면적(㎡)만 제공하고 공급면적은 주지 않아서 (건물마다 비율이 달라 정확한
 // 환산이 불가능), 평 단위 전용면적만 정수로 보여준다.
 function fmtPyeong(area) {
   if (area == null || Number.isNaN(area)) return '-';
   return `${Math.round(area / 3.3058)}평`;
-}
-
-// 전용면적을 ㎡와 평 두 단위로 같이 보여준다 (소수점 없이).
-function fmtArea(area) {
-  if (area == null || Number.isNaN(area)) return '-';
-  return `${Math.round(area)}㎡(${Math.round(area / 3.3058)}평)`;
 }
 
 // 억 단위로 안 바꾸고 항상 만원 단위 그대로 보여준다.
@@ -77,14 +55,6 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   const dLng = toRad(lng2 - lng1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function slopeClass(deg) {
-  if (deg == null) return '';
-  if (deg < 5) return '평탄';
-  if (deg < 15) return '완경사';
-  if (deg < 25) return '중경사';
-  return '급경사';
 }
 
 // 동지(12/21) 하루 동안 각 방향(향) 창면이 직사광을 받는 시간을 천문 계산으로 구한다.
@@ -123,33 +93,9 @@ function computeWinterSun(latDeg, lngDeg) {
   };
 }
 
-function fmtManwon(manwon) {
-  if (manwon == null || Number.isNaN(manwon)) return '-';
-  return `${Math.round(manwon).toLocaleString()}만원`;
-}
-
 // 취득세 대략 계산 (1주택자 기준 표준세율 근사치 + 지방교육세 등). 다주택자 중과, 생애최초 감면 등은
 // 반영하지 않은 단순 참고용 수치이며, 실제 세액은 취득 시점 법령과 세무사 확인이 필요하다.
-function calcAcquisitionTax(amountManwon) {
-  if (!amountManwon) return null;
-  const eok = amountManwon / 10000;
-  let rate;
-  if (eok <= 6) rate = 1.0;
-  else if (eok <= 9) rate = (eok * 2) / 3 - 3;
-  else rate = 3.0;
-  const acquisitionTax = amountManwon * (rate / 100);
-  const localEduTax = acquisitionTax * 0.1;
-  const ruralTax = amountManwon * 0.002; // 전용 85㎡ 초과 가정 근사치
-  return { rate, acquisitionTax, localEduTax, ruralTax, total: acquisitionTax + localEduTax + ruralTax };
-}
-
 // 대출 가능액 대략 추정 (LTV만 반영한 단순 근사치, DSR/DTI·소득·기존대출 등은 미반영).
-function calcLoanEstimate(amountManwon, isRegulated) {
-  if (!amountManwon) return null;
-  const ltv = isRegulated ? 0.4 : 0.7;
-  return { ltv, maxLoan: amountManwon * ltv };
-}
-
 // z-score를 저평가/고평가 라벨로 바꾼다. 공식 시세 평가가 아니라, 지금 조회된 데이터
 // 안에서 비슷한 지역·평형 대비 상대적으로 어디쯤인지 보여주는 참고용 점수임을 항상 명시한다.
 // 표준정규분포 누적확률(대략치) — z-score를 "비교군 안에서 하위/상위 몇 %인지"로 바꿔서 보여준다.
@@ -235,10 +181,6 @@ function ymShift(ym, delta) {
 const currentYear = new Date().getFullYear();
 const YEAR_OPTIONS = Array.from({ length: currentYear - 2005 + 1 }, (_, i) => String(2005 + i)).reverse();
 const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
-
-function labelFor(code) {
-  return roneRegionLabel(code, regionLabel(code));
-}
 
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
@@ -1462,6 +1404,32 @@ export default function Page() {
     const volumeLeaders = [...rows].sort((a, b) => b.volume - a.volume).slice(0, 30);
     return { tx, rows, monthSeries, highs, momentum, drawdowns, volumeLeaders, cutoff };
   }, [allTx, isRent, endYm, analyticsPeriod]);
+
+  // "시장강도" — 가격·거래량 변화를 기간을 반으로 나눠 전반/후반으로 비교한다. 전세가율은
+  // "전세가율" 거래유형으로 조회했을 때만 값이 있어서, 없으면 안내만 하고 억지로 채우지 않는다.
+  const marketIntensity = useMemo(() => {
+    const tx = advancedAnalytics.tx;
+    if (tx.length === 0) return null;
+    const priceOf = (t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount);
+    const sortedYm = [...new Set(tx.map((t) => `${t.year}${String(t.month).padStart(2, '0')}`))].sort();
+    if (sortedYm.length < 2) return null;
+    const mid = sortedYm[Math.floor(sortedYm.length / 2)];
+    const firstHalf = tx.filter((t) => `${t.year}${String(t.month).padStart(2, '0')}` < mid);
+    const secondHalf = tx.filter((t) => `${t.year}${String(t.month).padStart(2, '0')}` >= mid);
+    const avgPrice = (rows) => {
+      const vals = rows.map(priceOf).filter((v) => v != null);
+      return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+    };
+    const p1 = avgPrice(firstHalf);
+    const p2 = avgPrice(secondHalf);
+    const priceChangePct = (p1 && p2) ? ((p2 - p1) / p1) * 100 : null;
+    const volumeChangePct = firstHalf.length ? ((secondHalf.length - firstHalf.length) / firstHalf.length) * 100 : null;
+    return {
+      priceChangePct, volumeChangePct,
+      firstHalfCount: firstHalf.length, secondHalfCount: secondHalf.length,
+      periodLabel: `${monthLabel(sortedYm[0])} ~ ${monthLabel(sortedYm[sortedYm.length - 1])}`,
+    };
+  }, [advancedAnalytics, isRent]);
 
 
   const analyticsRows = useMemo(() => {
@@ -3563,10 +3531,54 @@ export default function Page() {
           ))}
         </div>
         <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card no-print">
-          {[['overview', '요약'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
+          {[['overview', '요약'], ['intensity', '시장강도'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
             <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
           ))}
         </div>
+        {analyticsView === 'intensity' && (
+          <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card">
+            <h2 style={styles.sectionTitle}>시장강도</h2>
+            <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: '-6px 0 14px' }}>
+              가격·거래량·전세가율을 하나의 점수로 합치지 않고 각각 따로 보여줘요. 기간을 반으로 나눠 전반기·후반기를 비교해요.
+            </p>
+            {!marketIntensity ? (
+              <p style={{ fontSize: 13, color: PALETTE.textMuted }}>비교할 만큼 거래가 충분하지 않아요. 조회 기간을 늘려보세요.</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '0 0 10px' }}>{marketIntensity.periodLabel} 전반기 vs 후반기</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 }}>
+                  <div style={styles.card}>
+                    <div style={styles.kpiLabel}>가격 변화</div>
+                    <div style={{ ...styles.kpiValue, fontSize: 20, color: marketIntensity.priceChangePct > 0 ? PALETTE.up : marketIntensity.priceChangePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                      {marketIntensity.priceChangePct != null ? fmtPct(marketIntensity.priceChangePct) : '-'}
+                    </div>
+                  </div>
+                  <div style={styles.card}>
+                    <div style={styles.kpiLabel}>거래량 변화</div>
+                    <div style={{ ...styles.kpiValue, fontSize: 20, color: marketIntensity.volumeChangePct > 0 ? PALETTE.up : marketIntensity.volumeChangePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+                      {marketIntensity.volumeChangePct != null ? fmtPct(marketIntensity.volumeChangePct) : '-'}
+                    </div>
+                    <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>
+                      {marketIntensity.firstHalfCount}건 → {marketIntensity.secondHalfCount}건
+                    </div>
+                  </div>
+                  <div style={styles.card}>
+                    <div style={styles.kpiLabel}>전세가율(평균)</div>
+                    <div style={{ ...styles.kpiValue, fontSize: 20 }}>
+                      {ratioKpis.avg != null ? `${ratioKpis.avg.toFixed(1)}%` : '-'}
+                    </div>
+                    {ratioKpis.avg == null && (
+                      <div style={{ fontSize: 9.5, color: PALETTE.textMuted, marginTop: 2 }}>"전세가율" 거래유형으로 조회하면 나와요</div>
+                    )}
+                  </div>
+                </div>
+                <p style={{ fontSize: 10, color: PALETTE.textMuted }}>
+                  입주물량·인구 추이는 "대시보드" 탭에서, 신고가·모멘텀은 이 탭의 다른 메뉴에서 같은 기간 기준으로 바로 볼 수 있어요.
+                </p>
+              </>
+            )}
+          </div>
+        )}
         {analyticsView === 'overview' && (
           <>
             <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card">
@@ -4756,603 +4768,37 @@ export default function Page() {
       )}
 
       {selectedApt && (
-        <div
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(30,28,24,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16,
-          }}
-          onClick={() => setSelectedApt(null)}
-        >
-          <div
-            style={{
-              background: PALETTE.panel, borderRadius: 18, padding: 20, width: '100%', maxWidth: 640,
-              maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${PALETTE.border}`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <h2 style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
-                {selectedApt.apt} ({selectedApt.dong})
-              </h2>
-              <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
-            </div>
-            <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
-              {labelFor(selectedApt.regionCode)} · 전체 기간(최대 20년) 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
-              {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
-            </p>
-            {aptSummary && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 14 }}>
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
-                  <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
-                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>거래 {aptSummary.recentCount}건</div>
-                </div>
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title={`최근 3개월 표본 ${aptSummary.recentSampleN}건, 1년 전 표본 ${aptSummary.yearAgoSampleN}건`}>
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>1년 전 대비</div>
-                  {aptSummary.yoyChange == null ? (
-                    <div style={{ fontSize: 15, fontWeight: 800, color: PALETTE.textMuted }}>-</div>
-                  ) : aptSummary.yoyLowSample ? (
-                    <div style={{ fontSize: 13, fontWeight: 700, color: PALETTE.textMuted }}>표본 부족</div>
-                  ) : (
-                    <div style={{ fontSize: 15, fontWeight: 800, color: aptSummary.yoyChange > 0 ? PALETTE.up : aptSummary.yoyChange < 0 ? PALETTE.down : PALETTE.textPrimary }}>
-                      {fmtPct(aptSummary.yoyChange)}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
-                    {aptSummary.yearAgoAvg != null
-                      ? `1년 전 평균 ${fmtManwon(aptSummary.yearAgoAvg)}${aptSummary.yoyLowSample ? ` (표본 ${aptSummary.recentSampleN}·${aptSummary.yearAgoSampleN}건)` : ''}`
-                      : '비교 기준 없음'}
-                  </div>
-                </div>
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{aptHistoryFullRange ? '전체기간 최고가' : '최근 3년 최고가'}</div>
-                  <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</div>
-                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{aptSummary.maxLabel}</div>
-                </div>
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 거래건수 ÷ 세대수 × 100. 세대수 대비 거래가 얼마나 활발한지 보는 참고 지표예요.">
-                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>거래회전율(최근 1년)</div>
-                  <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.turnoverRate != null ? `${aptSummary.turnoverRate.toFixed(1)}%` : '-'}</div>
-                  <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
-                    {aptSummary.turnoverRate != null ? `거래 ${aptSummary.last12moCount}건 / 세대수 ${aptBasicInfo?.households}` : '세대수 정보 없음'}
-                  </div>
-                </div>
-                {aptJeonseInfo && aptSummary.recentAvg != null && (
-                  <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 이 단지 전세 거래 평균 ÷ 최근 3개월 매매 평균 × 100. 표본이 적으면 오차가 클 수 있어요.">
-                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>전세가율(최근 12개월)</div>
-                    <div style={{ fontSize: 15, fontWeight: 800 }}>{((aptJeonseInfo.avgDeposit / aptSummary.recentAvg) * 100).toFixed(1)}%</div>
-                    <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
-                      전세 {fmtManwon(Math.round(aptJeonseInfo.avgDeposit))} · 표본 {aptJeonseInfo.count}건
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {aptSummary && (
-              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '-8px 0 6px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span>
-                  기준일 {new Date().toLocaleDateString('ko-KR')} · 이 단지 거래 표본 {aptHistory.length}건({aptHistoryFullRange ? '최대 20년치' : '최근 3년치'}) · 국토교통부 실거래가 공개자료
-                </span>
-                {!aptHistoryFullRange && (
-                  <button
-                    onClick={loadFullAptHistory}
-                    disabled={aptHistoryLoading}
-                    style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: '2px 8px', fontSize: 9.5, background: 'transparent', color: PALETTE.accent, cursor: 'pointer' }}
-                  >
-                    {aptHistoryLoading ? '불러오는 중...' : '더 오래된 기록 불러오기(최대 20년)'}
-                  </button>
-                )}
-              </p>
-            )}
-            {aptSummary?.volumeChangePct != null && Math.abs(aptSummary.volumeChangePct) >= 20 && (
-              <div style={{
-                background: aptSummary.volumeChangePct > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(59,111,224,0.08)',
-                borderRadius: 8, padding: '9px 12px', marginBottom: 14, fontSize: 12,
-              }}
-              >
-                {aptSummary.volumeChangePct > 0 ? '📈' : '📉'} 최근 3개월 거래 <b>{aptSummary.recentCount}건</b>, 이전 3개월 <b>{aptSummary.prev3moCount}건</b> — 거래량이{' '}
-                <b style={{ color: aptSummary.volumeChangePct > 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(aptSummary.volumeChangePct)}</b> 변했어요.
-              </div>
-            )}
-            {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (() => {
-              const price = calcPriceInput !== '' ? parseFloat(calcPriceInput) * 10000 : aptSummary.recentAvg;
-              const tax = calcAcquisitionTax(price);
-              const loan = calcLoanEstimate(price, isRegulatedByCode(selectedApt.regionCode));
-              return (
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700 }}>취득세·대출 계산기 (참고용)</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <input
-                        type="number"
-                        placeholder={String(Math.round(aptSummary.recentAvg / 10000))}
-                        value={calcPriceInput}
-                        onChange={(e) => setCalcPriceInput(e.target.value)}
-                        style={{
-                          width: 80, padding: '4px 6px', borderRadius: 6, border: `1px solid ${PALETTE.border}`,
-                          fontSize: 12, textAlign: 'right',
-                        }}
-                      />
-                      <span style={{ fontSize: 11, color: PALETTE.textMuted }}>억원 기준</span>
-                    </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>취득세 등 합계 (1주택 기준)</div>
-                      <div style={{ fontSize: 15, fontWeight: 800 }}>{tax ? fmtManwon(tax.total) : '-'}</div>
-                      <div style={{ fontSize: 10, color: PALETTE.textMuted }}>취득세율 약 {tax ? tax.rate.toFixed(2) : '-'}%</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>추정 대출 가능액 (LTV 기준)</div>
-                      <div style={{ fontSize: 15, fontWeight: 800 }}>{loan ? fmtManwon(loan.maxLoan) : '-'}</div>
-                      <div style={{ fontSize: 10, color: PALETTE.textMuted }}>LTV {loan ? Math.round(loan.ltv * 100) : '-'}% ({isRegulatedByCode(selectedApt.regionCode) ? '규제지역' : '비규제지역'})</div>
-                    </div>
-                  </div>
-                  <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
-                    다주택 중과·생애최초 감면·DSR·소득 등은 반영되지 않은 단순 참고용 추정치예요. 실제 세액·대출한도는 세무사·은행 확인이 필요해요.
-                  </p>
-                </div>
-              );
-            })()}
-            {gongsiLoading && (
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>공시가격 조회 중...</p>
-            )}
-            {terrainLoading && (
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>지형·일조 정보 계산 중...</p>
-            )}
-            {terrainInfo && winterSun && (
-              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>⛰️ 경사도 · ☀️ 동지 일조 (참고용 근사치)</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                  {terrainInfo.center != null && <span style={styles.chip}>중심 고도 약 {Math.round(terrainInfo.center)}m</span>}
-                  {terrainInfo.slope != null && <span style={styles.chip}>경사 약 {terrainInfo.slope.toFixed(1)}° ({slopeClass(terrainInfo.slope)})</span>}
-                  {winterSun.facades.map((f) => (
-                    <span key={f.label} style={styles.chip}>{f.label} {f.hours.toFixed(1)}시간</span>
-                  ))}
-                </div>
-                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
-                  동지(12/21) 기준 일출 {winterSun.sunrise} · 일몰 {winterSun.sunset} · 정오 태양고도 약 {winterSun.noonAlt}°.
-                  일조시간은 단지 좌표의 천문 계산값이고, 경사도는 중심점에서 동·서·남·북 약 170m 지점 고도(Open-Meteo) 차이로 추정했어요.
-                  건물 배치·지형 음영은 반영되지 않은 근사치라 실제 일조와 다를 수 있어요.
-                </p>
-              </div>
-            )}
-            {poiLoading && (
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>주변시설 조회 중...</p>
-            )}
-            {poiInfo?.results?.length > 0 && (
-              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>🏪 반경 {poiInfo.radius}m 주변시설</span>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 8 }}>
-                  {poiInfo.results.map((r) => (
-                    <div key={r.code} title={r.sample?.join(', ')} style={{ background: PALETTE.panel, borderRadius: 8, padding: '8px 6px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.label}</div>
-                      <div style={{ fontSize: 15, fontWeight: 800 }}>{r.count != null ? `${r.count}개` : '-'}</div>
-                    </div>
-                  ))}
-                </div>
-                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
-                  단지 좌표 기준 반경 {poiInfo.radius}m 이내 개수예요 (카카오맵 장소 검색). 실제 도보 접근성과는 차이가 있을 수 있어요.
-                </p>
-              </div>
-            )}
-            {gongsiInfo?.rows?.length > 0 && (
-              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>공동주택 공시가격 (브이월드)</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                  {gongsiInfo.rows.slice(0, 6).map((r, i) => (
-                    <span key={i} style={styles.chip}>
-                      {r.dong}동 {r.ho}호 · {fmtManwon(Math.round(r.price / 10000))} ({r.year}년)
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (
-              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>🔄 갈아타기 계산기 (참고용)</span>
-                <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '4px 0 10px' }}>
-                  목표가는 기본으로 이 단지의 최근 평균가가 들어있지만, 직접 고치면 다른 단지 가격으로도 계산할 수 있어요.
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
-                  <div>
-                    <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>현재 집 예상 매도가(억원)</label>
-                    <input
-                      type="number" placeholder="예: 6.5" value={tradeUpCurrentPrice}
-                      onChange={(e) => setTradeUpCurrentPrice(e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>대출 잔액(억원)</label>
-                    <input
-                      type="number" placeholder="예: 2" value={tradeUpLoanBalance}
-                      onChange={(e) => setTradeUpLoanBalance(e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 10.5, color: PALETTE.textMuted }}>목표 단지 가격(억원)</label>
-                    <input
-                      type="number" placeholder={(aptSummary.recentAvg / 10000).toFixed(2)} value={tradeUpTargetPrice}
-                      onChange={(e) => setTradeUpTargetPrice(e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12, marginTop: 3 }}
-                    />
-                  </div>
-                </div>
-                {tradeUpCurrentPrice && (() => {
-                  const targetPrice = tradeUpTargetPrice ? parseFloat(tradeUpTargetPrice) * 10000 : aptSummary.recentAvg; // 만원
-                  const currentPrice = parseFloat(tradeUpCurrentPrice) * 10000;
-                  const loanBalance = tradeUpLoanBalance ? parseFloat(tradeUpLoanBalance) * 10000 : 0;
-                  const sellCost = currentPrice * 0.005; // 중개보수 등 대략 0.5% 참고치
-                  const targetTax = calcAcquisitionTax(targetPrice);
-                  const usable = currentPrice - loanBalance - sellCost;
-                  const needed = targetPrice + (targetTax?.total || 0) - usable;
-                  return (
-                    <div style={{ background: PALETTE.panel, borderRadius: 8, padding: 10, fontSize: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}><span>현재 집 매도가</span><span>{fmtManwon(currentPrice)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: PALETTE.down }}><span>− 대출 잔액</span><span>{fmtManwon(loanBalance)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: PALETTE.down }}><span>− 매도 중개보수(추정)</span><span>{fmtManwon(sellCost)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 700 }}><span>실제 사용 가능 자금</span><span>{fmtManwon(usable)}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: 6 }}><span>목표 필요자금(가격+취득세)</span><span>{fmtManwon(targetPrice + (targetTax?.total || 0))}</span></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: `1px solid ${PALETTE.border}`, fontWeight: 800, color: needed > 0 ? PALETTE.down : PALETTE.up }}>
-                        <span>{needed > 0 ? '추가로 필요한 자금' : '남는 자금'}</span><span>{fmtManwon(Math.abs(needed))}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-                <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
-                  중개보수·이사비·법무비 등은 대략치예요. 실제 자금 계획은 은행·중개사 확인이 필요해요.
-                </p>
-              </div>
-            )}
-            {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {isRegulatedByCode(selectedApt.regionCode) && (
-                  <span style={{ ...styles.chip, background: 'rgba(239,68,68,0.12)', borderColor: PALETTE.accent }}>
-                    규제지역(투기과열지구·조정대상지역)
-                  </span>
-                )}
-                {aptBasicInfo?.households && <span style={styles.chip}>세대수 {aptBasicInfo.households}</span>}
-                {aptBasicInfo?.dongCount && <span style={styles.chip}>{aptBasicInfo.dongCount}개동</span>}
-                {aptBasicInfo?.useDate && <span style={styles.chip}>준공 {String(aptBasicInfo.useDate).slice(0, 4)}년</span>}
-                {aptBasicInfo?.useDate && (() => {
-                  const buildY = parseInt(String(aptBasicInfo.useDate).slice(0, 4), 10);
-                  if (!Number.isFinite(buildY)) return null;
-                  const age = new Date().getFullYear() - buildY;
-                  const label = age <= 5 ? '신축' : age <= 10 ? '준신축' : age <= 20 ? '구축' : '노후단지';
-                  const color = age <= 5 ? PALETTE.up : age <= 10 ? PALETTE.accent : age <= 20 ? PALETTE.textSecondary : PALETTE.down;
-                  return <span style={{ ...styles.chip, color, borderColor: color }}>{label} (준공 {age}년차)</span>;
-                })()}
-                {aptBasicInfo?.builder && <span style={styles.chip}>시공 {aptBasicInfo.builder}</span>}
-                {nearestStationInfo && (
-                  <span style={styles.chip}>
-                    {nearestStationInfo.name}역({nearestStationInfo.line}) 도보 {nearestStationInfo.walkMin}분
-                  </span>
-                )}
-              </div>
-            )}
-            <div style={{ marginBottom: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {(() => {
-                const isPinned = pinnedComplexes.some((p) => p.apt === selectedApt.apt && p.dong === selectedApt.dong && p.regionCode === selectedApt.regionCode);
-                return (
-                  <button
-                    className="ui-btn"
-                    style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12, background: isPinned ? PALETTE.up : undefined }}
-                    disabled={!isPinned && pinnedComplexes.length >= 5}
-                    onClick={() => {
-                      const key = { apt: selectedApt.apt, dong: selectedApt.dong, regionCode: selectedApt.regionCode };
-                      setPinnedComplexes((prev) => (isPinned
-                        ? prev.filter((p) => !(p.apt === key.apt && p.dong === key.dong && p.regionCode === key.regionCode))
-                        : prev.length >= 5 ? prev : [...prev, key]));
-                    }}
-                  >
-                    {isPinned ? '✓ 비교 목록에 있음' : `📊 단지 비교에 추가 (${pinnedComplexes.length}/5)`}
-                  </button>
-                );
-              })()}
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              {!alertFormOpen ? (
-                <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12 }} onClick={() => setAlertFormOpen(true)}>
-                  🔔 이 단지 가격 알림 등록
-                </button>
-              ) : (
-                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 10, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                  <select value={alertDirection} onChange={(e) => setAlertDirection(e.target.value)} style={{ ...styles.select, width: 'auto', fontSize: 12 }}>
-                    <option value="below">이하로 떨어지면</option>
-                    <option value="above">이상으로 오르면</option>
-                  </select>
-                  <input
-                    type="number"
-                    placeholder="목표가(억원)"
-                    value={alertTargetPrice}
-                    onChange={(e) => setAlertTargetPrice(e.target.value)}
-                    style={{ width: 100, padding: '6px 8px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                  />
-                  <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '6px 12px', fontSize: 12 }} onClick={submitAlert} disabled={alertSaving}>
-                    {alertSaving ? '등록 중...' : '등록'}
-                  </button>
-                  <span style={{ fontSize: 11, color: PALETTE.textMuted, cursor: 'pointer' }} onClick={() => setAlertFormOpen(false)}>취소</span>
-                </div>
-              )}
-              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '4px 0 0' }}>
-                등록한 알림은 "즐겨찾기" 탭에서 관리할 수 있어요. 매일 자동으로 확인해서 조건을 만족하면 알려드려요.
-              </p>
-            </div>
-            {schoolsLoading && nearbySchools.length === 0 && (
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>인근 학교 찾는 중...</p>
-            )}
-            {nearbySchools.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {nearbySchools.map((s) => (
-                  <span key={s.name} style={styles.chip}>{s.name} ({s.kind}{s.foundType ? `·${s.foundType}` : ''})</span>
-                ))}
-              </div>
-            )}
-            {aptHistoryAreaOptions.length > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, color: PALETTE.textMuted }}>평형대</span>
-                <button
-                  onClick={() => { setHistoryAreaFilter('all'); setHistoryListLimit(30); }}
-                  style={{
-                    border: `1px solid ${historyAreaFilter === 'all' ? PALETTE.accent : PALETTE.border}`,
-                    background: historyAreaFilter === 'all' ? 'rgba(239,68,68,0.10)' : 'transparent',
-                    color: historyAreaFilter === 'all' ? PALETTE.up : PALETTE.textSecondary,
-                    borderRadius: 8, padding: '3px 8px', fontSize: 11, cursor: 'pointer',
-                  }}
-                >
-                  전체
-                </button>
-                {aptHistoryAreaOptions.map((o) => (
-                  <button
-                    key={o.value}
-                    onClick={() => { setHistoryAreaFilter(o.value); setHistoryListLimit(30); }}
-                    style={{
-                      border: `1px solid ${historyAreaFilter === o.value ? PALETTE.accent : PALETTE.border}`,
-                      background: historyAreaFilter === o.value ? 'rgba(239,68,68,0.10)' : 'transparent',
-                      color: historyAreaFilter === o.value ? PALETTE.up : PALETTE.textSecondary,
-                      borderRadius: 8, padding: '3px 8px', fontSize: 11, cursor: 'pointer',
-                    }}
-                  >
-                    {o.label} ({o.count})
-                  </button>
-                ))}
-              </div>
-            )}
-            {aptHistoryAreaOptions.length > 1 && (
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                {[['single', '단일 평형'], ['compare', '평형별 겹쳐보기']].map(([k, l]) => (
-                  <button
-                    key={k}
-                    onClick={() => setTrendViewMode(k)}
-                    style={{
-                      border: `1px solid ${trendViewMode === k ? PALETTE.accent : PALETTE.border}`,
-                      background: trendViewMode === k ? 'rgba(239,68,68,0.10)' : 'transparent',
-                      color: trendViewMode === k ? PALETTE.up : PALETTE.textSecondary,
-                      borderRadius: 8, padding: '4px 10px', fontSize: 11.5, cursor: 'pointer',
-                    }}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-            )}
-            {trendViewMode === 'single' && aptTrendData.length > 1 && (
-              <div style={{ width: '100%', height: 160, marginBottom: 16 }}>
-                <ResponsiveContainer>
-                  <LineChart data={aptTrendData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
-                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={46} />
-                    <Tooltip
-                      contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                      labelStyle={{ color: PALETTE.textPrimary }}
-                      formatter={(v) => `${v.toLocaleString()}만원`}
-                    />
-                    <Line type="monotone" dataKey="가격" stroke={PALETTE.accent} strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {trendViewMode === 'compare' && aptTrendByArea.data.length > 1 && (
-              <div style={{ width: '100%', height: 180, marginBottom: 16 }}>
-                <ResponsiveContainer>
-                  <LineChart data={aptTrendByArea.data} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
-                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={46} />
-                    <Tooltip
-                      contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                      labelStyle={{ color: PALETTE.textPrimary }}
-                      formatter={(v) => (v == null ? '-' : `${v.toLocaleString()}만원`)}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    {aptTrendByArea.seriesKeys.map((k, i) => (
-                      <Line key={k} type="monotone" dataKey={k} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {aptVolumeData.length > 1 && (
-              <div style={{ width: '100%', height: 90, marginBottom: 16 }}>
-                <ResponsiveContainer>
-                  <BarChart data={aptVolumeData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={30} allowDecimals={false} />
-                    <Tooltip
-                      contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                      labelStyle={{ color: PALETTE.textPrimary }}
-                      formatter={(v) => `${v}건`}
-                    />
-                    <Bar dataKey="건수" fill={PALETTE.down} radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-                <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '2px 0 0', textAlign: 'center' }}>월별 거래건수</p>
-              </div>
-            )}
-            {radiusSummary && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
-                {radiusSummary.map((r) => (
-                  <div key={r.radius} style={{ background: PALETTE.panelAlt, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.radius < 1000 ? `${r.radius}m` : `${r.radius / 1000}km`} 이내</div>
-                    <div style={{ fontSize: 13, fontWeight: 800, marginTop: 2 }}>단지 {r.count}개</div>
-                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{r.avg != null ? `평균 ${fmtManwon(Math.round(r.avg))}` : '가격정보 없음'}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700 }}>주변 단지 비교</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {[[500, '500m'], [1000, '1km'], [2000, '2km']].map(([r, l]) => (
-                    <button
-                      key={r}
-                      onClick={() => setNearbyRadius(r)}
-                      style={{
-                        border: `1px solid ${nearbyRadius === r ? PALETTE.accent : PALETTE.border}`,
-                        background: nearbyRadius === r ? 'rgba(239,68,68,0.10)' : 'transparent',
-                        color: nearbyRadius === r ? PALETTE.up : PALETTE.textSecondary,
-                        borderRadius: 8, padding: '3px 9px', fontSize: 11, cursor: 'pointer',
-                      }}
-                    >
-                      {l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {nearbyComplexes.length === 0 ? (
-                <p style={{ fontSize: 11.5, color: PALETTE.textMuted, margin: 0 }}>이 반경 안에 좌표가 확인된 다른 단지가 없어요. 반경을 넓혀보세요.</p>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ ...styles.th, fontSize: 10.5 }}>단지</th>
-                        <th style={{ ...styles.th, fontSize: 10.5 }}>거리</th>
-                        <th style={{ ...styles.th, fontSize: 10.5 }}>최근 거래가</th>
-                        <th style={{ ...styles.th, fontSize: 10.5 }}>평당가</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {nearbyComplexes.map((c) => (
-                        <tr key={c.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}>
-                          <td style={{ ...styles.td, fontSize: 11.5, color: PALETTE.accent }}>{c.apt}<div style={{ fontSize: 9.5, color: PALETTE.textMuted }}>{c.dong}</div></td>
-                          <td style={{ ...styles.td, fontSize: 11.5 }}>{c.distance < 1000 ? `${Math.round(c.distance)}m` : `${(c.distance / 1000).toFixed(1)}km`}</td>
-                          <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPrice != null ? fmtManwon(c.latestPrice) : '-'}</td>
-                          <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPyeong != null ? fmtManwon(Math.round(c.latestPyeong)) : '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
-                동 중심좌표 기준 거리라 실제 위치와 다소 차이가 있을 수 있어요.
-              </p>
-            </div>
-            {similarComplexes.length > 0 && (
-              <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700 }}>비교 조건이 유사한 단지</span>
-                  <button
-                    className="ui-btn"
-                    style={{ ...styles.btn, width: 'auto', padding: '4px 9px', fontSize: 10.5 }}
-                    onClick={() => {
-                      const keys = new Set(similarComplexes.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`));
-                      keys.add(`${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`);
-                      setMapFocusKeys(keys);
-                      setSelectedApt(null);
-                      setViewMode('map');
-                    }}
-                  >
-                    🗺️ 지도에서 보기
-                  </button>
-                </div>
-                <p style={{ fontSize: 10, color: PALETTE.textMuted, margin: '4px 0 8px' }}>
-                  평형(±5평)·가격·거리를 종합해 가까운 순이에요. 준공연도·세대수는 아직 전체 비교에 못 써요(지금 보는 단지에만 있어요).
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 8 }}>
-                  {similarComplexes.map((c) => (
-                    <div
-                      key={`${c.regionCode}|${c.dong}|${c.apt}`}
-                      onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}
-                      style={{ background: PALETTE.panel, borderRadius: 8, padding: 9, cursor: 'pointer', border: `1px solid ${PALETTE.border}` }}
-                    >
-                      <div style={{ fontSize: 11.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</div>
-                      <div style={{ fontSize: 10, color: PALETTE.textMuted, margin: '2px 0' }}>{fmtArea(c.area)} · {labelFor(c.regionCode)}</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <b style={{ fontSize: 12 }}>{fmtManwon(Math.round(c.unitPrice))}/평</b>
-                        <span style={{ fontSize: 10, color: c.priceDiffPct > 0 ? PALETTE.up : c.priceDiffPct < 0 ? PALETTE.down : PALETTE.textMuted }}>
-                          {fmtPct(c.priceDiffPct)}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 9.5, color: PALETTE.textMuted, marginTop: 3 }}>
-                        {c.distance != null && `${c.distance < 1000 ? `${Math.round(c.distance)}m` : `${(c.distance / 1000).toFixed(1)}km`} · `}
-                        평형 {c.pyeongDiff > 0 ? '+' : ''}{c.pyeongDiff.toFixed(0)}평
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ ...styles.th, width: 60 }}>동</th>
-                    <th style={{ ...styles.th, width: 90 }}>계약일</th>
-                    <th style={{ ...styles.th, width: 130 }}>전용면적</th>
-                    <th style={{ ...styles.th, width: 50 }}>층</th>
-                    {isRent ? (
-                      <>
-                        <th style={{ ...styles.th, width: 55 }}>구분</th>
-                        <th style={{ ...styles.th, width: 110 }}>보증금</th>
-                        <th style={{ ...styles.th, width: 90 }}>월세</th>
-                      </>
-                    ) : (
-                      <th style={{ ...styles.th, width: 120 }}>거래금액</th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {aptHistoryFiltered.slice(0, historyListLimit).map((t, i) => (
-                    <tr key={i}>
-                      <td style={styles.td}>{t.aptDong ? `${t.aptDong}동` : '-'}</td>
-                      <td style={styles.td}>{t.year}.{t.month}.{t.day}</td>
-                      <td style={styles.td}>{fmtArea(t.area)}</td>
-                      <td style={styles.td}>{t.floor}층</td>
-                      {isRent ? (
-                        <>
-                          <td style={styles.td}>{t.isJeonse ? '전세' : '월세'}</td>
-                          <td style={styles.td}>{fmtManwon(t.deposit)}</td>
-                          <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만원`}</td>
-                        </>
-                      ) : (
-                        <td style={styles.td}>{fmtManwon(t.amount)}</td>
-                      )}
-                    </tr>
-                  ))}
-                  {aptHistoryFiltered.length === 0 && (
-                    <tr><td style={styles.td} colSpan={isRent ? 7 : 5}>표시할 거래 내역이 없습니다.</td></tr>
-                  )}
-                </tbody>
-              </table>
-              {aptHistoryFiltered.length > historyListLimit && (
-                <div style={{ textAlign: 'center', marginTop: 10 }}>
-                  <button
-                    className="ui-btn"
-                    style={{ ...styles.btn, width: 'auto', padding: '7px 16px', fontSize: 12 }}
-                    onClick={() => setHistoryListLimit((n) => n + 30)}
-                  >
-                    더보기 ({aptHistoryFiltered.length - historyListLimit}건 더 있음)
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <ComplexDetail
+          selectedApt={selectedApt} setSelectedApt={setSelectedApt}
+          aptHistory={aptHistory} aptHistoryLoading={aptHistoryLoading} aptHistoryFullRange={aptHistoryFullRange}
+          aptHistoryFiltered={aptHistoryFiltered} aptHistoryAreaOptions={aptHistoryAreaOptions}
+          loadFullAptHistory={loadFullAptHistory}
+          aptSummary={aptSummary} aptTrendData={aptTrendData} aptTrendByArea={aptTrendByArea} aptVolumeData={aptVolumeData}
+          isRent={isRent} isRatio={isRatio} isRone={isRone}
+          calcPriceInput={calcPriceInput} setCalcPriceInput={setCalcPriceInput}
+          tradeUpCurrentPrice={tradeUpCurrentPrice} setTradeUpCurrentPrice={setTradeUpCurrentPrice}
+          tradeUpLoanBalance={tradeUpLoanBalance} setTradeUpLoanBalance={setTradeUpLoanBalance}
+          tradeUpTargetPrice={tradeUpTargetPrice} setTradeUpTargetPrice={setTradeUpTargetPrice}
+          terrainInfo={terrainInfo} terrainLoading={terrainLoading} winterSun={winterSun}
+          poiInfo={poiInfo} poiLoading={poiLoading}
+          gongsiInfo={gongsiInfo} gongsiLoading={gongsiLoading}
+          aptBasicInfo={aptBasicInfo} nearestStationInfo={nearestStationInfo}
+          nearbySchools={nearbySchools} schoolsLoading={schoolsLoading}
+          nearbyRadius={nearbyRadius} setNearbyRadius={setNearbyRadius}
+          nearbyComplexes={nearbyComplexes} radiusSummary={radiusSummary}
+          similarComplexes={similarComplexes}
+          pinnedComplexes={pinnedComplexes} setPinnedComplexes={setPinnedComplexes}
+          setMapFocusKeys={setMapFocusKeys} setViewMode={setViewMode}
+          aptJeonseInfo={aptJeonseInfo}
+          alertFormOpen={alertFormOpen} setAlertFormOpen={setAlertFormOpen}
+          alertDirection={alertDirection} setAlertDirection={setAlertDirection}
+          alertTargetPrice={alertTargetPrice} setAlertTargetPrice={setAlertTargetPrice}
+          alertSaving={alertSaving} submitAlert={submitAlert}
+          historyAreaFilter={historyAreaFilter} setHistoryAreaFilter={setHistoryAreaFilter}
+          historyListLimit={historyListLimit} setHistoryListLimit={setHistoryListLimit}
+          trendViewMode={trendViewMode} setTrendViewMode={setTrendViewMode}
+          styles={styles}
+        />
       )}
 
       <style>{`
