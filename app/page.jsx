@@ -13,6 +13,7 @@ import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandReg
 import { fetchDongGeoForSido, normalizeDongName } from '../lib/dong-geo';
 import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
+import { parseSearchQuery } from '../lib/search-parse';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -26,6 +27,10 @@ import {
 } from '../lib/ui-helpers';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
+const UNIT_FILTER_LABELS = {
+  u20: '20평 미만', '20s': '20평대', '30s': '30평대', '40s': '40평대', '50p': '50평 이상',
+  sqm59: '59㎡', sqm74: '74㎡', sqm84: '84㎡', sqm101: '101㎡',
+};
 
 const DEFAULT_SELECTED = [];
 const SIDO_FULL_TO_SHORT = {
@@ -1842,37 +1847,108 @@ export default function Page() {
   }, [complexSearch, allTxFiltered]);
   const [globalSearchMsg, setGlobalSearchMsg] = useState('');
 
+  const [globalSearchOk, setGlobalSearchOk] = useState(false);
+  const showSearchMsg = (text, ok = false) => { setGlobalSearchMsg(text); setGlobalSearchOk(ok); };
+
+  // 검색으로 지역을 새로 고르거나 거래유형을 바꾸면, 바뀐 상태가 반영된 "다음 렌더"에서 조회한다.
+  // (바로 handleFetch를 부르면 방금 바꾼 거래유형이 아니라 이전 값으로 조회돼버린다.)
+  const [pendingSearchFetch, setPendingSearchFetch] = useState(null);
+  useEffect(() => {
+    if (!pendingSearchFetch) return;
+    handleFetch(pendingSearchFetch);
+    setPendingSearchFetch(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSearchFetch]);
+
+  // 헤더 검색창: "해운대 84 8억 이하"처럼 지역·면적·가격·거래유형을 한 번에 알아듣는다.
+  // 이름이 겹치는 지역(중구·서구 등)은 임의로 고르지 않고 시·도를 되묻는다.
   const handleGlobalSearch = () => {
     const q = globalSearch.trim();
     if (!q) return;
+    const p = parseSearchQuery(q);
 
-    const aggMatch = SIDO_AGGREGATES.find((a) => a.name.includes(q) || q.includes(a.name.replace(' 전체', '')));
-    if (aggMatch) {
-      addRegionAndFetch(aggMatch.code);
-      setViewMode('map');
-      setGlobalSearchMsg('');
+    if (p.regionAmbiguous) {
+      const { name, sidos } = p.regionAmbiguous;
+      showSearchMsg(`"${name}"은(는) ${sidos.join('·')}에 있어요.\n시·도를 같이 적어주세요 (예: ${sidos[0]} ${name})`);
       return;
     }
-    for (const g of REGION_GROUPS) {
-      const item = g.items.find((it) => it.name.includes(q) || q.includes(it.name));
-      if (item) {
-        addRegionAndFetch(item.code);
-        setViewMode('map');
-        setGlobalSearchMsg('');
+
+    const hasCondition = p.dealType || p.unitSize || p.maxPriceEok != null;
+
+    // 지역·조건 없이 이름만 적었으면 예전처럼 단지명으로 찾는다.
+    if (!p.region && !hasCondition) {
+      const complexMatch = mapComplexes.find((c) => c.apt.includes(q) || q.includes(c.apt));
+      if (complexMatch) {
+        const coord = codeToLatLng[complexMatch.regionCode];
+        setSelectedApt({
+          apt: complexMatch.apt, dong: complexMatch.dong, regionCode: complexMatch.regionCode,
+          lat: coord?.lat, lng: coord?.lng,
+        });
+        showSearchMsg('');
         return;
       }
-    }
-    const complexMatch = mapComplexes.find((c) => c.apt.includes(q) || q.includes(c.apt));
-    if (complexMatch) {
-      const coord = codeToLatLng[complexMatch.regionCode];
-      setSelectedApt({
-        apt: complexMatch.apt, dong: complexMatch.dong, regionCode: complexMatch.regionCode,
-        lat: coord?.lat, lng: coord?.lng,
-      });
-      setGlobalSearchMsg('');
+      showSearchMsg('찾을 수 없어요. 지도에서 지역을 먼저 선택하거나\n"해운대 84 8억 이하"처럼 지역과 조건을 적어보세요.');
       return;
     }
-    setGlobalSearchMsg('찾을 수 없어요. 지도에서 지역을 먼저 선택해보세요.');
+
+    const applied = [];
+    const notes = [...p.notes, ...p.unsupported];
+
+    let dealChanged = false;
+    if (p.dealType) {
+      applied.push(p.dealLabel);
+      if (p.dealType !== dealType) { setDealTypeSafe(p.dealType); dealChanged = true; }
+    }
+    if (p.unitSize) { setUnitSizeFilter(p.unitSize.value); applied.push(p.unitSize.label); }
+    if (p.maxPriceEok != null) {
+      setBudgetSearchOpen(true);
+      setBudgetAmount(String(p.maxPriceEok));
+      applied.push(`${p.maxPriceEok}억 이하`);
+    }
+    setMapFocusKeys(null); // "비교 목록만 보기" 상태면 새 조건이 안 보이므로 푼다
+    setViewMode('map');
+
+    // setDealTypeSafe가 시세동향 전용 지역을 걷어내므로, 조회할 지역 목록에서도 같이 뺀다.
+    const baseSelected = (dealChanged && p.dealType !== 'rone')
+      ? selected.filter((c) => !RONE_ONLY_EXTRA.some((r) => r.code === c))
+      : selected;
+    let fetchCodes = null;
+    if (p.region) {
+      applied.unshift(p.region.label);
+      const newCodes = p.region.codes.filter((c) => !baseSelected.includes(c));
+      const first = p.region.codes[0];
+      if (codeToLatLng[first]) setFocusLatLng(codeToLatLng[first]);
+      if (newCodes.length || dealChanged) fetchCodes = [...baseSelected, ...newCodes];
+    } else if (dealChanged && baseSelected.length) {
+      fetchCodes = baseSelected;
+    } else if (!selected.length) {
+      notes.push('조회된 지역이 아직 없어요. 지역도 같이 적어주세요 (예: 해운대 84 8억).');
+    }
+    if (fetchCodes) { setSelected(fetchCodes); setPendingSearchFetch(fetchCodes); }
+
+    // 남은 말은 단지명으로 본다 — 지금 불러온 데이터 안에서만 찾을 수 있다.
+    if (p.complexQuery) {
+      const cq = p.complexQuery.replace(/\s+/g, '');
+      const hit = mapComplexes.find((c) => c.apt.replace(/\s+/g, '').includes(cq));
+      if (hit) {
+        const coord = codeToLatLng[hit.regionCode];
+        setSelectedApt({ apt: hit.apt, dong: hit.dong, regionCode: hit.regionCode, lat: coord?.lat, lng: coord?.lng });
+        applied.push(hit.apt);
+      } else {
+        notes.push(`"${p.complexQuery}" 단지는 지금 불러온 데이터에 없어요. 지역 조회가 끝난 뒤 다시 검색해보세요.`);
+      }
+    }
+
+    // 이번 검색에 없던 조건이 이전 검색/사이드바에서 남아 있으면 알려준다 (결과가 비어 보일 때 이유를 알 수 있게).
+    const kept = [];
+    if (!p.unitSize && unitSizeFilter !== 'all' && UNIT_FILTER_LABELS[unitSizeFilter]) kept.push(UNIT_FILTER_LABELS[unitSizeFilter]);
+    if (p.maxPriceEok == null && budgetSearchOpen && budgetAmount) kept.push(`${budgetAmount}억 이하`);
+
+    const lines = [];
+    if (applied.length) lines.push(`적용: ${applied.join(' · ')}`);
+    lines.push(...notes);
+    if (kept.length) lines.push(`유지 중인 조건: ${kept.join(' · ')}`);
+    showSearchMsg(lines.join('\n'), applied.length > 0);
   };
 
   const [compareAKey, setCompareAKey] = useState('');
@@ -2650,7 +2726,8 @@ export default function Page() {
             value={globalSearch}
             onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
-            placeholder="지역 또는 단지명 검색"
+            placeholder="예: 해운대 84 8억 이하"
+            title="지역·면적·가격을 한 번에 — 해운대 84 8억 이하 / 부산 강서구 전세 3억 / 수원 30평대"
             style={{
               width: 128, padding: '7px 9px', borderRadius: 8, border: 'none', outline: 'none',
               background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 12.5,
@@ -2659,8 +2736,9 @@ export default function Page() {
           {globalSearchMsg && (
             <div style={{
               position: 'absolute', top: '110%', right: 0, background: PALETTE.panel, color: PALETTE.textPrimary,
-              border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: '6px 10px', fontSize: 11.5,
-              whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 300,
+              border: `1px solid ${globalSearchOk ? PALETTE.accent : PALETTE.border}`, borderRadius: 6, padding: '7px 11px', fontSize: 11.5,
+              whiteSpace: 'pre-line', width: 'max-content', maxWidth: 340, lineHeight: 1.5,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 300,
             }}>
               {globalSearchMsg}
             </div>
@@ -3506,6 +3584,8 @@ export default function Page() {
       {/* CSS 문자열은 dangerouslySetInnerHTML로 넣는다: <style>{`...`}</style>로 쓰면 서버가 '>'를 '&gt;'로
           바꿔 써서 브라우저가 읽은 값과 달라져 하이드레이션 에러(#425/#418/#423)가 난다. */}
       <style dangerouslySetInnerHTML={{ __html: `
+        .header-search input { transition: width 0.2s ease; }
+        .header-search input:focus { width: 230px !important; }
         @media print {
           .no-print { display: none !important; }
           body { background: #fff !important; }
