@@ -3503,7 +3503,9 @@ export default function Page() {
         />
       )}
 
-      <style>{`
+      {/* CSS 문자열은 dangerouslySetInnerHTML로 넣는다: <style>{`...`}</style>로 쓰면 서버가 '>'를 '&gt;'로
+          바꿔 써서 브라우저가 읽은 값과 달라져 하이드레이션 에러(#425/#418/#423)가 난다. */}
+      <style dangerouslySetInnerHTML={{ __html: `
         @media print {
           .no-print { display: none !important; }
           body { background: #fff !important; }
@@ -3542,7 +3544,7 @@ export default function Page() {
           .map-portal-toolbar { right: 8px !important; }
           .portal-pill { padding: 7px 9px !important; }
         }
-      `}</style>
+      ` }} />
     </div>
   );
 }
