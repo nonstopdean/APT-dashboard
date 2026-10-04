@@ -2840,54 +2840,109 @@ export default function Page() {
           </div>
         )}
         {migrationRows.length > 1 && (() => {
-          const byItem = {};
-          migrationRows.forEach((r) => { (byItem[r.itmName] ||= []).push(r); });
-          const itemNames = Object.keys(byItem);
-          const months = [...new Set(migrationRows.map((r) => r.ym))].sort();
-          const chartData = months.map((ym) => {
-            const row = { ym: `${ym.slice(0, 4)}.${ym.slice(4, 6)}` };
-            itemNames.forEach((name) => {
-              const hit = byItem[name].find((r) => r.ym === ym);
-              if (hit) row[name] = hit.value;
-            });
-            return row;
-          });
+          // 항목은 이름이 아니라 KOSIS 항목코드로 찾는다 (이름이 바뀌어도 안 깨지게).
+          const pick = (code) => migrationRows.filter((r) => r.itmId === code);
+          const net = pick('T25');
+          const inflow = pick('T10');
+          const outflow = pick('T20');
+          if (net.length < 2) return null;
+          const months = [...new Set(net.map((r) => r.ym))].sort();
+          const label = (ym) => `${ym.slice(0, 4)}.${ym.slice(4, 6)}`;
+          const valueAt = (rows, ym) => rows.find((r) => r.ym === ym)?.value;
+          const netData = months.map((ym) => ({ ym: label(ym), 순이동: valueAt(net, ym) }));
+          const flowData = months.map((ym) => ({
+            ym: label(ym), 총전입: valueAt(inflow, ym), 총전출: valueAt(outflow, ym),
+          }));
+          const lastYm = months[months.length - 1];
+          const last12 = months.slice(-12);
+          const sum12 = last12.reduce((s, ym) => s + (valueAt(net, ym) || 0), 0);
+          const lastNet = valueAt(net, lastYm);
+          const signColor = (v) => (v > 0 ? PALETTE.up : v < 0 ? PALETTE.down : PALETTE.textPrimary);
+          const fmtSigned = (v) => (v == null ? '-' : `${v > 0 ? '+' : ''}${v.toLocaleString()}명`);
+          const detailCodes = ['T30', 'T31', 'T32', 'T40', 'T50'];
+          const details = detailCodes
+            .map((code) => {
+              const rows = pick(code);
+              const last = rows[rows.length - 1];
+              return last ? { name: last.itmName, value: last.value } : null;
+            })
+            .filter(Boolean);
           return (
             <div style={styles.card} className="ui-card">
               <h2 style={{ ...styles.sectionTitle, marginBottom: 4 }}>{currentSidoShort} 인구이동 추이 (KOSIS)</h2>
-              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '0 0 8px' }}>
-                국가데이터처 국내인구이동통계 기준, 최근 {months.length}개월
+              <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '0 0 10px' }}>
+                국내인구이동통계 · {label(months[0])} ~ {label(lastYm)} · 순이동 = 총전입 − 총전출 (시·도 단위)
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                {itemNames.map((name, i) => {
-                  const last = byItem[name][byItem[name].length - 1];
-                  return (
-                    <span key={name} style={{ ...styles.chip, color: LINE_COLORS[i % LINE_COLORS.length], borderColor: LINE_COLORS[i % LINE_COLORS.length] }}>
-                      {name} {last?.value?.toLocaleString()}명
-                    </span>
-                  );
-                })}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 12 }}>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{label(lastYm)} 순이동</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: signColor(lastNet) }}>{fmtSigned(lastNet)}</div>
+                </div>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 {last12.length}개월 누적</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: signColor(sum12) }}>{fmtSigned(sum12)}</div>
+                </div>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{label(lastYm)} 총전입</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{valueAt(inflow, lastYm)?.toLocaleString() ?? '-'}명</div>
+                </div>
+                <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{label(lastYm)} 총전출</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{valueAt(outflow, lastYm)?.toLocaleString() ?? '-'}명</div>
+                </div>
               </div>
-              <div style={{ width: '100%', height: 180 }}>
+
+              <div style={{ fontSize: 11.5, fontWeight: 700, margin: '0 0 4px' }}>월별 순이동</div>
+              <div style={{ width: '100%', height: 150 }}>
                 <ResponsiveContainer>
-                  <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                  <BarChart data={netData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={PALETTE.border} vertical={false} />
                     <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={56}
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={52}
+                      tickFormatter={(v) => v.toLocaleString()} />
+                    <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => fmtSigned(v)} />
+                    <Bar dataKey="순이동" radius={[3, 3, 0, 0]}>
+                      {netData.map((d, i) => <Cell key={i} fill={d.순이동 >= 0 ? PALETTE.up : PALETTE.down} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div style={{ fontSize: 11.5, fontWeight: 700, margin: '10px 0 4px' }}>총전입 · 총전출</div>
+              <div style={{ width: '100%', height: 150 }}>
+                <ResponsiveContainer>
+                  <LineChart data={flowData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                    <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={52}
                       tickFormatter={(v) => v.toLocaleString()} domain={['auto', 'auto']} />
                     <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
                       labelStyle={{ color: PALETTE.textPrimary }}
                       formatter={(v) => `${v?.toLocaleString()}명`} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
-                    {itemNames.map((name, i) => (
-                      <Line key={name} type="monotone" dataKey={name} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={2} dot={false} connectNulls />
-                    ))}
+                    <Line type="monotone" dataKey="총전입" stroke={PALETTE.up} strokeWidth={2} dot={false} connectNulls />
+                    <Line type="monotone" dataKey="총전출" stroke={PALETTE.down} strokeWidth={2} dot={false} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
-                항목명은 통계청 KOSIS가 제공하는 명칭을 그대로 표시했어요.
-              </p>
+
+              {details.length > 0 && (
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ fontSize: 11.5, cursor: 'pointer', color: PALETTE.textSecondary }}>세부 항목 ({label(lastYm)})</summary>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {details.map((d) => (
+                      <span key={d.name} style={{ ...styles.chip, fontSize: 11, padding: '3px 9px' }}>
+                        {d.name} {d.value.toLocaleString()}명
+                      </span>
+                    ))}
+                  </div>
+                  <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '6px 0 0' }}>
+                    시도내이동의 시군구간 전입·전출은 같은 시·도 안의 이동이라 값이 항상 같아요.
+                  </p>
+                </details>
+              )}
             </div>
           );
         })()}
