@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ChevronRight } from 'lucide-react';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
 import PinnedCompareDrawer from './PinnedCompareDrawer';
+import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, monthLabel } from '../lib/ui-helpers';
 
@@ -31,6 +32,12 @@ export default function MapTab({
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  const [listOnlyOpen, setListOnlyOpen] = useState(false);
+  // "목록만" 진단은 펼쳤을 때만 계산한다 (단지가 수백 개라 평소엔 돌릴 필요가 없다).
+  const listOnlyReport = useMemo(
+    () => (listOnlyOpen ? classifyListOnly(mapComplexes) : null),
+    [listOnlyOpen, mapComplexes],
+  );
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -337,10 +344,40 @@ export default function MapTab({
                   const gs = geocodeStats && geocodeStats.total === mapComplexes.length ? geocodeStats : null;
                   return (
                     <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2, lineHeight: 1.5 }}>
-                      <div title="거래 있음: 조회 기간에 거래가 있는 단지 · 목록만: 단지 목록에는 있지만 이 기간 거래가 없는 단지 (같은 단지가 이름이 달라 따로 잡힌 경우도 포함될 수 있어요)">
+                      <div title="거래: 조회 기간에 거래가 있는 단지 · 목록만: 단지 목록에는 있지만 이 기간 거래가 없는 단지 (표기가 많이 달라 합치지 못한 같은 단지가 섞여 있을 수 있어요) · 합침: 거래 단지와 이름이 사실상 같아 중복으로 보고 합친 수">
                         단지 {mapComplexes.length}개 (거래 {withTrade} · 목록만 {mapComplexes.length - withTrade})
+                        {mapComplexes.mergedByName > 0 && ` · 이름 같아 합침 ${mapComplexes.mergedByName}`}
                         {visibleMarkerCount != null && ` · 화면표시 ${visibleMarkerCount}개`}
                       </div>
+                      {mapComplexes.length - withTrade > 0 && (
+                        <div>
+                          <span
+                            style={{ cursor: 'pointer', textDecoration: 'underline', color: PALETTE.textSecondary }}
+                            onClick={() => setListOnlyOpen((v) => !v)}
+                          >
+                            {listOnlyOpen ? '▾ 목록만 단지 살펴보기 접기' : '▸ 목록만 단지, 왜 많을까? 살펴보기'}
+                          </span>
+                          {listOnlyReport && (
+                            <div style={{ marginTop: 3, padding: '6px 8px', background: PALETTE.panelAlt, borderRadius: 6 }}>
+                              <div>목록만 {listOnlyReport.listOnly}개를 이름으로 비교했어요</div>
+                              <div>· 같은 동에 비슷한 이름의 거래 단지가 있음: <b>{listOnlyReport.sameDong}</b>개 (같은 단지일 수 있어요)</div>
+                              <div>· 다른 동에만 비슷한 이름이 있음: <b>{listOnlyReport.otherDong}</b>개</div>
+                              <div>· 비슷한 이름이 없음: <b>{listOnlyReport.none}</b>개 (이 기간 거래가 정말 없는 단지로 보여요)</div>
+                              {listOnlyReport.samples.length > 0 && (
+                                <div style={{ marginTop: 4 }}>
+                                  <div style={{ color: PALETTE.textSecondary }}>같은 동 후보 예시 (목록 이름 ↔ 거래 이름)</div>
+                                  {listOnlyReport.samples.map((m) => (
+                                    <div key={`${m.dong}|${m.list}|${m.trade}`}>{m.dong} · {m.list} ↔ {m.trade}</div>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ marginTop: 4, color: PALETTE.textMuted }}>
+                                번호가 다르면(6단지/7단지, 1차/2차) 다른 단지로 봤어요. 이 숫자는 같은 단지라고 단정한 게 아니라 "비슷해 보이는 후보"예요.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {gs && (
                         <div title="정확: 카카오·저장된 실제 위치 · 동 중심: 같은 동 단지는 한 점에 겹쳐 보여요 · 못 찾음: 위치를 못 찾아 표시하지 않아요 · 대기: 아직 위치 검색 전(확대해서 보이면 찾아요)">
                           위치 정확 {gs.exact} · 동 중심 {gs.approx} · 못 찾음 {gs.failed} · 대기 {gs.pending}

@@ -14,6 +14,7 @@ import { fetchDongGeoForSido, normalizeDongName } from '../lib/dong-geo';
 import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import { parseSearchQuery } from '../lib/search-parse';
+import { complexIdentity } from '../lib/complex-name';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1627,12 +1628,22 @@ export default function Page() {
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
     allTxFiltered.forEach((t) => addItem(t.apt, t.dong, t.regionCode));
+    // 같은 단지인데 실거래와 K-apt의 표기가 달라(띄어쓰기·"아파트" 유무 등) 따로 잡히면 지도에 핀이 중복된다.
+    // 같은 지역·동에서 이름을 정규화한 값이 같은 목록 단지는 이미 있는 실거래 단지로 보고 합친다.
+    const tradeIdentities = new Set(list.map((c) => complexIdentity(c.regionCode, c.dong, c.apt)));
+    let mergedByName = 0;
     for (const c of fullComplexList) {
       if (list.length >= MAX_MAP_COMPLEXES) break;
       if (dongFilter !== 'all' && c.dong !== dongFilter) continue;
+      if (!seen.has(`${c.regionCode}|${c.dong}|${c.apt}`) && tradeIdentities.has(complexIdentity(c.regionCode, c.dong, c.apt))) {
+        mergedByName += 1;
+        continue;
+      }
       addItem(c.apt, c.dong, c.regionCode);
     }
-    return list.slice(0, MAX_MAP_COMPLEXES);
+    const out = list.slice(0, MAX_MAP_COMPLEXES);
+    out.mergedByName = mergedByName; // 상태 카드에 "이름이 같아 합친 수"를 보여주기 위해 배열에 붙여둔다
+    return out;
   }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent]);
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);

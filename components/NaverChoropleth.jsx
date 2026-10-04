@@ -19,6 +19,10 @@ export default function NaverChoropleth({
   const schoolMarkersRef = useRef([]);
   const clustererRef = useRef([]); // [{ overlay }]
   const clusterSignatureRef = useRef('');
+  const refineRunningRef = useRef(false); // 동 중심점 마커의 위치 다듬기가 진행 중인지
+  const refineAttemptsRef = useRef(0); // 이번 접속에서 다듬기를 시도한 단지 수(과도한 호출 방지)
+  const refineTriedRef = useRef(new Set()); // 이번 접속에서 이미 다듬기를 시도한 단지 키(못 찾아도 재시도하지 않음)
+  const unmountedRef = useRef(false);
   const districtMetaRef = useRef([]);
   const dongMetaRef = useRef([]);
   const polygonSyncTimerRef = useRef(null);
@@ -53,6 +57,7 @@ export default function NaverChoropleth({
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
   useEffect(() => { onVisibleMarkerCountRef.current = onVisibleMarkerCount; }, [onVisibleMarkerCount]);
   useEffect(() => { onGeocodeStatsRef.current = onGeocodeStats; }, [onGeocodeStats]);
+  useEffect(() => { unmountedRef.current = false; return () => { unmountedRef.current = true; }; }, []);
 
   // 현재 화면 범위를 부모(page.jsx)에 알려준다 — "단지 탐색" 목록을 화면에 보이는 단지로만
   // 좁혀서 보여줄 수 있게 한다 (호갱노노처럼 지도 이동 → 목록 자동 갱신).
@@ -136,6 +141,70 @@ export default function NaverChoropleth({
     if (sig === lastGeocodeStatsRef.current) return;
     lastGeocodeStatsRef.current = sig;
     cb(stats);
+  };
+
+  // 마커는 일단 동 중심점에 띄워 화면을 빨리 보여주고, 정확한 위치를 찾는 대로 옮긴다.
+  // 같은 동 단지가 전부 한 점에 겹치면 클러스터러가 어떤 줌에서도 숫자 원 하나로만 묶어서, 확대해도 안 풀렸다.
+  //  - 한 번에 REFINE_BATCH개, 동시에 3개씩, 화면 중심에서 가까운 순서로 처리한다.
+  //  - 지도를 움직여도 중단하지 않고, 남은 단지는 이어서 처리한다(이전 단계의 seq 중단과 별개).
+  //  - 옮긴 뒤에는 클러스터러 서명을 지워 다시 그리게 한다(위치만 바뀌면 서명이 같아 화면이 안 바뀐다).
+  //  - 못 찾으면 geocodeCache에 null을 남겨 이번 접속에서는 다시 시도하지 않는다(동 중심점에 그대로 둔다).
+  const REFINE_BATCH = 40;
+  const REFINE_SESSION_CAP = 800;
+  const refineApproxMarkers = async () => {
+    if (refineRunningRef.current || unmountedRef.current) return;
+    refineRunningRef.current = true;
+    try {
+      const ready = await ensureKakaoGeocoder();
+      if (!ready) return;
+      if (!kakaoPlacesRef.current) kakaoPlacesRef.current = new window.kakao.maps.services.Places();
+      const complexByKey = new Map((complexesRef.current || []).map((c) => [c.key, c]));
+      while (!unmountedRef.current && refineAttemptsRef.current < REFINE_SESSION_CAP) {
+        if (zoomTierRef.current !== 'near') return;
+        const center = mapRef.current?.getCenter?.();
+        const clat = center?.lat?.() ?? 0;
+        const clng = center?.lng?.() ?? 0;
+        // 아직 동 중심점(근사)에 있고 이번 접속에서 시도하지 않은 단지. 서버 캐시에 오염된 값(동에서 너무 멀리
+        // 떨어진 좌표)이 있어도 resolveMarkerCoord가 근사로 판정하므로 여기에 포함되어 다시 찾고 덮어쓴다.
+        const batch = markersRef.current
+          .map((m) => complexByKey.get(m.key))
+          .filter((c) => c && c.lat != null && c.lng != null && !refineTriedRef.current.has(c.key)
+            && resolveMarkerCoord({ lat: c.lat, lng: c.lng }, geocodeCache[c.key]).source === 'approx')
+          .sort((a, b) => ((a.lat - clat) ** 2 + (a.lng - clng) ** 2) - ((b.lat - clat) ** 2 + (b.lng - clng) ** 2))
+          .slice(0, REFINE_BATCH);
+        if (batch.length === 0) return;
+        refineAttemptsRef.current += batch.length;
+        batch.forEach((c) => refineTriedRef.current.add(c.key));
+        const found = [];
+        // eslint-disable-next-line no-await-in-loop
+        await runPool(batch, async (c) => {
+          const ctx = { place: placeContextOf(c.regionCode), dong: c.dong, aptName: c.apt };
+          const coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`, ctx)
+            || await geocodeComplex(`${c.dong} ${c.apt}`, ctx)
+            || await geocodeComplex(c.apt, ctx);
+          geocodeCache[c.key] = coord; // null이면 못 찾음 — 이번 접속에서는 재시도하지 않는다
+          if (!coord) return;
+          const { coord: picked, source } = resolveMarkerCoord({ lat: c.lat, lng: c.lng }, coord);
+          if (source !== 'exact') return; // 동 중심에서 너무 먼 값은 버린다
+          const entry = markersRef.current.find((m) => m.key === c.key);
+          if (!entry || typeof entry.marker.setPosition !== 'function') return;
+          entry.marker.setPosition(new window.naver.maps.LatLng(picked.lat, picked.lng));
+          found.push({ key: c.key, lat: picked.lat, lng: picked.lng });
+        }, 3);
+        if (found.length) {
+          queueServerGeocodeSave(found);
+          clusterSignatureRef.current = ''; // 위치가 바뀌었으니 클러스터를 다시 만든다
+          syncNaverClusterer();
+        }
+        reportGeocodeStats();
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 250)); // 호출이 몰리지 않게 잠깐 쉰다
+      }
+    } catch (e) {
+      // 위치 다듬기는 부가 기능이라, 실패해도 동 중심점 마커로 계속 동작해야 한다.
+    } finally {
+      refineRunningRef.current = false;
+    }
   };
 
   const getFeatureBbox = (feature) => {
@@ -289,6 +358,10 @@ export default function NaverChoropleth({
         group[0].marker.setMap(map);
         return;
       }
+      // 묶인 마커는 지도에서 뗀다. 줌 인 상태에서 낱개로 붙어 있던 마커가 줌 아웃으로 묶일 때,
+      // 떼지 않으면 숫자 원 아래에 핀이 그대로 남아 겹쳐 보인다. (같은 점의 마커는 한 번도 낱개가
+      // 된 적이 없어서 드러나지 않던 문제인데, 위치를 정확히 옮기면서 나타나게 된다.)
+      group.forEach((g) => g.marker.setMap(null));
       const lat = group.reduce((sum, g) => sum + g.lat, 0) / group.length;
       const lng = group.reduce((sum, g) => sum + g.lng, 0) / group.length;
       const size = group.length;
@@ -584,6 +657,7 @@ export default function NaverChoropleth({
     if (todo.length === 0) {
       syncNaverClusterer();
       reportGeocodeStats();
+      refineApproxMarkers();
       return;
     }
 
@@ -638,6 +712,7 @@ export default function NaverChoropleth({
     }, 6);
     queueServerGeocodeSave(newlyFound);
     if (seq === markerSyncSeqRef.current) { syncNaverClusterer(); reportGeocodeStats(); }
+    refineApproxMarkers();
   };
 
   useEffect(() => {
