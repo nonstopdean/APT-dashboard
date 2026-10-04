@@ -16,6 +16,7 @@ export default function MapTab({
   mapFocusMatches, budgetMatches, priceMoveMatches, mapComplexes,
   setSelectedApt, dongMapData, setMapZoomTier, setMapViewportBounds, setVisibleMarkerCount, visibleStations,
   schoolLayerOn, setSchoolLayerOn, visibleSchoolLocations, schoolLocationsLoading,
+  geocodeStats, setGeocodeStats, mapZoomTier,
   dealType, setDealTypeSafe, isRone, isRatio, isRent,
   mapColorMode, setMapColorMode,
   budgetSearchOpen, setBudgetSearchOpen, budgetAmount, setBudgetAmount,
@@ -75,6 +76,7 @@ export default function MapTab({
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
+            onGeocodeStats={setGeocodeStats}
             stations={visibleStations}
             schools={visibleSchoolLocations}
             height="100%"
@@ -329,12 +331,27 @@ export default function MapTab({
             ) : (
               <>
                 <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
-                {mapComplexes.length > 0 && (
-                  <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>
-                    단지 {mapComplexes.length}개 중 좌표확보 {mapComplexes.filter((c) => c.lat != null).length}개
-                    {visibleMarkerCount != null && ` · 화면표시 ${visibleMarkerCount}개`}
-                  </div>
-                )}
+                {mapComplexes.length > 0 && (() => {
+                  const withTrade = mapComplexes.filter((c) => c.latestPrice != null).length;
+                  // 지역을 바꾼 직후에는 이전 지역의 통계가 남아 있을 수 있어서, 단지 수가 맞을 때만 보여준다.
+                  const gs = geocodeStats && geocodeStats.total === mapComplexes.length ? geocodeStats : null;
+                  return (
+                    <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2, lineHeight: 1.5 }}>
+                      <div title="거래 있음: 조회 기간에 거래가 있는 단지 · 목록만: 단지 목록에는 있지만 이 기간 거래가 없는 단지 (같은 단지가 이름이 달라 따로 잡힌 경우도 포함될 수 있어요)">
+                        단지 {mapComplexes.length}개 (거래 {withTrade} · 목록만 {mapComplexes.length - withTrade})
+                        {visibleMarkerCount != null && ` · 화면표시 ${visibleMarkerCount}개`}
+                      </div>
+                      {gs && (
+                        <div title="정확: 카카오·저장된 실제 위치 · 동 중심: 같은 동 단지는 한 점에 겹쳐 보여요 · 못 찾음: 위치를 못 찾아 표시하지 않아요 · 대기: 아직 위치 검색 전(확대해서 보이면 찾아요)">
+                          위치 정확 {gs.exact} · 동 중심 {gs.approx} · 못 찾음 {gs.failed} · 대기 {gs.pending}
+                        </div>
+                      )}
+                      {mapZoomTier !== 'near' && (
+                        <div style={{ color: PALETTE.accent }}>단지 마커는 지도를 더 확대하면 보여요</div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>

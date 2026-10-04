@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave } from '../lib/geocodeCache';
+import { placeContextOf, pickPlace, resolveMarkerCoord, summarizeCoordSources } from '../lib/geocode-pick';
 
 // features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, stations, schools,
+  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, onGeocodeStats, stations, schools,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -32,6 +33,8 @@ export default function NaverChoropleth({
   const onZoomTierChangeRef = useRef(onZoomTierChange);
   const onViewportChangeRef = useRef(onViewportChange);
   const onVisibleMarkerCountRef = useRef(onVisibleMarkerCount);
+  const onGeocodeStatsRef = useRef(onGeocodeStats);
+  const lastGeocodeStatsRef = useRef('');
   const [loadFailed, setLoadFailed] = useState(false);
   const markerSyncTimerRef = useRef(null);
   const markerSyncSeqRef = useRef(0);
@@ -49,6 +52,7 @@ export default function NaverChoropleth({
   useEffect(() => { onZoomTierChangeRef.current = onZoomTierChange; }, [onZoomTierChange]);
   useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
   useEffect(() => { onVisibleMarkerCountRef.current = onVisibleMarkerCount; }, [onVisibleMarkerCount]);
+  useEffect(() => { onGeocodeStatsRef.current = onGeocodeStats; }, [onGeocodeStats]);
 
   // 현재 화면 범위를 부모(page.jsx)에 알려준다 — "단지 탐색" 목록을 화면에 보이는 단지로만
   // 좁혀서 보여줄 수 있게 한다 (호갱노노처럼 지도 이동 → 목록 자동 갱신).
@@ -109,16 +113,30 @@ export default function NaverChoropleth({
     script.addEventListener('error', () => resolve(false));
   });
 
-  const geocodeComplex = (query) => new Promise((resolve) => {
+  // ctx({ place, dong, aptName })로 시·도/시군구가 맞는 결과만 채택한다 (첫 번째 결과를 그대로 쓰면
+  // 흔한 단지명이 다른 도시로 찍히고, 그 좌표가 공유 캐시에 저장될 수 있었다).
+  const geocodeComplex = (query, ctx) => new Promise((resolve) => {
     if (!kakaoPlacesRef.current) return resolve(null);
     kakaoPlacesRef.current.keywordSearch(query, (result, status) => {
-      if (status === window.kakao.maps.services.Status.OK && result[0]) {
-        resolve({ lat: parseFloat(result[0].y), lng: parseFloat(result[0].x) });
+      if (status === window.kakao.maps.services.Status.OK && result?.length) {
+        resolve(pickPlace(result, ctx));
       } else {
         resolve(null);
       }
     });
   });
+
+  // 지금 단지들의 좌표가 어디서 왔는지(정확/동 중심/못 찾음/대기)를 세서 화면 카드로 알려준다.
+  // 값이 바뀔 때만 부모에 알린다.
+  const reportGeocodeStats = () => {
+    const cb = onGeocodeStatsRef.current;
+    if (!cb || !complexesRef.current?.length) return;
+    const stats = summarizeCoordSources(complexesRef.current, geocodeCache);
+    const sig = `${stats.total}|${stats.exact}|${stats.approx}|${stats.failed}|${stats.pending}`;
+    if (sig === lastGeocodeStatsRef.current) return;
+    lastGeocodeStatsRef.current = sig;
+    cb(stats);
+  };
 
   const getFeatureBbox = (feature) => {
     const coords = feature?.geometry?.coordinates;
@@ -565,6 +583,7 @@ export default function NaverChoropleth({
     const todo = candidate.filter((c) => !existingKeys.has(c.key));
     if (todo.length === 0) {
       syncNaverClusterer();
+      reportGeocodeStats();
       return;
     }
 
@@ -582,12 +601,16 @@ export default function NaverChoropleth({
     const newlyFound = [];
     await runPool(todo, async (c) => {
       if (seq !== markerSyncSeqRef.current) return;
-      let coord = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : geocodeCache[c.key];
+      // 정확한 좌표(카카오·서버 캐시) > 동 중심점(근사) 순서. 예전에는 동 중심점이 있으면 정확한 좌표를
+      // 아예 쓰지 않아서, 서버에 저장해둔(예열한) 좌표가 버려지고 같은 동 단지가 한 점에 겹쳤다.
+      const approx = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null;
+      let { coord } = resolveMarkerCoord(approx, geocodeCache[c.key]);
       if (coord === undefined) {
         if (!ready) return;
-        coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
-          || await geocodeComplex(`${c.dong} ${c.apt}`)
-          || await geocodeComplex(c.apt);
+        const ctx = { place: placeContextOf(c.regionCode), dong: c.dong, aptName: c.apt };
+        coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`, ctx)
+          || await geocodeComplex(`${c.dong} ${c.apt}`, ctx)
+          || await geocodeComplex(c.apt, ctx);
         geocodeCache[c.key] = coord;
         if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
       }
@@ -614,13 +637,14 @@ export default function NaverChoropleth({
       markersRef.current.push({ marker, key: c.key });
     }, 6);
     queueServerGeocodeSave(newlyFound);
-    if (seq === markerSyncSeqRef.current) syncNaverClusterer();
+    if (seq === markerSyncSeqRef.current) { syncNaverClusterer(); reportGeocodeStats(); }
   };
 
   useEffect(() => {
     // complexes가 처음 들어오거나 지역을 바꿨을 때만 준비한다. 실제 Marker 생성은 near + idle에서 한다.
     if (!mapRef.current || !complexes?.length) return undefined;
     if (zoomTierRef.current === 'near') syncVisibleMarkers();
+    else reportGeocodeStats();
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complexes]);

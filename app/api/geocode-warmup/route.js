@@ -2,6 +2,7 @@ import { fetchAptListBySigungu, geocodeViaKakaoRest } from '../../../lib/molit';
 import { kvReady, kvMSet } from '../../../lib/kv';
 import { expandRegionCode, regionLabel } from '../../../lib/regions';
 import { runPool } from '../../../lib/geocodeCache';
+import { placeContextOf } from '../../../lib/geocode-pick';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,9 +44,10 @@ export async function GET(request) {
     // eslint-disable-next-line no-await-in-loop
     await runPool(list, async (item) => {
       const key = `${regionCode}|${item.dong}|${item.kaptName}`;
-      const coord = await geocodeViaKakaoRest(kakaoRestKey, `${regionName} ${item.dong} ${item.kaptName}`)
-        || await geocodeViaKakaoRest(kakaoRestKey, `${item.dong} ${item.kaptName}`)
-        || await geocodeViaKakaoRest(kakaoRestKey, item.kaptName);
+      const ctx = { place: placeContextOf(regionCode), dong: item.dong, aptName: item.kaptName };
+      const coord = await geocodeViaKakaoRest(kakaoRestKey, `${regionName} ${item.dong} ${item.kaptName}`, ctx)
+        || await geocodeViaKakaoRest(kakaoRestKey, `${item.dong} ${item.kaptName}`, ctx)
+        || await geocodeViaKakaoRest(kakaoRestKey, item.kaptName, ctx);
       if (coord) {
         entries.push([PREFIX + key, coord]);
         found += 1;

@@ -2187,6 +2187,7 @@ export default function Page() {
 
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [mapZoomTier, setMapZoomTier] = useState('far');
+  const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고)
   const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
   const loadedSidosRef = useRef(new Set());
 
@@ -2755,6 +2756,7 @@ export default function Page() {
           mapFocusMatches={mapFocusMatches} budgetMatches={budgetMatches} priceMoveMatches={priceMoveMatches}
           mapComplexes={mapComplexes}
           setSelectedApt={setSelectedApt} dongMapData={dongMapData} setMapZoomTier={setMapZoomTier}
+          geocodeStats={geocodeStats} setGeocodeStats={setGeocodeStats} mapZoomTier={mapZoomTier}
           setMapViewportBounds={setMapViewportBounds} setVisibleMarkerCount={setVisibleMarkerCount}
           visibleStations={visibleStations}
           schoolLayerOn={schoolLayerOn} setSchoolLayerOn={setSchoolLayerOn}

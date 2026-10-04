@@ -54,7 +54,9 @@ export async function POST(request) {
   const entries = Array.isArray(body?.entries) ? body.entries : [];
   const valid = entries
     .slice(0, 300)
-    .filter((e) => e?.key && e.lat != null && e.lng != null)
+    // 한반도 밖이거나 숫자가 아닌 값은 저장하지 않는다 (공유 캐시가 오염되지 않게).
+    .filter((e) => e?.key && Number.isFinite(e.lat) && Number.isFinite(e.lng)
+      && e.lat >= 32.5 && e.lat <= 39.0 && e.lng >= 124.0 && e.lng <= 132.5)
     .map((e) => [PREFIX + e.key, { lat: e.lat, lng: e.lng }]);
   try {
     await kvMSet(valid);
