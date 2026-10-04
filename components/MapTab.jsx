@@ -189,7 +189,9 @@ export default function MapTab({
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
         <div className="map-portal-toolbar" style={{
           position: 'absolute', top: 14, left: 14, right: 14 + (selectedApt ? detailInset : 0), zIndex: 20,
-          display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none', transition: 'right 0.15s ease',
+          // 자리가 모자라면 상태 카드가 다음 줄로 내려오게 한다 (예전엔 한 줄에 억지로 두어서 카드가 오른쪽으로 삐져나가
+          // 상세 창 밑에 가려졌다).
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, pointerEvents: 'none', transition: 'right 0.15s ease',
         }}>
           <div style={{
             pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 4,
@@ -332,7 +334,9 @@ export default function MapTab({
           <div className="map-status-card" style={{
             marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
             border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
-            boxShadow: '0 4px 18px rgba(0,0,0,0.10)', fontSize: 11.5, whiteSpace: 'nowrap',
+            boxShadow: '0 4px 18px rgba(0,0,0,0.10)', fontSize: 11.5,
+            // 긴 진단 줄이 잘리거나 가려지지 않게 줄바꿈을 허용하고, 컨테이너 폭을 넘지 않게 한다.
+            whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: '100%', boxSizing: 'border-box',
           }}>
             {mapFocusMatches ? (
               <>
