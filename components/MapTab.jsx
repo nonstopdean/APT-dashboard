@@ -5,7 +5,7 @@ import KakaoChoropleth from './KakaoChoropleth';
 import PinnedCompareDrawer from './PinnedCompareDrawer';
 import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
-import { PALETTE, fmtWon, fmtArea, monthLabel } from '../lib/ui-helpers';
+import { PALETTE, fmtWon, fmtArea, monthLabel, APP_BUILD } from '../lib/ui-helpers';
 
 // 지도 탭 전체(왼쪽 패널 + 지도 + 툴바 + 단지 탐색 패널). app/page.jsx 안에 있던
 // viewMode === 'map' 블록과 renderSeoulMap()을 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
@@ -17,7 +17,7 @@ export default function MapTab({
   mapFocusMatches, budgetMatches, priceMoveMatches, mapComplexes,
   setSelectedApt, dongMapData, setMapZoomTier, setMapViewportBounds, setVisibleMarkerCount, visibleStations,
   schoolLayerOn, setSchoolLayerOn, visibleSchoolLocations, schoolLocationsLoading,
-  geocodeStats, setGeocodeStats, mapZoomTier,
+  geocodeStats, setGeocodeStats, mapZoomTier, detailInset = 420,
   dealType, setDealTypeSafe, isRone, isRatio, isRent,
   mapColorMode, setMapColorMode,
   budgetSearchOpen, setBudgetSearchOpen, budgetAmount, setBudgetAmount,
@@ -33,6 +33,13 @@ export default function MapTab({
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
+  // 숫자 원을 눌러도 확대로 갈라지지 않을 때(같은 위치·최대 줌) 그 안의 단지 목록을 오른쪽 패널에 보여준다.
+  const [clusterKeys, setClusterKeys] = useState(null); // Set<string> | null
+  const clusterRows = useMemo(() => {
+    if (!clusterKeys) return null;
+    const rows = mapComplexes.filter((c) => clusterKeys.has(c.key));
+    return rows.length ? rows : null;
+  }, [clusterKeys, mapComplexes]);
   // "목록만" 진단은 펼쳤을 때만 계산한다 (단지가 수백 개라 평소엔 돌릴 필요가 없다).
   const listOnlyReport = useMemo(
     () => (listOnlyOpen ? classifyListOnly(mapComplexes) : null),
@@ -84,6 +91,7 @@ export default function MapTab({
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
             onGeocodeStats={setGeocodeStats}
+            onClusterOpen={(keys) => { setClusterKeys(new Set(keys)); setMapPanelMinimized(false); }}
             stations={visibleStations}
             schools={visibleSchoolLocations}
             height="100%"
@@ -180,7 +188,7 @@ export default function MapTab({
 
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
         <div className="map-portal-toolbar" style={{
-          position: 'absolute', top: 14, left: 14, right: selectedApt ? 434 : 14, zIndex: 20,
+          position: 'absolute', top: 14, left: 14, right: 14 + (selectedApt ? detailInset : 0), zIndex: 20,
           display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none', transition: 'right 0.15s ease',
         }}>
           <div style={{
@@ -383,9 +391,20 @@ export default function MapTab({
                           위치 정확 {gs.exact} · 동 중심 {gs.approx} · 못 찾음 {gs.failed} · 대기 {gs.pending}
                         </div>
                       )}
+                      {gs && gs.refine && (gs.refine.attempted > 0 || gs.refine.sdkFail > 0 || gs.kakao.calls > 0) && (
+                        <div title="동 중심에 겹쳐 있는 단지의 정확한 위치를 카카오에서 찾는 중이에요. 결과없음: 검색 결과가 없음 · 지역불일치: 결과는 있었지만 시·도/시군구가 맞지 않아 버림 · 오류: 카카오 응답 오류">
+                          위치 다듬기: 시도 {gs.refine.attempted} · 이동 {gs.refine.moved}
+                          {` · 카카오 ${gs.kakao.calls}회(채택 ${gs.kakao.picked} · 결과없음 ${gs.kakao.zero} · 지역불일치 ${gs.kakao.rejected} · 오류 ${gs.kakao.error}${gs.kakao.lastError ? `:${gs.kakao.lastError}` : ''})`}
+                          {gs.refine.far > 0 && ` · 동에서 멀어 버림 ${gs.refine.far}`}
+                        </div>
+                      )}
+                      {gs && gs.refine && gs.refine.sdkFail > 0 && (
+                        <div style={{ color: '#B23A2E' }}>카카오 지도 SDK를 불러오지 못했어요 (카카오 개발자 콘솔의 웹 도메인 등록을 확인해주세요)</div>
+                      )}
                       {mapZoomTier !== 'near' && (
                         <div style={{ color: PALETTE.accent }}>단지 마커는 지도를 더 확대하면 보여요</div>
                       )}
+                      <div style={{ opacity: 0.6 }}>빌드 {APP_BUILD}</div>
                     </div>
                   );
                 })()}
@@ -397,7 +416,7 @@ export default function MapTab({
         {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
         {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
           <div style={{
-            position: 'absolute', bottom: 14, left: 14, right: selectedApt ? 434 : 14, zIndex: 20,
+            position: 'absolute', bottom: 14, left: 14, right: 14 + (selectedApt ? detailInset : 0), zIndex: 20,
             display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
             background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
@@ -455,12 +474,18 @@ export default function MapTab({
             </div>
             {!mapPanelMinimized && (
             <div style={{ overflowY: 'auto', height: 'calc(100% - 64px)' }}>
-              {!budgetMatches && mapViewportBounds && (
+              {clusterRows && (
+                <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span>같은 위치에 겹쳐 있는 단지 {clusterRows.length}개</span>
+                  <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }} onClick={() => setClusterKeys(null)}>전체 보기</span>
+                </div>
+              )}
+              {!clusterRows && !budgetMatches && mapViewportBounds && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
                   현재 화면에 보이는 단지 {mapPanelList.length}개
                 </div>
               )}
-              {(budgetMatches || mapPanelList).map((c, i) => {
+              {(clusterRows || budgetMatches || mapPanelList).map((c, i) => {
                 const coord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`) || codeToLatLng[c.regionCode];
                 const priceVal = c.latestPrice ?? (isRent ? c.deposit : c.amount);
                 const areaVal = c.latestArea ?? c.area;

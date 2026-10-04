@@ -24,7 +24,7 @@ import MarketTab from '../components/MarketTab';
 import FavoritesTab from '../components/FavoritesTab';
 import {
   LINE_COLORS, PALETTE, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, slopeClass, labelFor,
-  fmtWon, monthLabel, SIDO_SHORT_NAMES, LISTING_STATUSES, VISIT_CHECK_ITEMS, VISIT_RATINGS,
+  fmtWon, monthLabel, SIDO_SHORT_NAMES, LISTING_STATUSES, VISIT_CHECK_ITEMS, VISIT_RATINGS, HEADER_HEIGHT,
 } from '../lib/ui-helpers';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
@@ -2198,6 +2198,8 @@ export default function Page() {
 
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [mapZoomTier, setMapZoomTier] = useState('far');
+  // 상세 창이 오른쪽에 붙어 차지한 폭(px). 지도 툴바가 이만큼 비켜준다. 창을 옮기거나 최소화해도 실제 폭을 따른다.
+  const [detailInset, setDetailInset] = useState(420);
   const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고)
   const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
   const loadedSidosRef = useRef(new Set());
@@ -2700,7 +2702,7 @@ export default function Page() {
       <div className="no-print" style={{
         position: 'sticky', top: 0, zIndex: 200,
         display: 'flex', alignItems: 'center', gap: 18,
-        padding: '0 16px', height: 58, background: '#1A1A1A',
+        padding: '0 16px', height: HEADER_HEIGHT, background: '#1A1A1A',
         boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -2767,7 +2769,7 @@ export default function Page() {
           mapFocusMatches={mapFocusMatches} budgetMatches={budgetMatches} priceMoveMatches={priceMoveMatches}
           mapComplexes={mapComplexes}
           setSelectedApt={setSelectedApt} dongMapData={dongMapData} setMapZoomTier={setMapZoomTier}
-          geocodeStats={geocodeStats} setGeocodeStats={setGeocodeStats} mapZoomTier={mapZoomTier}
+          geocodeStats={geocodeStats} setGeocodeStats={setGeocodeStats} mapZoomTier={mapZoomTier} detailInset={detailInset}
           setMapViewportBounds={setMapViewportBounds} setVisibleMarkerCount={setVisibleMarkerCount}
           visibleStations={visibleStations}
           schoolLayerOn={schoolLayerOn} setSchoolLayerOn={setSchoolLayerOn}
@@ -3562,6 +3564,7 @@ export default function Page() {
       {selectedApt && (
         <ComplexDetail
           variant={viewMode === 'map' ? 'panel' : 'modal'}
+          onPanelInsetChange={setDetailInset}
           selectedApt={selectedApt} setSelectedApt={setSelectedApt}
           aptHistory={aptHistory} aptHistoryLoading={aptHistoryLoading} aptHistoryFullRange={aptHistoryFullRange}
           aptHistoryFiltered={aptHistoryFiltered} aptHistoryAreaOptions={aptHistoryAreaOptions}

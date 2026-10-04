@@ -7,6 +7,7 @@ import { isRegulatedByCode } from '../lib/regions';
 import {
   PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
 } from '../lib/ui-helpers';
+import FloatingWindow from './FloatingWindow';
 
 // 단지 상세. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 // selectedApt가 있을 때만 부모(page.jsx)가 이 컴포넌트를 렌더링한다.
@@ -35,36 +36,12 @@ export default function ComplexDetail({
   historyAreaFilter, setHistoryAreaFilter, historyListLimit, setHistoryListLimit,
   trendViewMode, setTrendViewMode,
   styles,
+  onPanelInsetChange,
 }) {
   const isPanel = variant === 'panel';
-  return (
-    <div
-      style={isPanel ? {
-        position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 40, pointerEvents: 'none',
-        display: 'flex', padding: 0,
-      } : {
-        position: 'fixed', inset: 0, background: 'rgba(30,28,24,0.45)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16,
-      }}
-      onClick={isPanel ? undefined : () => setSelectedApt(null)}
-    >
-      <div
-        style={isPanel ? {
-          background: PALETTE.panel, padding: 20, width: 420, maxWidth: '100%', height: '100%',
-          overflowY: 'auto', borderLeft: `1px solid ${PALETTE.border}`,
-          boxShadow: '-8px 0 24px rgba(0,0,0,0.14)', pointerEvents: 'auto',
-        } : {
-          background: PALETTE.panel, borderRadius: 18, padding: 20, width: '100%', maxWidth: 640,
-          maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${PALETTE.border}`,
-        }}
-        onClick={isPanel ? undefined : (e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
-            {selectedApt.apt} ({selectedApt.dong})
-          </h2>
-          <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
-        </div>
+  // 본문은 한 글자도 바꾸지 않고 변수로 빼서, 패널(지도 탭)일 때는 떠 있는 창으로, 모달일 때는 기존 모양 그대로 감싼다.
+  const detailBody = (
+    <>
         <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
           {labelFor(selectedApt.regionCode)} · 전체 기간(최대 20년) 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
           {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
@@ -640,6 +617,43 @@ export default function ComplexDetail({
             </div>
           )}
         </div>
+    </>
+  );
+
+  if (isPanel) {
+    return (
+      <FloatingWindow
+        title={`${selectedApt.apt} (${selectedApt.dong})`}
+        onClose={() => setSelectedApt(null)}
+        onInsetChange={onPanelInsetChange}
+      >
+        {detailBody}
+      </FloatingWindow>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(30,28,24,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16,
+      }}
+      onClick={() => setSelectedApt(null)}
+    >
+      <div
+        style={{
+          background: PALETTE.panel, borderRadius: 18, padding: 20, width: '100%', maxWidth: 640,
+          maxHeight: '80vh', overflowY: 'auto', border: `1px solid ${PALETTE.border}`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.01em', margin: 0 }}>
+            {selectedApt.apt} ({selectedApt.dong})
+          </h2>
+          <X size={18} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setSelectedApt(null)} />
+        </div>
+        {detailBody}
       </div>
     </div>
   );
