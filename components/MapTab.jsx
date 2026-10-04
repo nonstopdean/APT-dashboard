@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { ChevronRight } from 'lucide-react';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
@@ -45,6 +45,24 @@ export default function MapTab({
     () => (listOnlyOpen ? classifyListOnly(mapComplexes) : null),
     [listOnlyOpen, mapComplexes],
   );
+
+  // 위쪽 도구줄(거래유형·예산·레이어 + 상태 카드)의 실제 높이. 오른쪽 "단지 탐색" 패널을 그 바로 아래에 놓아서
+  // 카드가 길어져도 패널 머리글을 덮지 않게 한다. (예전엔 패널 top이 72px로 고정이라 카드가 5~6줄이면 겹쳤다)
+  const [topRowH, setTopRowH] = useState(0);
+  const topRowObserverRef = useRef(null);
+  const topRowRef = useCallback((el) => {
+    if (topRowObserverRef.current) { topRowObserverRef.current.disconnect(); topRowObserverRef.current = null; }
+    if (!el) return;
+    const measure = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      setTopRowH((prev) => (prev === h ? prev : h));
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      topRowObserverRef.current = new ResizeObserver(measure);
+      topRowObserverRef.current.observe(el);
+    }
+  }, []);
 
   const renderSeoulMap = () => {
     const heroWrap = (content) => (
@@ -187,7 +205,7 @@ export default function MapTab({
         />
 
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
-        <div className="map-portal-toolbar" style={{
+        <div className="map-portal-toolbar" ref={topRowRef} style={{
           position: 'absolute', top: 14, left: 14, right: 14 + (selectedApt ? detailInset : 0), zIndex: 20,
           // 자리가 모자라면 상태 카드가 다음 줄로 내려오게 한다 (예전엔 한 줄에 억지로 두어서 카드가 오른쪽으로 삐져나가
           // 상세 창 밑에 가려졌다).
@@ -450,7 +468,8 @@ export default function MapTab({
         {/* 단지 상세 패널이 오른쪽에 떠 있을 때는 겹치지 않게 숨긴다. */}
         {allTx.length > 0 && !selectedApt && (
           <div className="map-complex-panel" style={{
-            position: 'absolute', top: 72, right: 14, width: 292, zIndex: 19,
+            // 도구줄(카드 포함) 바로 아래. 아직 못 쟀거나 한 줄뿐이면 예전 값(72)을 유지한다.
+            position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: 292, zIndex: 19,
             bottom: mapPanelMinimized ? 'auto' : 18,
             background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 14, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', overflow: 'hidden',
