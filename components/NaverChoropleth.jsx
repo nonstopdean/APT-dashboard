@@ -119,6 +119,10 @@ export default function NaverChoropleth({
   const FAR_ZOOM_LEVEL = 12;
   const NEAR_ZOOM_LEVEL = 16;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
+  // zoom_changed 리스너는 지도를 만들 때 한 번만 붙는다. 함수를 직접 넘기면 첫 렌더(단지 목록이 비어 있던 때)의
+  // 함수가 계속 불려서, 확대 직후 "그릴 단지 없음"으로 끝나며 idle이 예약한 최신 마커 갱신까지 취소했다
+  // (v168까지: 확대만 하면 핀이 안 나오고 지도를 한 번 끌어야 나왔다). 그래서 매 렌더 최신 함수를 ref로 부른다.
+  const zoomChangedRef = useRef(null);
 
   // 현재 화면(+여유 25%) 범위를 구한다 — 이 범위 안의 단지만 좌표를 찾고 마커를 만들면,
   // 큰 지역을 선택해도 실제 보이는 만큼만 일하므로 훨씬 가볍다.
@@ -507,6 +511,7 @@ export default function NaverChoropleth({
     if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
     zoomDebounceRef.current = setTimeout(handleZoomChangedImmediate, 150);
   };
+  zoomChangedRef.current = handleZoomChanged;
 
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID;
@@ -522,7 +527,7 @@ export default function NaverChoropleth({
           center: new window.naver.maps.LatLng(37.5665, 126.978),
           zoom: 11,
         });
-        window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', handleZoomChanged);
+        window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', () => zoomChangedRef.current?.());
       }
       if (!infoWindowRef.current) {
         infoWindowRef.current = new window.naver.maps.InfoWindow({
