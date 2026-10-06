@@ -186,17 +186,17 @@ export default function FloatingWindow({
           {title}
         </div>
         {!narrow && (
-          <button type="button" data-nodrag style={iconBtn} onClick={resetPosition} title="기본 위치로 되돌리기" aria-label="기본 위치로 되돌리기">
+          <button type="button" data-nodrag className="fw-btn" style={iconBtn} onClick={resetPosition} title="기본 위치로 되돌리기" aria-label="기본 위치로 되돌리기">
             <RotateCcw size={15} />
           </button>
         )}
         <button
-          type="button" data-nodrag style={iconBtn} onClick={toggleMinimized}
+          type="button" data-nodrag className="fw-btn" style={iconBtn} onClick={toggleMinimized}
           title={layout.minimized ? '펼치기' : '최소화 (제목줄 더블클릭)'} aria-label={layout.minimized ? '펼치기' : '최소화'}
         >
           {layout.minimized ? <Maximize2 size={15} /> : <Minus size={16} />}
         </button>
-        <button type="button" data-nodrag style={iconBtn} onClick={onClose} title="닫기" aria-label="닫기">
+        <button type="button" data-nodrag className="fw-btn" style={iconBtn} onClick={onClose} title="닫기" aria-label="닫기">
           <X size={17} />
         </button>
       </div>

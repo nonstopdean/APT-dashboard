@@ -8,6 +8,7 @@ import {
   PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
 } from '../lib/ui-helpers';
 import FloatingWindow from './FloatingWindow';
+import DetailSections from './DetailSections';
 
 // 단지 상세. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 // selectedApt가 있을 때만 부모(page.jsx)가 이 컴포넌트를 렌더링한다.
@@ -39,14 +40,15 @@ export default function ComplexDetail({
   onPanelInsetChange,
 }) {
   const isPanel = variant === 'panel';
-  // 본문은 한 글자도 바꾸지 않고 변수로 빼서, 패널(지도 탭)일 때는 떠 있는 창으로, 모달일 때는 기존 모양 그대로 감싼다.
-  const detailBody = (
-    <>
+  // ── 본문 덩어리: 내용은 원래 코드 그대로이고 이름만 붙였다. 모달은 예전 순서대로, 패널은 섹션으로 묶어서 조립한다. ──
+  const bSubtitle = (
         <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 14px' }}>
           {labelFor(selectedApt.regionCode)} · 전체 기간(최대 20년) 실거래 내역 {aptHistoryLoading ? '불러오는 중...' : `${aptHistory.length}건`}
           {isRatio || isRone ? '' : ` (${isRent ? '전월세' : '매매'} 기준)`}
         </p>
-        {aptSummary && (
+  );
+
+  const bSummaryCards = aptSummary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 14 }}>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
               <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
@@ -92,8 +94,9 @@ export default function ComplexDetail({
               </div>
             )}
           </div>
-        )}
-        {aptSummary && (
+        );
+
+  const bSampleInfo = aptSummary && (
           <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '-8px 0 6px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span>
               기준일 {new Date().toLocaleDateString('ko-KR')} · 이 단지 거래 표본 {aptHistory.length}건({aptHistoryFullRange ? '최대 20년치' : '최근 3년치'}) · 국토교통부 실거래가 공개자료
@@ -108,8 +111,9 @@ export default function ComplexDetail({
               </button>
             )}
           </p>
-        )}
-        {aptSummary?.volumeChangePct != null && Math.abs(aptSummary.volumeChangePct) >= 20 && (
+        );
+
+  const bVolumeBanner = aptSummary?.volumeChangePct != null && Math.abs(aptSummary.volumeChangePct) >= 20 && (
           <div style={{
             background: aptSummary.volumeChangePct > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(59,111,224,0.08)',
             borderRadius: 8, padding: '9px 12px', marginBottom: 14, fontSize: 12,
@@ -118,8 +122,9 @@ export default function ComplexDetail({
             {aptSummary.volumeChangePct > 0 ? '📈' : '📉'} 최근 3개월 거래 <b>{aptSummary.recentCount}건</b>, 이전 3개월 <b>{aptSummary.prev3moCount}건</b> — 거래량이{' '}
             <b style={{ color: aptSummary.volumeChangePct > 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(aptSummary.volumeChangePct)}</b> 변했어요.
           </div>
-        )}
-        {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (() => {
+        );
+
+  const bAcqCalc = !isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (() => {
           const price = calcPriceInput !== '' ? parseFloat(calcPriceInput) * 10000 : aptSummary.recentAvg;
           const tax = calcAcquisitionTax(price);
           const loan = calcLoanEstimate(price, isRegulatedByCode(selectedApt.regionCode));
@@ -158,14 +163,17 @@ export default function ComplexDetail({
               </p>
             </div>
           );
-        })()}
-        {gongsiLoading && (
+        })();
+
+  const bGongsiLoading = gongsiLoading && (
           <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>공시가격 조회 중...</p>
-        )}
-        {terrainLoading && (
+        );
+
+  const bTerrainLoading = terrainLoading && (
           <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>지형·일조 정보 계산 중...</p>
-        )}
-        {terrainInfo && winterSun && (
+        );
+
+  const bTerrainSun = terrainInfo && winterSun && (
           <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>⛰️ 경사도 · ☀️ 동지 일조 (참고용 근사치)</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -181,11 +189,13 @@ export default function ComplexDetail({
               건물 배치·지형 음영은 반영되지 않은 근사치라 실제 일조와 다를 수 있어요.
             </p>
           </div>
-        )}
-        {poiLoading && (
+        );
+
+  const bPoiLoading = poiLoading && (
           <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>주변시설 조회 중...</p>
-        )}
-        {poiInfo?.results?.length > 0 && (
+        );
+
+  const bPoi = poiInfo?.results?.length > 0 && (
           <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>🏪 반경 {poiInfo.radius}m 주변시설</span>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 8 }}>
@@ -200,8 +210,9 @@ export default function ComplexDetail({
               단지 좌표 기준 반경 {poiInfo.radius}m 이내 개수예요 (카카오맵 장소 검색). 실제 도보 접근성과는 차이가 있을 수 있어요.
             </p>
           </div>
-        )}
-        {gongsiInfo?.rows?.length > 0 && (
+        );
+
+  const bGongsi = gongsiInfo?.rows?.length > 0 && (
           <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>공동주택 공시가격 (브이월드)</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -212,8 +223,9 @@ export default function ComplexDetail({
               ))}
             </div>
           </div>
-        )}
-        {!isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (
+        );
+
+  const bSwapCalc = !isRent && !isRatio && !isRone && aptSummary?.recentAvg != null && (
           <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 14 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>🔄 갈아타기 계산기 (참고용)</span>
             <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '4px 0 10px' }}>
@@ -270,8 +282,9 @@ export default function ComplexDetail({
               중개보수·이사비·법무비 등은 대략치예요. 실제 자금 계획은 은행·중개사 확인이 필요해요.
             </p>
           </div>
-        )}
-        {(aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
+        );
+
+  const bBasicInfo = (aptBasicInfo || nearestStationInfo || isRegulatedByCode(selectedApt.regionCode)) && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
             {isRegulatedByCode(selectedApt.regionCode) && (
               <span style={{ ...styles.chip, background: 'rgba(239,68,68,0.12)', borderColor: PALETTE.accent }}>
@@ -296,7 +309,9 @@ export default function ComplexDetail({
               </span>
             )}
           </div>
-        )}
+        );
+
+  const bCompareBtn = (
         <div style={{ marginBottom: 14, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {(() => {
             const isPinned = pinnedComplexes.some((p) => p.apt === selectedApt.apt && p.dong === selectedApt.dong && p.regionCode === selectedApt.regionCode);
@@ -317,6 +332,9 @@ export default function ComplexDetail({
             );
           })()}
         </div>
+  );
+
+  const bAlert = (
         <div style={{ marginBottom: 14 }}>
           {!alertFormOpen ? (
             <button className="ui-btn" style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12 }} onClick={() => setAlertFormOpen(true)}>
@@ -345,17 +363,21 @@ export default function ComplexDetail({
             등록한 알림은 "즐겨찾기" 탭에서 관리할 수 있어요. 매일 자동으로 확인해서 조건을 만족하면 알려드려요.
           </p>
         </div>
-        {schoolsLoading && nearbySchools.length === 0 && (
+  );
+
+  const bSchoolsLoading = schoolsLoading && nearbySchools.length === 0 && (
           <p style={{ fontSize: 11, color: PALETTE.textMuted, marginBottom: 10 }}>인근 학교 찾는 중...</p>
-        )}
-        {nearbySchools.length > 0 && (
+        );
+
+  const bSchools = nearbySchools.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
             {nearbySchools.map((s) => (
               <span key={s.name} style={styles.chip}>{s.name} ({s.kind}{s.foundType ? `·${s.foundType}` : ''})</span>
             ))}
           </div>
-        )}
-        {aptHistoryAreaOptions.length > 1 && (
+        );
+
+  const bAreaChips = aptHistoryAreaOptions.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: PALETTE.textMuted }}>평형대</span>
             <button
@@ -384,8 +406,9 @@ export default function ComplexDetail({
               </button>
             ))}
           </div>
-        )}
-        {aptHistoryAreaOptions.length > 1 && (
+        );
+
+  const bTrendToggle = aptHistoryAreaOptions.length > 1 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             {[['single', '단일 평형'], ['compare', '평형별 겹쳐보기']].map(([k, l]) => (
               <button
@@ -402,8 +425,9 @@ export default function ComplexDetail({
               </button>
             ))}
           </div>
-        )}
-        {trendViewMode === 'single' && aptTrendData.length > 1 && (
+        );
+
+  const bTrendSingle = trendViewMode === 'single' && aptTrendData.length > 1 && (
           <div style={{ width: '100%', height: 160, marginBottom: 16 }}>
             <ResponsiveContainer>
               <LineChart data={aptTrendData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -419,8 +443,9 @@ export default function ComplexDetail({
               </LineChart>
             </ResponsiveContainer>
           </div>
-        )}
-        {trendViewMode === 'compare' && aptTrendByArea.data.length > 1 && (
+        );
+
+  const bTrendCompare = trendViewMode === 'compare' && aptTrendByArea.data.length > 1 && (
           <div style={{ width: '100%', height: 180, marginBottom: 16 }}>
             <ResponsiveContainer>
               <LineChart data={aptTrendByArea.data} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -439,8 +464,9 @@ export default function ComplexDetail({
               </LineChart>
             </ResponsiveContainer>
           </div>
-        )}
-        {aptVolumeData.length > 1 && (
+        );
+
+  const bVolumeChart = aptVolumeData.length > 1 && (
           <div style={{ width: '100%', height: 90, marginBottom: 16 }}>
             <ResponsiveContainer>
               <BarChart data={aptVolumeData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -456,8 +482,9 @@ export default function ComplexDetail({
             </ResponsiveContainer>
             <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '2px 0 0', textAlign: 'center' }}>월별 거래건수</p>
           </div>
-        )}
-        {radiusSummary && (
+        );
+
+  const bRadiusSummary = radiusSummary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
             {radiusSummary.map((r) => (
               <div key={r.radius} style={{ background: PALETTE.panelAlt, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
@@ -467,7 +494,9 @@ export default function ComplexDetail({
               </div>
             ))}
           </div>
-        )}
+        );
+
+  const bRadiusCard = (
         <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>주변 단지 비교</span>
@@ -518,7 +547,9 @@ export default function ComplexDetail({
             동 중심좌표 기준 거리라 실제 위치와 다소 차이가 있을 수 있어요.
           </p>
         </div>
-        {similarComplexes.length > 0 && (
+  );
+
+  const bSimilar = similarComplexes.length > 0 && (
           <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12.5, fontWeight: 700 }}>비교 조건이 유사한 단지</span>
@@ -562,7 +593,9 @@ export default function ComplexDetail({
               ))}
             </div>
           </div>
-        )}
+        );
+
+  const bHistory = (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -617,6 +650,76 @@ export default function ComplexDetail({
             </div>
           )}
         </div>
+  );
+
+  // 모달(다른 탭): 예전 순서 그대로.
+  const detailBody = (
+    <>
+      {bSubtitle}
+      {bSummaryCards}
+      {bSampleInfo}
+      {bVolumeBanner}
+      {bAcqCalc}
+      {bGongsiLoading}
+      {bTerrainLoading}
+      {bTerrainSun}
+      {bPoiLoading}
+      {bPoi}
+      {bGongsi}
+      {bSwapCalc}
+      {bBasicInfo}
+      {bCompareBtn}
+      {bAlert}
+      {bSchoolsLoading}
+      {bSchools}
+      {bAreaChips}
+      {bTrendToggle}
+      {bTrendSingle}
+      {bTrendCompare}
+      {bVolumeChart}
+      {bRadiusSummary}
+      {bRadiusCard}
+      {bSimilar}
+      {bHistory}
+    </>
+  );
+
+  // 패널(지도 탭)에서는 같은 덩어리를 주제별 섹션으로 묶는다. (내용은 위와 같고 배치만 다르다)
+  const yoyText = (() => {
+    if (!aptSummary || aptSummary.yoyChange == null) return <span style={{ color: PALETTE.textMuted }}>-</span>;
+    if (aptSummary.yoyLowSample) return <span style={{ color: PALETTE.textMuted }}>표본 부족</span>;
+    return (
+      <b style={{ color: aptSummary.yoyChange > 0 ? PALETTE.up : aptSummary.yoyChange < 0 ? PALETTE.down : PALETTE.textPrimary }}>
+        {fmtPct(aptSummary.yoyChange)}
+      </b>
+    );
+  })();
+  const summaryLine = aptSummary ? (
+    <>
+      <span style={{ color: PALETTE.textMuted }}>최근 3개월 평균 </span>
+      <b>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</b>
+      <span style={{ color: PALETTE.textMuted }}> · 1년 전 대비 </span>
+      {yoyText}
+      <span style={{ color: PALETTE.textMuted }}> · 최고가 </span>
+      <b>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</b>
+    </>
+  ) : (aptHistoryLoading ? <span style={{ color: PALETTE.textMuted }}>거래 내역 불러오는 중...</span> : null);
+
+  const panelBody = (
+    <>
+      {bSubtitle}
+      <DetailSections
+        summaryLine={summaryLine}
+        sections={[
+          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bSummaryCards, bSampleInfo, bVolumeBanner, bCompareBtn, bAlert] },
+          { id: 'trend', title: '가격 추이', defaultOpen: true, blocks: [bAreaChips, bTrendToggle, bTrendSingle, bTrendCompare, bVolumeChart] },
+          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bBasicInfo, bGongsiLoading, bGongsi] },
+          { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
+          { id: 'history', title: '거래 내역', defaultOpen: true, blocks: [bHistory] },
+          { id: 'nearby', title: '주변·비교', defaultOpen: false, blocks: [bRadiusSummary, bRadiusCard, bSimilar] },
+          { id: 'calc', title: '계산기', defaultOpen: false, blocks: [bAcqCalc, bSwapCalc] },
+        ]}
+      />
     </>
   );
 
@@ -627,7 +730,7 @@ export default function ComplexDetail({
         onClose={() => setSelectedApt(null)}
         onInsetChange={onPanelInsetChange}
       >
-        {detailBody}
+        {panelBody}
       </FloatingWindow>
     );
   }

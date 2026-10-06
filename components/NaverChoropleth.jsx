@@ -1,14 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave } from '../lib/geocodeCache';
+import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave, serverGeocodeStats } from '../lib/geocodeCache';
 import { placeContextOf, pickPlace, resolveMarkerCoord, summarizeCoordSources } from '../lib/geocode-pick';
 
 // features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
+const EMPTY_KEY_SET = new Set();
+
+// 마커 모양. 비교함에 담은 단지(pinned)는 ★ + 강조 테두리로 구분한다.
+function markerHtmlOf(titleText, priceText, pinned) {
+  const border = pinned ? '2px solid #b23a2e' : '1px solid rgba(40,35,30,0.18)';
+  const bg = pinned ? '#fff4ef' : 'rgba(255,255,255,0.96)';
+  const star = pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : '';
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translateY(-2px);">` +
+    `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${star}${titleText}${priceText ? `<span style="margin-left:5px;color:#b23a2e;">${priceText}</span>` : ''}</div>` +
+    `<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
+}
+
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
-  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, onGeocodeStats, onClusterOpen, stations, schools,
+  dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, onGeocodeStats, onClusterOpen, pinnedKeys, valueFormat, valueNotes, dongValueNotes, stations, schools,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -28,6 +40,7 @@ export default function NaverChoropleth({
     refine: { attempted: 0, moved: 0, far: 0, sdkFail: 0 },
   });
   const onClusterOpenRef = useRef(onClusterOpen);
+  const pinnedKeysRef = useRef(pinnedKeys || EMPTY_KEY_SET); // 비교함에 담은 단지 키 — 지도에서 ★로 강조하고 클러스터에 묻히지 않게 한다
   const refineTriedRef = useRef(new Set()); // 이번 접속에서 이미 다듬기를 시도한 단지 키(못 찾아도 재시도하지 않음)
   const unmountedRef = useRef(false);
   const districtMetaRef = useRef([]);
@@ -38,6 +51,9 @@ export default function NaverChoropleth({
   const valuesRef = useRef(values);
   const dongValuesRef = useRef(dongValues);
   const colorForRef = useRef(colorFor);
+  const valueNotesRef = useRef(valueNotes); // 툴팁에 값과 함께 보여줄 근거(예: 표본 6→6건), 구/동 각각
+  const dongValueNotesRef = useRef(dongValueNotes);
+  const valueFormatRef = useRef(valueFormat); // 지도 위에 마우스를 올렸을 때 값을 어떻게 적을지(예: +3.2%). 없으면 반올림한 숫자
   const onSelectRef = useRef(onSelect);
   const onComplexSelectRef = useRef(onComplexSelect);
   const complexesRef = useRef(complexes);
@@ -53,6 +69,9 @@ export default function NaverChoropleth({
   useEffect(() => { valuesRef.current = values; }, [values]);
   useEffect(() => { dongValuesRef.current = dongValues; }, [dongValues]);
   useEffect(() => { colorForRef.current = colorFor; }, [colorFor]);
+  useEffect(() => { valueFormatRef.current = valueFormat; }, [valueFormat]);
+  useEffect(() => { valueNotesRef.current = valueNotes; }, [valueNotes]);
+  useEffect(() => { dongValueNotesRef.current = dongValueNotes; }, [dongValueNotes]);
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
   useEffect(() => { complexesRef.current = complexes; }, [complexes]);
@@ -65,6 +84,23 @@ export default function NaverChoropleth({
   useEffect(() => { onVisibleMarkerCountRef.current = onVisibleMarkerCount; }, [onVisibleMarkerCount]);
   useEffect(() => { onGeocodeStatsRef.current = onGeocodeStats; }, [onGeocodeStats]);
   useEffect(() => { onClusterOpenRef.current = onClusterOpen; }, [onClusterOpen]);
+  // 비교함이 바뀌면 이미 만들어진 마커의 모양을 바꾸고(★), 클러스터를 다시 만든다.
+  useEffect(() => {
+    pinnedKeysRef.current = pinnedKeys || EMPTY_KEY_SET;
+    if (!mapRef.current || !window.naver?.maps) return;
+    markersRef.current.forEach((m) => {
+      const isPinned = pinnedKeysRef.current.has(m.key);
+      if (m.pinned === isPinned) return;
+      m.pinned = isPinned;
+      if (typeof m.marker.setIcon === 'function') {
+        m.marker.setIcon({ content: markerHtmlOf(m.title, m.priceText, isPinned), anchor: new window.naver.maps.Point(0, 24) });
+      }
+      if (typeof m.marker.setZIndex === 'function') m.marker.setZIndex(isPinned ? 40 : 20);
+    });
+    clusterSignatureRef.current = '';
+    syncNaverClusterer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinnedKeys]);
   useEffect(() => { unmountedRef.current = false; return () => { unmountedRef.current = true; }; }, []);
 
   // 현재 화면 범위를 부모(page.jsx)에 알려준다 — "단지 탐색" 목록을 화면에 보이는 단지로만
@@ -154,10 +190,10 @@ export default function NaverChoropleth({
     if (!cb || !complexesRef.current?.length) return;
     const stats = summarizeCoordSources(complexesRef.current, geocodeCache);
     const d = diagRef.current;
-    const sig = `${stats.total}|${stats.exact}|${stats.approx}|${stats.failed}|${stats.pending}|${d.kakao.calls}|${d.kakao.picked}|${d.kakao.zero}|${d.kakao.rejected}|${d.kakao.error}|${d.refine.attempted}|${d.refine.moved}|${d.refine.far}|${d.refine.sdkFail}`;
+    const sig = `${stats.total}|${stats.exact}|${stats.approx}|${stats.failed}|${stats.pending}|${d.kakao.calls}|${d.kakao.picked}|${d.kakao.zero}|${d.kakao.rejected}|${d.kakao.error}|${d.refine.attempted}|${d.refine.moved}|${d.refine.far}|${d.refine.sdkFail}|${serverGeocodeStats.calls}|${serverGeocodeStats.asked}|${serverGeocodeStats.hit}`;
     if (sig === lastGeocodeStatsRef.current) return;
     lastGeocodeStatsRef.current = sig;
-    cb({ ...stats, kakao: { ...d.kakao }, refine: { ...d.refine } });
+    cb({ ...stats, kakao: { ...d.kakao }, refine: { ...d.refine }, server: { ...serverGeocodeStats } });
   };
 
   // 마커는 일단 동 중심점에 띄워 화면을 빨리 보여주고, 정확한 위치를 찾는 대로 옮긴다.
@@ -183,13 +219,37 @@ export default function NaverChoropleth({
         const clng = center?.lng?.() ?? 0;
         // 아직 동 중심점(근사)에 있고 이번 접속에서 시도하지 않은 단지. 서버 캐시에 오염된 값(동에서 너무 멀리
         // 떨어진 좌표)이 있어도 resolveMarkerCoord가 근사로 판정하므로 여기에 포함되어 다시 찾고 덮어쓴다.
-        const batch = markersRef.current
+        let batch = markersRef.current
           .map((m) => complexByKey.get(m.key))
           .filter((c) => c && c.lat != null && c.lng != null && !refineTriedRef.current.has(c.key)
             && resolveMarkerCoord({ lat: c.lat, lng: c.lng }, geocodeCache[c.key]).source === 'approx')
           .sort((a, b) => ((a.lat - clat) ** 2 + (a.lng - clng) ** 2) - ((b.lat - clat) ** 2 + (b.lng - clng) ** 2))
           .slice(0, REFINE_BATCH);
         if (batch.length === 0) return;
+
+        // 카카오를 부르기 전에 서버 저장분부터 확인한다. 마커를 만들 때 서버 조회가 실패했거나 아직 못 한 단지도
+        // 여기서 물어본다(이미 물어본 키는 fetchServerGeocodeCache가 건너뛴다). 예열해 둔 좌표가 있으면
+        // 카카오 호출 없이 바로 정확한 위치로 옮긴다.
+        // eslint-disable-next-line no-await-in-loop
+        const serverHits = await fetchServerGeocodeCache(batch.map((c) => c.key));
+        let movedByServer = 0;
+        Object.entries(serverHits).forEach(([key, coord]) => {
+          geocodeCache[key] = coord;
+          const c = complexByKey.get(key);
+          const entry = markersRef.current.find((m) => m.key === key);
+          if (!c || !entry || typeof entry.marker.setPosition !== 'function') return;
+          const { coord: picked, source } = resolveMarkerCoord({ lat: c.lat, lng: c.lng }, coord);
+          if (source !== 'exact') return; // 동에서 너무 먼 값(잘못 저장된 좌표)은 쓰지 않는다
+          entry.marker.setPosition(new window.naver.maps.LatLng(picked.lat, picked.lng));
+          movedByServer += 1;
+        });
+        if (movedByServer > 0) {
+          clusterSignatureRef.current = '';
+          syncNaverClusterer();
+          reportGeocodeStats();
+          batch = batch.filter((c) => resolveMarkerCoord({ lat: c.lat, lng: c.lng }, geocodeCache[c.key]).source === 'approx');
+          if (batch.length === 0) continue; // 이번 묶음은 전부 서버 저장분으로 해결됨 — 다음 후보로
+        }
         refineAttemptsRef.current += batch.length;
         batch.forEach((c) => refineTriedRef.current.add(c.key));
         diagRef.current.refine.attempted += batch.length;
@@ -364,7 +424,10 @@ export default function NaverChoropleth({
 
     const cellDeg = 0.0008 * Math.pow(2, 20 - zoom);
     const buckets = new Map();
+    const pinnedMarkers = [];
     markersRef.current.forEach(({ marker, key }) => {
+      // 비교함에 담은 단지는 묶지 않고 항상 낱개로 보여준다(밀집 지역에서도 어디 있는지 바로 보이게).
+      if (pinnedKeysRef.current.has(key)) { pinnedMarkers.push(marker); return; }
       const pos = marker.getPosition();
       const lat = pos.lat();
       const lng = pos.lng();
@@ -412,6 +475,7 @@ export default function NaverChoropleth({
       });
       clustererRef.current.push({ overlay });
     });
+    pinnedMarkers.forEach((m) => m.setMap(map));
     onVisibleMarkerCountRef.current?.(markersRef.current.length);
   };
 
@@ -493,7 +557,8 @@ export default function NaverChoropleth({
         });
         const labelFor = () => {
           const value = valuesRef.current?.[idx];
-          return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
+          const note = valueNotesRef.current?.[idx];
+          return value != null ? `${f.name}: ${valueFormatRef.current ? valueFormatRef.current(value) : Math.round(value).toLocaleString()}${note ? ` (${note})` : ''}` : f.name;
         };
         window.naver.maps.Event.addListener(polygon, 'click', () => {
           if (f.code) onSelectRef.current?.(f.code);
@@ -599,7 +664,8 @@ export default function NaverChoropleth({
         });
         const labelFor = () => {
           const value = dongValuesRef.current?.[idx];
-          return value != null ? `${f.name}: ${Math.round(value).toLocaleString()}` : f.name;
+          const note = dongValueNotesRef.current?.[idx];
+          return value != null ? `${f.name}: ${valueFormatRef.current ? valueFormatRef.current(value) : Math.round(value).toLocaleString()}${note ? ` (${note})` : ''}` : f.name;
         };
         window.naver.maps.Event.addListener(polygon, 'click', () => {
           if (f.code) onSelectRef.current?.(f.code);
@@ -724,22 +790,21 @@ export default function NaverChoropleth({
         ? (c.latestPrice >= 10000 ? `${(c.latestPrice / 10000).toFixed(c.latestPrice >= 100000 ? 0 : 1)}억` : `${Math.round(c.latestPrice).toLocaleString()}만`)
         : '';
       const titleText = String(c.apt || '').replace(/[<>&"']/g, '');
-      const markerHtml = `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translateY(-2px);">` +
-        `<div style="padding:4px 7px;border-radius:8px;background:rgba(255,255,255,0.96);border:1px solid rgba(40,35,30,0.18);box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${titleText}${priceText ? `<span style="margin-left:5px;color:#b23a2e;">${priceText}</span>` : ''}</div>` +
-        `<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
+      const pinned = pinnedKeysRef.current.has(c.key);
+      const markerHtml = markerHtmlOf(titleText, priceText, pinned);
       const marker = new window.naver.maps.Marker({
         position: new window.naver.maps.LatLng(coord.lat, coord.lng),
         icon: {
           content: markerHtml,
           anchor: new window.naver.maps.Point(0, 24),
         },
-        zIndex: 20,
+        zIndex: pinned ? 40 : 20,
       });
       window.naver.maps.Event.addListener(marker, 'click', () => {
         onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
       });
       // 지도에 직접 붙이지 않는다 — 클러스터러(격자 묶음)가 줌 레벨에 맞게 보여준다.
-      markersRef.current.push({ marker, key: c.key });
+      markersRef.current.push({ marker, key: c.key, title: titleText, priceText, pinned });
     }, 6);
     queueServerGeocodeSave(newlyFound);
     if (seq === markerSyncSeqRef.current) { syncNaverClusterer(); reportGeocodeStats(); }

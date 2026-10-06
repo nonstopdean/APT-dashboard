@@ -6,6 +6,8 @@ import PinnedCompareDrawer from './PinnedCompareDrawer';
 import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, monthLabel, APP_BUILD } from '../lib/ui-helpers';
+import { pinnedKeyOf } from '../lib/compare-grid';
+import { changeCap, changeColor, formatChange } from '../lib/market-change';
 
 // 지도 탭 전체(왼쪽 패널 + 지도 + 툴바 + 단지 탐색 패널). app/page.jsx 안에 있던
 // viewMode === 'map' 블록과 renderSeoulMap()을 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
@@ -17,7 +19,7 @@ export default function MapTab({
   mapFocusMatches, budgetMatches, priceMoveMatches, mapComplexes,
   setSelectedApt, dongMapData, setMapZoomTier, setMapViewportBounds, setVisibleMarkerCount, visibleStations,
   schoolLayerOn, setSchoolLayerOn, visibleSchoolLocations, schoolLocationsLoading,
-  geocodeStats, setGeocodeStats, mapZoomTier, detailInset = 420,
+  geocodeStats, setGeocodeStats, mapZoomTier, detailInset = 420, setViewMode,
   dealType, setDealTypeSafe, isRone, isRatio, isRent,
   mapColorMode, setMapColorMode,
   budgetSearchOpen, setBudgetSearchOpen, budgetAmount, setBudgetAmount,
@@ -45,6 +47,15 @@ export default function MapTab({
     () => (listOnlyOpen ? classifyListOnly(mapComplexes) : null),
     [listOnlyOpen, mapComplexes],
   );
+
+  // 비교함에 담은 단지 키(지도에서 ★로 강조). pinnedComplexes가 바뀔 때만 새 Set을 만들어 지도가 불필요하게 다시 그려지지 않게 한다.
+  const pinnedKeys = useMemo(() => new Set((pinnedComplexes || []).map(pinnedKeyOf)), [pinnedComplexes]);
+  // 비교함 → "지도에서 이 단지들만 보기": 기존 "비교 목록만 보는 중" 필터를 쓰고, 좌표를 아는 첫 단지로 지도를 옮긴다.
+  const focusPinnedOnMap = (keys) => {
+    setMapFocusKeys(new Set(keys));
+    const first = keys.map((k) => mapComplexCoordByKey.get(k)).find((c) => c && c.lat != null && c.lng != null);
+    if (first) setFocusLatLng({ lat: first.lat, lng: first.lng });
+  };
 
   // 위쪽 도구줄(거래유형·예산·레이어 + 상태 카드)의 실제 높이. 오른쪽 "단지 탐색" 패널을 그 바로 아래에 놓아서
   // 카드가 길어져도 패널 머리글을 덮지 않게 한다. (예전엔 패널 top이 72px로 고정이라 카드가 5~6줄이면 겹쳤다)
@@ -81,8 +92,17 @@ export default function MapTab({
     if (!seoulMapData) return emptyState('지도 불러오는 중...');
 
     const pathGen = null; // SVG 폴백에서만 쓰이며 아래에서 필요 시 다시 만든다.
+    // 가격변동 모드: 0을 가운데로 빨강(상승) ↔ 파랑(하락). 구와 동 값을 함께 보고 가장 진한 색의 기준(%)을 정한다.
+    const isChangeMode = mapColorMode === 'change' || mapColorMode === 'volchange';
+    const changeCapValue = isChangeMode
+      ? changeCap(
+        [...(seoulMapData.values || []), ...((dongMapData && dongMapData.values) || [])],
+        mapColorMode === 'volchange' ? { min: 20, max: 100 } : undefined, // 거래량은 가격보다 훨씬 크게 출렁인다
+      )
+      : null;
     const colorFor = (value) => {
       if (value == null) return PALETTE.panelAlt;
+      if (isChangeMode) return changeColor(value, changeCapValue) || PALETTE.panelAlt;
       const { min, max } = seoulMapData;
       const t = max > min ? (value - min) / (max - min) : 0.5;
       const from = [245, 244, 239];
@@ -98,6 +118,9 @@ export default function MapTab({
             features={seoulMapData.features}
             values={seoulMapData.values}
             colorFor={colorFor}
+            valueFormat={mapColorMode === 'change' || mapColorMode === 'volchange' ? formatChange : undefined}
+            valueNotes={seoulMapData.notes}
+            dongValueNotes={dongMapData?.notes}
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
@@ -110,6 +133,7 @@ export default function MapTab({
             onVisibleMarkerCount={setVisibleMarkerCount}
             onGeocodeStats={setGeocodeStats}
             onClusterOpen={(keys) => { setClusterKeys(new Set(keys)); setMapPanelMinimized(false); }}
+            pinnedKeys={pinnedKeys}
             stations={visibleStations}
             schools={visibleSchoolLocations}
             height="100%"
@@ -202,6 +226,8 @@ export default function MapTab({
         <PinnedCompareDrawer
           pinnedComplexes={pinnedComplexes} setPinnedComplexes={setPinnedComplexes}
           complexCompare={complexCompare} setSelectedApt={setSelectedApt} isRent={isRent}
+          onFocusMap={focusPinnedOnMap}
+          onOpenCompareTab={setViewMode ? () => setViewMode('compare') : undefined}
         />
 
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
@@ -286,10 +312,10 @@ export default function MapTab({
                 {!isRone && !isRatio && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>색칠 기준</div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[['price', '가격'], ['volume', '거래량']].map(([key, label]) => (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동']].map(([key, label]) => (
                         <button key={key} onClick={() => setMapColorMode(key)} style={{
-                          flex: 1, border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
+                          flex: '1 1 calc(50% - 4px)', whiteSpace: 'nowrap', border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
                           background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
                           color: mapColorMode === key ? '#fff' : PALETTE.textSecondary,
                           fontSize: 11.5, fontWeight: mapColorMode === key ? 700 : 500, cursor: 'pointer',
@@ -299,6 +325,18 @@ export default function MapTab({
                         </button>
                       ))}
                     </div>
+                    {(mapColorMode === 'change' || mapColorMode === 'volchange') && (
+                      <div data-change-help="1" style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                          <span style={{ width: 34, height: 7, borderRadius: 4, background: `linear-gradient(90deg, ${changeColor(-100, 1)}, ${changeColor(0, 1)}, ${changeColor(100, 1)})` }} />
+                          <span>하락 ← → 상승</span>
+                        </div>
+                        {mapColorMode === 'volchange'
+                          ? '조회 기간의 앞 절반 → 뒤 절반 거래 건수 변화예요. 앞 기간이 5건 미만인 곳은 %가 크게 부풀려져서 회색으로 두었어요. 거래가 사라지면 -100%예요.'
+                          : '조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화예요. 거래된 단지 구성에 따라 실제 시세와 다를 수 있고, 표본이 적은 곳(각 기간 3건 미만)은 회색이에요.'}
+                        {' '}마우스를 올리면 근거가 되는 건수가 나와요.
+                      </div>
+                    )}
                   </div>
                 )}
                 <div
@@ -413,6 +451,11 @@ export default function MapTab({
                           위치 정확 {gs.exact} · 동 중심 {gs.approx} · 못 찾음 {gs.failed} · 대기 {gs.pending}
                         </div>
                       )}
+                      {gs && gs.server && gs.server.asked > 0 && (
+                        <div title="다른 방문자나 예열로 이미 서버에 저장된 위치를 찾은 비율이에요. 예열과 '기존 좌표 변환'을 한 뒤에 이 비율이 올라가야 해요. (이번 접속에서 처음 물어본 단지 기준)">
+                          서버 저장분: 조회 {gs.server.asked} → 적중 {gs.server.hit} ({Math.round((gs.server.hit / gs.server.asked) * 100)}%)
+                        </div>
+                      )}
                       {gs && gs.refine && (gs.refine.attempted > 0 || gs.refine.sdkFail > 0 || gs.kakao.calls > 0) && (
                         <div title="동 중심에 겹쳐 있는 단지의 정확한 위치를 카카오에서 찾는 중이에요. 결과없음: 검색 결과가 없음 · 지역불일치: 결과는 있었지만 시·도/시군구가 맞지 않아 버림 · 오류: 카카오 응답 오류">
                           위치 다듬기: 시도 {gs.refine.attempted} · 이동 {gs.refine.moved}
@@ -501,6 +544,24 @@ export default function MapTab({
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span>같은 위치에 겹쳐 있는 단지 {clusterRows.length}개</span>
                   <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }} onClick={() => setClusterKeys(null)}>전체 보기</span>
+                </div>
+              )}
+              {!clusterRows && budgetMatches && (
+                // 예산 필터가 켜져 있으면 목록이 그 조건으로 걸러진다는 걸 머리글로 알려주고, 바로 끌 수 있게 한다.
+                // (0개일 때 아무 설명이 없으면 "고장 났다"로 보이기 쉽다 — 예: 이전 검색의 "8억 이하"가 남아 있는 경우)
+                <div data-budget-header="1" style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span>
+                    {budgetMatches.length === 0
+                      ? `예산 ${budgetAmount}억 이하인 단지가 없어요`
+                      : `예산 ${budgetAmount}억 이하 단지 ${budgetMatches.length}개`}
+                  </span>
+                  <span
+                    data-budget-clear="1"
+                    style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }}
+                    onClick={() => { setBudgetAmount(''); setBudgetSearchOpen(false); }}
+                  >
+                    예산 조건 해제
+                  </span>
                 </div>
               )}
               {!clusterRows && !budgetMatches && mapViewportBounds && (

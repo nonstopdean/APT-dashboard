@@ -15,6 +15,7 @@ import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
+import { buildChangeIndex, changeNote } from '../lib/market-change';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1859,6 +1860,7 @@ export default function Page() {
   const [globalSearchMsg, setGlobalSearchMsg] = useState('');
 
   const [globalSearchOk, setGlobalSearchOk] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false); // 좁은 화면에서만 보이는 검색 줄
   const showSearchMsg = (text, ok = false) => { setGlobalSearchMsg(text); setGlobalSearchOk(ok); };
 
   // 검색으로 지역을 새로 고르거나 거래유형을 바꾸면, 바뀐 상태가 반영된 "다음 렌더"에서 조회한다.
@@ -2130,6 +2132,7 @@ export default function Page() {
   const mapValueFor = (code) => {
     if (isRone) return roneRanking.find((r) => r.code === code)?.latest ?? null;
     if (isRatio) return ratioRanking.find((r) => r.code === code)?.ratio ?? null;
+    if (changeMode) return regionChangeIndex?.get(code)?.pct ?? null; // 표본이 모자라면 null → 회색
     if (mapColorMode === 'volume') {
       let count = 0;
       months.forEach((ym) => { count += (rawByRegionMonth[`${code}_${ym}`] || []).length; });
@@ -2141,8 +2144,31 @@ export default function Page() {
     return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
   };
 
-  const [mapColorMode, setMapColorMode] = useState('price'); // 'price' | 'volume'
+  const [mapColorMode, setMapColorMode] = useState('price'); // 'price' | 'volume' | 'change' | 'volchange'
   const [dongLayerOn, setDongLayerOn] = useState(true);
+  // 'change'=평균 평당가 변화 / 'volchange'=거래 건수 변화(둘 다 조회 기간 앞 절반 → 뒤 절반). 아니면 null.
+  const changeMode = mapColorMode === 'change' ? 'avg' : mapColorMode === 'volchange' ? 'count' : null;
+  // "가격변동" 색칠 모드: 조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화율. 이 모드일 때만 계산한다.
+  const changeValueOf = (t) => (isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong);
+  const changeYmOf = (t) => Number(t.year) * 100 + Number(t.month);
+  const regionChangeIndex = useMemo(() => {
+    if (!changeMode) return null;
+    // 거래량은 분모가 되는 앞 기간이 5건 이상일 때만 계산한다(적은 건수의 %는 크게 부풀려진다).
+    return buildChangeIndex(allTx, {
+      keyOf: (t) => t.regionCode || null, valueOf: changeValueOf, ymOf: changeYmOf,
+      minPerHalf: changeMode === 'count' ? 5 : 3, mode: changeMode,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTx, isRent, changeMode]);
+  const dongChangeIndex = useMemo(() => {
+    if (!changeMode || !dongLayerOn) return null;
+    return buildChangeIndex(allTx, {
+      keyOf: (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null),
+      valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: changeMode,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTx, isRent, changeMode, dongLayerOn]);
+
   const [ladderBaseline, setLadderBaseline] = useState(null);
   const [timelineMonth, setTimelineMonth] = useState(null); // null = 최신, 아니면 특정 'YYYYMM'
   const [tradeUpCurrentPrice, setTradeUpCurrentPrice] = useState('');
@@ -2186,15 +2212,27 @@ export default function Page() {
       return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode, timelineMonth]);
+  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode, timelineMonth, regionChangeIndex]);
+
+  // 변화 모드일 때 지도 위 툴팁에 함께 보여줄 근거(표본 수). 구 하나가 여러 코드로 이뤄진 경우는 합쳐 말하기 어려워 비운다.
+  const mapValueNotes = useMemo(() => {
+    if (!mapDisplayFeatures || !changeMode || !regionChangeIndex) return null;
+    return mapDisplayFeatures.map((f) => {
+      const codes = f.codes || [];
+      const active = codes.filter((c) => selected.includes(c));
+      const cand = active.length ? active : codes;
+      const entries = cand.map((c) => regionChangeIndex.get(c)).filter(Boolean);
+      return entries.length === 1 ? changeNote(entries[0], changeMode) : '';
+    });
+  }, [mapDisplayFeatures, selected, regionChangeIndex, changeMode]);
 
   const seoulMapData = useMemo(() => {
     if (!mapDisplayFeatures || !mapValues) return null;
     const available = mapValues.filter((v) => v != null);
     const min = available.length ? Math.min(...available) : 0;
     const max = available.length ? Math.max(...available) : 1;
-    return { features: mapDisplayFeatures, values: mapValues, min, max };
-  }, [mapDisplayFeatures, mapValues]);
+    return { features: mapDisplayFeatures, values: mapValues, notes: mapValueNotes, min, max };
+  }, [mapDisplayFeatures, mapValues, mapValueNotes]);
 
   // "동" 단위 지도 데이터 — 선택된 지역이 속한 시/도만 필요할 때 받아온다.
   const [mapZoomTier, setMapZoomTier] = useState('far');
@@ -2287,6 +2325,10 @@ export default function Page() {
         // 전세가율은 동 단위로 따로 계산하지 않으므로, 구 전체 전세가율 값을 그대로 쓴다.
         return ratioRanking.find((r) => r.code === f.regionCode)?.ratio ?? null;
       }
+      if (changeMode) {
+        // 동 단위로 표본(앞·뒤 기간 각 3건)이 모자라면 구 평균으로 채우지 않고 회색으로 둔다 — 적은 표본으로 색을 칠하면 오해를 부른다.
+        return dongChangeIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`)?.pct ?? null;
+      }
       const agg = dongPriceIndex.get(`${f.regionCode}|${normalizeDongName(f.name)}`);
       if (mapColorMode === 'volume') {
         if (agg?.count) return agg.count;
@@ -2301,13 +2343,17 @@ export default function Page() {
     const available = values.filter((v) => v != null);
     const min = available.length ? Math.min(...available) : 0;
     const max = available.length ? Math.max(...available) : 1;
+    const notes = changeMode
+      ? dongRawFeatures.map((f) => changeNote(dongChangeIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`), changeMode))
+      : null;
     return {
       features: dongRawFeatures.map((f) => ({ feature: f.feature, name: f.name, code: f.regionCode })),
       values,
+      notes,
       min,
       max,
     };
-  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn, isRatio, ratioRanking]);
+  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn, isRatio, ratioRanking, dongChangeIndex, changeMode]);
 
 
   const styles = {
@@ -2734,6 +2780,17 @@ export default function Page() {
             </div>
           ))}
         </nav>
+        <button
+          type="button" className="mobile-search-toggle" aria-label="검색" aria-expanded={mobileSearchOpen}
+          onClick={() => setMobileSearchOpen((v) => !v)}
+          style={{
+            display: 'none', marginLeft: 'auto', width: 40, height: 40, alignItems: 'center', justifyContent: 'center',
+            border: 'none', borderRadius: 8, background: mobileSearchOpen ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
+            color: '#fff', fontSize: 17, cursor: 'pointer', flexShrink: 0,
+          }}
+        >
+          🔍
+        </button>
         <div className="header-search" style={{ marginLeft: 'auto', position: 'relative', flexShrink: 0 }}>
           <input
             type="text"
@@ -2760,6 +2817,30 @@ export default function Page() {
         </div>
       </div>
 
+      {mobileSearchOpen && (
+        // 좁은 화면(≤720px)에서만 보이는 검색 줄: 헤더의 검색창이 숨겨지는 대신 🔍 버튼으로 펼친다. 같은 상태·같은 검색 함수를 쓴다.
+        <div className="mobile-search-row" style={{ display: 'none', position: 'sticky', top: HEADER_HEIGHT, zIndex: 199, background: '#1A1A1A', padding: '0 12px 10px' }}>
+          <input
+            type="text" autoFocus value={globalSearch}
+            onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
+            placeholder="예: 해운대 84 8억 이하"
+            style={{
+              width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 8, border: 'none', outline: 'none',
+              background: 'rgba(255,255,255,0.14)', color: '#fff', fontSize: 15,
+            }}
+          />
+          {globalSearchMsg && (
+            <div style={{
+              marginTop: 8, background: PALETTE.panel, color: PALETTE.textPrimary, borderRadius: 6, padding: '8px 11px', fontSize: 12.5,
+              border: `1px solid ${globalSearchOk ? PALETTE.accent : PALETTE.border}`, whiteSpace: 'pre-line', lineHeight: 1.5,
+            }}>
+              {globalSearchMsg}
+            </div>
+          )}
+        </div>
+      )}
+
       {viewMode === 'map' ? (
         <MapTab
           selectedApt={selectedApt}
@@ -2769,7 +2850,7 @@ export default function Page() {
           mapFocusMatches={mapFocusMatches} budgetMatches={budgetMatches} priceMoveMatches={priceMoveMatches}
           mapComplexes={mapComplexes}
           setSelectedApt={setSelectedApt} dongMapData={dongMapData} setMapZoomTier={setMapZoomTier}
-          geocodeStats={geocodeStats} setGeocodeStats={setGeocodeStats} mapZoomTier={mapZoomTier} detailInset={detailInset}
+          geocodeStats={geocodeStats} setGeocodeStats={setGeocodeStats} mapZoomTier={mapZoomTier} detailInset={detailInset} setViewMode={setViewMode}
           setMapViewportBounds={setMapViewportBounds} setVisibleMarkerCount={setVisibleMarkerCount}
           visibleStations={visibleStations}
           schoolLayerOn={schoolLayerOn} setSchoolLayerOn={setSchoolLayerOn}
@@ -3620,6 +3701,13 @@ export default function Page() {
           border-radius: 6px;
         }
         .spin { animation: spin 1s linear infinite; }
+        /* 손가락으로 누르는 화면(터치)에서는 새 컴포넌트의 작은 버튼을 키운다 */
+        @media (pointer: coarse) {
+          .fw-btn { width: 40px !important; height: 40px !important; }
+          .ds-chip { padding: 9px 14px !important; font-size: 12.5px !important; }
+          .ds-header { padding: 12px 0 !important; }
+          .pcd-btn { padding: 10px 12px !important; font-size: 12.5px !important; }
+        }
         @media (max-width: 720px) {
           .hero-wrap { flex-direction: column !important; height: 90vh !important; }
           .dash-sidebar-fixed {
@@ -3631,6 +3719,8 @@ export default function Page() {
           .main-nav { gap: 0 !important; }
           .main-nav > div { padding: 0 6px !important; font-size: 11px !important; }
           .header-search { display: none !important; }
+          .mobile-search-toggle { display: inline-flex !important; }
+          .mobile-search-row { display: block !important; }
           .map-complex-panel { width: 240px !important; top: 68px !important; bottom: 12px !important; }
           .map-status-card { display: none !important; }
           .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }
@@ -3639,6 +3729,7 @@ export default function Page() {
           .map-complex-panel { left: 8px !important; right: 8px !important; width: auto !important; top: auto !important; height: 34vh !important; bottom: 8px !important; }
           .map-portal-toolbar { right: 8px !important; }
           .portal-pill { padding: 7px 9px !important; }
+          .pcd-root { bottom: calc(34vh + 16px) !important; } /* 목록 시트(34vh) 위로 올려 겹치지 않게 */
         }
       ` }} />
     </div>
