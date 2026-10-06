@@ -75,6 +75,7 @@ export default function WarmupPage() {
     let scanned = 0;
     let created = 0;
     let bad = 0;
+    let rejected = 0;
     let pages = 0;
     try {
       do {
@@ -86,11 +87,12 @@ export default function WarmupPage() {
         scanned += json.scanned || 0;
         created += json.created || 0;
         bad += json.bad || 0;
+        rejected += json.rejected || 0;
         cursor = json.cursor;
         pages += 1;
         if (pages % 5 === 0) appendLog(`   … ${scanned.toLocaleString()}개 확인, ${created.toLocaleString()}개 변환`);
       } while (cursor !== '0' && pages < 2000);
-      if (cursor === '0') appendLog(`✅ 변환 완료: 옛 좌표 ${scanned.toLocaleString()}개 확인 → 새로 ${created.toLocaleString()}개 변환 (이상한 값 ${bad}개는 건너뜀)`);
+      if (cursor === '0') appendLog(`✅ 변환 완료: 옛 좌표 ${scanned.toLocaleString()}개 확인 → 새로 ${created.toLocaleString()}개 변환 (이상한 값 ${bad}개 · 다른 시·도 좌표 ${rejected}개는 건너뜀)`);
     } catch (e) {
       appendLog(`❌ 변환 요청 실패 (${e.message})`);
     }
