@@ -3,6 +3,7 @@ import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { X } from 'lucide-react';
+import LongCompare from './LongCompare';
 import { REGION_GROUPS, SIDO_AGGREGATES } from '../lib/regions';
 import {
   PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, fmtWon, labelFor,
@@ -131,7 +132,15 @@ export default function CompareTab({
         )}
 
         {(compareAKey || compareBKey || compareCKey) && (
+          <LongCompare
+            isRent={isRent}
+            items={[compareAKey, compareBKey, compareCKey].map((k) => compareOptions.find((o) => o.value === k)).filter(Boolean)}
+          />
+        )}
+
+        {(compareAKey || compareBKey || compareCKey) && (
           <>
+            <h3 style={{ fontSize: 13, fontWeight: 600, margin: '0 0 8px', color: PALETTE.textPrimary }}>조회 기간 비교 (왼쪽 조건 패널의 기간)</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
               {[
                 { result: compareAResult, label: 'A' },
@@ -139,7 +148,7 @@ export default function CompareTab({
                 { result: compareCResult, label: 'C' },
               ].map((slot) => (
                 <div key={slot.label} style={{ ...styles.card, borderStyle: 'dashed' }}>
-                  <div style={styles.kpiLabel}>{slot.label} 기간 등락률</div>
+                  <div style={styles.kpiLabel}>{slot.result.label || slot.label} · 기간 등락률</div>
                   <div style={{ ...styles.kpiValue, fontSize: 18, color: slot.result.changePct > 0 ? PALETTE.up : slot.result.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
                     {slot.result.label ? fmtPct(slot.result.changePct) : '-'}
                   </div>
