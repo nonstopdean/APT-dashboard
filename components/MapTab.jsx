@@ -245,6 +245,7 @@ export default function MapTab({
         </aside>
       ) : (
         <button
+          className="panel-expand-btn"
           onClick={() => setPanelOpen(true)}
           style={{
             width: 28, flexShrink: 0, height: '100%', border: 'none', borderRight: `1px solid ${PALETTE.border}`,
