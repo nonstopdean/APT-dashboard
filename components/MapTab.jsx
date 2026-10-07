@@ -103,11 +103,12 @@ export default function MapTab({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compact]);
-  // 중간 폭 화면에서는 처음 들어올 때 왼쪽 필터 패널을 접어서 지도를 넓게 보여준다(왼쪽 › 버튼으로 다시 펼친다).
+  // 1100px 미만(중간 폭·폰)에서는 처음 들어올 때 필터 패널을 접어서 지도를 넓게 보여준다.
+  // 폰(720px 이하)은 패널이 위 58%를 차지해 지도가 거의 안 보였다(v172 실측) — 위쪽 "조건 설정" 막대로 다시 펼친다.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const w = window.innerWidth;
-    if (w > 720 && w < 1100 && panelOpen) setPanelOpen(false);
+    if (w < 1100 && panelOpen) setPanelOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -233,6 +234,7 @@ export default function MapTab({
   return (
     <div className="hero-wrap" style={{ display: 'flex', width: '100%', height: '100vh', overflow: 'hidden' }}>
       {panelOpen ? (
+        <>
         <aside
           style={{
             ...styles.sidebar,
@@ -243,6 +245,11 @@ export default function MapTab({
         >
           {sidebarInner}
         </aside>
+          {/* 폰에서만 보인다(page.jsx 모바일 CSS). 예전엔 폰에서 패널을 접을 방법이 없었다. */}
+          <button className="panel-collapse-mobile" onClick={() => setPanelOpen(false)} style={{ display: 'none' }}>
+            지도 크게 보기 ▴
+          </button>
+        </>
       ) : (
         <button
           className="panel-expand-btn"
@@ -254,6 +261,7 @@ export default function MapTab({
           aria-label="패널 펼치기"
         >
           <ChevronRight size={16} color={PALETTE.textMuted} />
+          <span className="panel-expand-label" style={{ display: 'none' }}>조건 설정 (지역·기간·평형)</span>
         </button>
       )}
 
@@ -528,7 +536,7 @@ export default function MapTab({
 
         {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
         {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
-          <div style={{
+          <div className="map-timeline" style={{
             position: 'absolute', bottom: 14, left: 14, right: 14 + (selectedApt ? detailInset : 0), zIndex: 20,
             display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
             background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
@@ -584,7 +592,7 @@ export default function MapTab({
         {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
         {/* 단지 상세 패널이 오른쪽에 떠 있을 때는 겹치지 않게 숨긴다. */}
         {allTx.length > 0 && !selectedApt && (
-          <div className="map-complex-panel" style={{
+          <div className={`map-complex-panel${mapPanelMinimized ? ' is-min' : ''}`} style={{
             // 도구줄(카드 포함) 바로 아래. 아직 못 쟀거나 한 줄뿐이면 예전 값(72)을 유지한다.
             position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: compact ? 260 : 292, zIndex: 19,
             bottom: mapPanelMinimized ? 'auto' : 18,
