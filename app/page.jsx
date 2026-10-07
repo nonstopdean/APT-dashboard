@@ -3746,9 +3746,16 @@ export default function Page() {
           .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }
           /* 세로로 쌓이는 모바일 배치에서 접힌 패널의 펼치기 버튼(폭 28px·높이 100%)이 화면 전체 높이를 차지해 지도를 밀어냈다 */
           .panel-expand-btn { width: 100% !important; height: 36px !important; flex-shrink: 0; border-right: none !important; border-bottom: 1px solid ${PALETTE.border} !important; }
+          /* 폰 지도 화면(v175): 접힌 패널은 "조건 설정" 막대, 펼친 패널 아래엔 "지도 크게 보기" 막대. 접은 목록은 머리글만, 타임머신은 목록과 안 겹치게. */
+          .panel-expand-label { display: inline !important; margin-left: 6px; font-size: 13px; font-weight: 700; color: ${PALETTE.textPrimary}; }
+          .panel-collapse-mobile { display: block !important; width: 100%; height: 36px; flex-shrink: 0; border: none; border-bottom: 1px solid ${PALETTE.border}; background: ${PALETTE.panel}; font-size: 13px; font-weight: 700; color: ${PALETTE.textPrimary}; cursor: pointer; }
+          .map-complex-panel.is-min { bottom: auto !important; height: auto !important; }
+          .map-timeline { right: 256px !important; }
         }
         @media (max-width: 520px) {
           .map-complex-panel { left: 8px !important; right: 8px !important; width: auto !important; top: auto !important; height: 34vh !important; bottom: 8px !important; }
+          .map-complex-panel.is-min { top: auto !important; bottom: 8px !important; height: auto !important; }
+          .map-timeline { right: 8px !important; bottom: calc(34vh + 16px) !important; }
           .map-portal-toolbar { right: 8px !important; }
           .portal-pill { padding: 7px 9px !important; }
           .pcd-root { bottom: calc(34vh + 16px) !important; } /* 목록 시트(34vh) 위로 올려 겹치지 않게 */
