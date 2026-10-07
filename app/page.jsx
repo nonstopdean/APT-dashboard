@@ -1873,6 +1873,26 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSearchFetch]);
 
+  // 마지막에 본 지역을 기억했다가 다시 들어오면 바로 불러온다(첫 화면이 비어 보이지 않게). 처음 온 사람에게는
+  // 지도 위 안내 카드(MapTab)가 대신 보인다. 방문자마다 큰 지역을 자동 조회하면 국토부 API 한도를 금방 쓰므로
+  // 기본 지역을 정해 자동으로 부르지는 않는다.
+  const LAST_REGIONS_KEY = 'apt-dashboard-last-regions';
+  const restoredRegionsRef = useRef(false);
+  useEffect(() => {
+    if (restoredRegionsRef.current) return;
+    restoredRegionsRef.current = true;
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(LAST_REGIONS_KEY) || '[]');
+      const codes = Array.isArray(saved) ? saved.filter((c) => typeof c === 'string' && /^\d{5}$/.test(c)).slice(0, 10) : [];
+      if (codes.length && selected.length === 0) { setSelected(codes); setPendingSearchFetch(codes); }
+    } catch (e) { /* 저장값이 깨졌거나 저장소를 못 쓰면 무시한다 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!restoredRegionsRef.current) return;
+    try { window.localStorage.setItem(LAST_REGIONS_KEY, JSON.stringify(selected)); } catch (e) { /* 저장 실패는 조용히 무시 */ }
+  }, [selected]);
+
   // 헤더 검색창: "해운대 84 8억 이하"처럼 지역·면적·가격·거래유형을 한 번에 알아듣는다.
   // 이름이 겹치는 지역(중구·서구 등)은 임의로 고르지 않고 시·도를 되묻는다.
   const handleGlobalSearch = () => {
