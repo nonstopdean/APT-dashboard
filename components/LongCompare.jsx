@@ -147,6 +147,9 @@ export default function LongCompare({ items, isRent }) {
                     <td style={{ padding: '6px 4px' }}>{fmtEok(s.sum.latest)}{s.sum.latestBucket ? ` (${bucketLabel(s.sum.latestBucket)})` : ''}</td>
                     <td style={{ padding: '6px 4px', color: s.sum.changePct > 0 ? PALETTE.up : s.sum.changePct < 0 ? PALETTE.down : PALETTE.textPrimary }}>
                       {s.sum.changePct != null ? fmtPct(s.sum.changePct) : '-'}
+                      {s.sum.firstBucket && s.series[0] && s.sum.firstBucket !== s.series[0].bucket && (
+                        <span style={{ color: PALETTE.textMuted, fontSize: 10.5 }}> ({bucketLabel(s.sum.firstBucket)}부터)</span>
+                      )}
                     </td>
                     <td style={{ padding: '6px 4px' }}>{s.sum.peak ? `${fmtEok(s.sum.peak.value)} (${bucketLabel(s.sum.peak.bucket)})` : '-'}</td>
                     <td style={{ padding: '6px 4px' }}>{s.sum.count ? `${s.sum.count.toLocaleString()}건` : (loading ? '…' : '이 평형 거래 없음')}</td>
