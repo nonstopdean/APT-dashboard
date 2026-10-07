@@ -554,6 +554,32 @@ export default function MapTab({
           </div>
         )}
 
+        {/* 처음 온 사람(지역 0개)에게 무엇을 해야 하는지 알려준다. 예전엔 빈 지도만 보여서, 구를 누르면 된다는 걸 알 수 없었다. */}
+        {selected.length === 0 && allTx.length === 0 && !mapError && (
+          <div className="map-empty-guide" style={{
+            position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 21,
+            width: 'min(340px, calc(100% - 32px))', boxSizing: 'border-box',
+            background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`, borderRadius: 14,
+            boxShadow: '0 8px 28px rgba(0,0,0,0.14)', padding: '16px 16px 14px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>어디 시세를 볼까요?</div>
+            <div style={{ fontSize: 12, color: PALETTE.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
+              지도에서 구를 누르거나, 위 검색창에 "해운대 84 8억 이하"처럼 적어보세요.
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
+              {[['11680', '강남구'], ['11650', '서초구'], ['11710', '송파구'], ['11440', '마포구'],
+                ['11200', '성동구'], ['41135', '분당구'], ['41117', '수원 영통'], ['26350', '해운대구']].map(([code, label]) => (
+                <button key={code} onClick={() => addRegionAndFetch(code)} style={{
+                  border: `1px solid ${PALETTE.border}`, background: PALETTE.panel, borderRadius: 999,
+                  padding: '7px 12px', fontSize: 12.5, cursor: 'pointer', color: PALETTE.textPrimary,
+                }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
         {/* 단지 상세 패널이 오른쪽에 떠 있을 때는 겹치지 않게 숨긴다. */}
         {allTx.length > 0 && !selectedApt && (
