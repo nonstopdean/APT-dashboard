@@ -3744,6 +3744,8 @@ export default function Page() {
           .map-complex-panel { width: 240px !important; top: 68px !important; bottom: 12px !important; }
           .map-status-card { display: none !important; }
           .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }
+          /* 세로로 쌓이는 모바일 배치에서 접힌 패널의 펼치기 버튼(폭 28px·높이 100%)이 화면 전체 높이를 차지해 지도를 밀어냈다 */
+          .panel-expand-btn { width: 100% !important; height: 36px !important; flex-shrink: 0; border-right: none !important; border-bottom: 1px solid ${PALETTE.border} !important; }
         }
         @media (max-width: 520px) {
           .map-complex-panel { left: 8px !important; right: 8px !important; width: auto !important; top: auto !important; height: 34vh !important; bottom: 8px !important; }
