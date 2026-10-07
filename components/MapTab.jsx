@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { ChevronRight } from 'lucide-react';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
@@ -73,6 +73,42 @@ export default function MapTab({
       topRowObserverRef.current = new ResizeObserver(measure);
       topRowObserverRef.current.observe(el);
     }
+  }, []);
+  // 지도 영역이 좁을 때(작은 노트북·태블릿·창 나눔, 약 720~1100px 화면)는 떠 있는 카드와 목록이 지도를 거의 다 가렸다
+  // (v169 실측: 800px 창에서 보이는 지도 폭 70~80px). 지도 폭을 재서 좁으면 카드는 요약만, 목록은 접힌 채로 시작한다.
+  // 720px 이하는 page.jsx의 모바일 CSS가 따로 처리한다.
+  const [mapW, setMapW] = useState(0);
+  const mapObserverRef = useRef(null);
+  const mapAreaRef = useCallback((el) => {
+    if (mapObserverRef.current) { mapObserverRef.current.disconnect(); mapObserverRef.current = null; }
+    if (!el) return;
+    const measure = () => {
+      const w = Math.round(el.getBoundingClientRect().width);
+      setMapW((prev) => (prev === w ? prev : w));
+    };
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      mapObserverRef.current = new ResizeObserver(measure);
+      mapObserverRef.current.observe(el);
+    }
+  }, []);
+  const compact = mapW > 0 && mapW < 820;
+  const [statusOpen, setStatusOpen] = useState(false);
+  // 좁아지는 순간 한 번만 목록을 접는다(사용자가 다시 펼치면 그대로 둔다).
+  const autoMinimizedRef = useRef(false);
+  useEffect(() => {
+    if (compact && !autoMinimizedRef.current && typeof window !== 'undefined' && window.innerWidth > 720) {
+      autoMinimizedRef.current = true;
+      setMapPanelMinimized(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compact]);
+  // 중간 폭 화면에서는 처음 들어올 때 왼쪽 필터 패널을 접어서 지도를 넓게 보여준다(왼쪽 › 버튼으로 다시 펼친다).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window.innerWidth;
+    if (w > 720 && w < 1100 && panelOpen) setPanelOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const renderSeoulMap = () => {
@@ -220,7 +256,7 @@ export default function MapTab({
         </button>
       )}
 
-      <div style={{ position: 'relative', flex: 1, touchAction: 'none', minWidth: 0 }}>
+      <div ref={mapAreaRef} style={{ position: 'relative', flex: 1, touchAction: 'none', minWidth: 0 }}>
         {renderSeoulMap()}
 
         <PinnedCompareDrawer
@@ -406,7 +442,18 @@ export default function MapTab({
             ) : (
               <>
                 <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
-                {mapComplexes.length > 0 && (() => {
+                {compact && mapComplexes.length > 0 && (
+                  <span
+                    style={{ marginLeft: 6, cursor: 'pointer', color: PALETTE.accent, fontSize: 10.5 }}
+                    onClick={() => setStatusOpen((v) => !v)}
+                  >
+                    {statusOpen ? '접기 ▴' : '자세히 ▾'}
+                  </span>
+                )}
+                {compact && !statusOpen && mapZoomTier !== 'near' && mapComplexes.length > 0 && (
+                  <div style={{ fontSize: 10, color: PALETTE.accent, marginTop: 2 }}>단지 마커는 지도를 더 확대하면 보여요</div>
+                )}
+                {(!compact || statusOpen) && mapComplexes.length > 0 && (() => {
                   const withTrade = mapComplexes.filter((c) => c.latestPrice != null).length;
                   // 지역을 바꾼 직후에는 이전 지역의 통계가 남아 있을 수 있어서, 단지 수가 맞을 때만 보여준다.
                   const gs = geocodeStats && geocodeStats.total === mapComplexes.length ? geocodeStats : null;
@@ -512,7 +559,7 @@ export default function MapTab({
         {allTx.length > 0 && !selectedApt && (
           <div className="map-complex-panel" style={{
             // 도구줄(카드 포함) 바로 아래. 아직 못 쟀거나 한 줄뿐이면 예전 값(72)을 유지한다.
-            position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: 292, zIndex: 19,
+            position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: compact ? 260 : 292, zIndex: 19,
             bottom: mapPanelMinimized ? 'auto' : 18,
             background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 14, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', overflow: 'hidden',
