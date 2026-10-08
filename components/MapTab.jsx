@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
 import PinnedCompareDrawer from './PinnedCompareDrawer';
+import RecentTradesFeed from './RecentTradesFeed';
 import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, monthLabel, APP_BUILD } from '../lib/ui-helpers';
@@ -35,6 +36,7 @@ export default function MapTab({
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
+  const [panelView, setPanelView] = useState('complexes'); // 오른쪽 패널: 'complexes'(단지) | 'trades'(최근 거래·신고가)
   // 숫자 원을 눌러도 확대로 갈라지지 않을 때(같은 위치·최대 줌) 그 안의 단지 목록을 오른쪽 패널에 보여준다.
   const [clusterKeys, setClusterKeys] = useState(null); // Set<string> | null
   const clusterRows = useMemo(() => {
@@ -621,7 +623,29 @@ export default function MapTab({
               </span>
             </div>
             {!mapPanelMinimized && (
-            <div style={{ overflowY: 'auto', height: 'calc(100% - 64px)' }}>
+              <div style={{ display: 'flex', borderBottom: `1px solid ${PALETTE.border}` }}>
+                {[['complexes', '단지'], ['trades', '최근 거래·신고가']].map(([k, l]) => (
+                  <button key={k} onClick={() => setPanelView(k)} style={{
+                    flex: 1, border: 'none', background: 'transparent', padding: '8px 0', fontSize: 12.5, cursor: 'pointer',
+                    fontWeight: panelView === k ? 800 : 500, color: panelView === k ? PALETTE.accent : PALETTE.textMuted,
+                    borderBottom: panelView === k ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
+                  }}>{l}</button>
+                ))}
+              </div>
+            )}
+            {!mapPanelMinimized && (
+            <div style={{ overflowY: 'auto', height: 'calc(100% - 98px)' }}>
+              {panelView === 'trades' ? (
+                <RecentTradesFeed
+                  codes={selected}
+                  isTrade={dealType === 'trade'}
+                  onPick={(r) => {
+                    const coord = mapComplexCoordByKey.get(`${r.regionCode}|${r.dong}|${r.apt}`) || codeToLatLng[r.regionCode];
+                    setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode, lat: coord?.lat, lng: coord?.lng });
+                    if (coord) setFocusLatLng(coord);
+                  }}
+                />
+              ) : (<>
               {clusterRows && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span>같은 위치에 겹쳐 있는 단지 {clusterRows.length}개</span>
@@ -680,6 +704,7 @@ export default function MapTab({
                   </button>
                 );
               })}
+              </>)}
             </div>
             )}
           </div>
