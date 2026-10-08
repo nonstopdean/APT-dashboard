@@ -72,7 +72,7 @@ export default function LongCompare({ items, isRent }) {
     if (isSidoAggregate(code)) return { label: it.label, unsupported: true, series: [], sum: summarizeLongSeries([]) };
     const all = rowsByCode[cacheKey(code)] || [];
     const rows = it.kind === 'region' ? all : all.filter((r) => r.apt === it.apt && r.dong === it.dong);
-    const series = buildLongSeries(rows, { startYm, endYm, unit, areaKey, valueOf });
+    const series = buildLongSeries(rows, { startYm, endYm, unit, areaKey, valueOf, minN: it.kind === 'region' ? 10 : 1 });
     return { label: it.label, series, sum: summarizeLongSeries(series) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [items, rowsByCode, startYm, endYm, unit, areaKey, isRent, endpoint, period.months]);
