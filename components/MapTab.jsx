@@ -33,6 +33,7 @@ export default function MapTab({
   mapPanelMinimized, setMapPanelMinimized,
   mapViewportBounds, mapPanelList,
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
+  unitSizeFilter, setUnitSizeFilter, buildYearFilter, setBuildYearFilter,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
@@ -44,6 +45,20 @@ export default function MapTab({
     const rows = mapComplexes.filter((c) => clusterKeys.has(c.key));
     return rows.length ? rows : null;
   }, [clusterKeys, mapComplexes]);
+  // 지도 위 검색(v184): 단지명·동으로 핀과 목록을 좁힌다(띄어쓰기·대소문자 무시). 목록은 화면 범위와 상관없이
+  // 조회한 지역 전체에서 찾는다. 검색어가 없으면 원래 배열을 그대로 넘긴다(참조가 바뀌면 지도가 마커를 다시 그린다, 규칙 3).
+  const [mapKeyword, setMapKeyword] = useState('');
+  const kwNorm = mapKeyword.replace(/\s+/g, '').toLowerCase();
+  const matchKw = useCallback((c) => (
+    String(c.apt || '').replace(/\s+/g, '').toLowerCase().includes(kwNorm) || String(c.dong || '').includes(kwNorm)
+  ), [kwNorm]);
+  const pinBase = mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes;
+  const pinComplexes = useMemo(() => (kwNorm ? pinBase.filter(matchKw) : pinBase), [pinBase, kwNorm, matchKw]);
+  const kwRows = useMemo(() => (kwNorm ? complexCompare.filter(matchKw) : null), [complexCompare, kwNorm, matchKw]);
+  const chipStyle = (on) => ({
+    flexShrink: 0, border: `1px solid ${on ? PALETTE.accent : PALETTE.border}`, borderRadius: 999, padding: '5px 10px', whiteSpace: 'nowrap',
+    background: on ? PALETTE.accent : '#fff', color: on ? '#fff' : PALETTE.textSecondary, fontSize: 11.5, fontWeight: on ? 700 : 500, cursor: 'pointer',
+  });
   // "목록만" 진단은 펼쳤을 때만 계산한다 (단지가 수백 개라 평소엔 돌릴 필요가 없다).
   const listOnlyReport = useMemo(
     () => (listOnlyOpen ? classifyListOnly(mapComplexes) : null),
@@ -163,7 +178,7 @@ export default function MapTab({
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes}
+            complexes={pinComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -185,7 +200,7 @@ export default function MapTab({
             borderColor={PALETTE.border}
             onSelect={(code) => addRegionAndFetch(code)}
             focusLatLng={focusLatLng}
-            complexes={mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes}
+            complexes={pinComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
             dongValues={dongMapData?.values}
@@ -534,6 +549,42 @@ export default function MapTab({
               </>
             )}
           </div>
+          {/* 지도 위 검색·필터(v184): 단지명·동 검색 + 평형·연식. 평형·연식은 왼쪽 조건 패널과 같은 값을 바꾼다.
+              넓은 화면에서는 오른쪽 단지 목록 창과 안 겹치게 폭을 줄이고, 폰은 page.jsx CSS에서 전체 폭. */}
+          {mapComplexes.length > 0 && (
+            <div style={{ flexBasis: '100%', display: 'flex', pointerEvents: 'none' }}>
+              <div className="map-filter-row" style={{
+                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, maxWidth: 'min(640px, calc(100% - 280px))',
+                overflowX: 'auto', background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
+                borderRadius: 12, padding: '5px 8px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)', backdropFilter: 'blur(8px)',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, padding: '0 6px', borderRadius: 8, background: '#fff',
+                  border: `1px solid ${mapKeyword ? PALETTE.accent : PALETTE.border}`,
+                }}>
+                  <span style={{ fontSize: 12 }}>🔍</span>
+                  <input
+                    value={mapKeyword}
+                    onChange={(e) => { setMapKeyword(e.target.value); setPanelView('complexes'); setMapPanelMinimized(false); }}
+                    placeholder="단지명·동 검색"
+                    style={{ width: 120, border: 'none', outline: 'none', padding: '6px 0', fontSize: 12, background: 'transparent' }}
+                  />
+                  {mapKeyword && <span style={{ cursor: 'pointer', color: PALETTE.textMuted, fontSize: 13 }} onClick={() => setMapKeyword('')}>✕</span>}
+                </div>
+                {!isRone && !isRatio && setUnitSizeFilter && [['all', '전 평형'], ['u20', '~20평'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평+']].map(([k, l]) => (
+                  <button key={`u${k}`} onClick={() => setUnitSizeFilter(k)} style={chipStyle(unitSizeFilter === k)}>{l}</button>
+                ))}
+                {(dealType === 'trade' || dealType === 'silv') && setBuildYearFilter && (
+                  <>
+                    <span style={{ width: 1, height: 18, background: PALETTE.border, flexShrink: 0 }} />
+                    {[['all', '전체 연식'], ['5', '5년 이내'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내'], ['20p', '20년 초과']].map(([k, l]) => (
+                      <button key={`y${k}`} onClick={() => setBuildYearFilter(k)} style={chipStyle(buildYearFilter === k)}>{l}</button>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
@@ -646,13 +697,19 @@ export default function MapTab({
                   }}
                 />
               ) : (<>
-              {clusterRows && (
+              {kwRows && (
+                <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span>"{mapKeyword.trim()}" 검색 결과 {kwRows.length}개{kwRows.length > 60 ? ' (60개까지 표시)' : ''}</span>
+                  <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }} onClick={() => setMapKeyword('')}>검색 지우기</span>
+                </div>
+              )}
+              {!kwRows && clusterRows && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span>누른 묶음의 단지 {clusterRows.length}개</span>
                   <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }} onClick={() => setClusterKeys(null)}>전체 보기</span>
                 </div>
               )}
-              {!clusterRows && budgetMatches && (
+              {!kwRows && !clusterRows && budgetMatches && (
                 // 예산 필터가 켜져 있으면 목록이 그 조건으로 걸러진다는 걸 머리글로 알려주고, 바로 끌 수 있게 한다.
                 // (0개일 때 아무 설명이 없으면 "고장 났다"로 보이기 쉽다 — 예: 이전 검색의 "8억 이하"가 남아 있는 경우)
                 <div data-budget-header="1" style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
@@ -670,12 +727,12 @@ export default function MapTab({
                   </span>
                 </div>
               )}
-              {!clusterRows && !budgetMatches && mapViewportBounds && (
+              {!kwRows && !clusterRows && !budgetMatches && mapViewportBounds && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
                   현재 화면의 거래 있는 단지 {mapPanelList.total ?? mapPanelList.length}개{(mapPanelList.total ?? 0) > mapPanelList.length ? ` (${mapPanelList.length}개까지 표시)` : ''}
                 </div>
               )}
-              {(clusterRows || budgetMatches || mapPanelList).map((c, i) => {
+              {(kwRows ? kwRows.slice(0, 60) : (clusterRows || budgetMatches || mapPanelList)).map((c, i) => {
                 const coord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`) || codeToLatLng[c.regionCode];
                 const priceVal = c.latestPrice ?? (isRent ? c.deposit : c.amount);
                 const areaVal = c.latestArea ?? c.area;
