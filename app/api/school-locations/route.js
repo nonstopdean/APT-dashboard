@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
@@ -62,6 +63,6 @@ export async function GET(request) {
     }
     return Response.json({ schools });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '학교 위치를 불러오지 못했습니다.') }, { status: 500 });
   }
 }
