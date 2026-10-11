@@ -2944,6 +2944,7 @@ export default function Page() {
           schoolLayerOn={schoolLayerOn} setSchoolLayerOn={setSchoolLayerOn}
           visibleSchoolLocations={visibleSchoolLocations} schoolLocationsLoading={schoolLocationsLoading}
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
+          unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
@@ -3825,6 +3826,7 @@ export default function Page() {
           .map-complex-panel { width: 240px !important; top: 68px !important; bottom: 12px !important; }
           .map-status-card { display: none !important; }
           .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }
+          .map-filter-row { max-width: 100% !important; }
           /* 세로로 쌓이는 모바일 배치에서 접힌 패널의 펼치기 버튼(폭 28px·높이 100%)이 화면 전체 높이를 차지해 지도를 밀어냈다 */
           .panel-expand-btn { width: 100% !important; height: 36px !important; flex-shrink: 0; border-right: none !important; border-bottom: 1px solid ${PALETTE.border} !important; }
           /* 폰 지도 화면(v175): 접힌 패널은 "조건 설정" 막대, 펼친 패널 아래엔 "지도 크게 보기" 막대. 접은 목록은 머리글만, 타임머신은 목록과 안 겹치게. */
