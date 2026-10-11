@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { kvReady, kvGet, kvSet } from '../../../lib/kv';
 
 export const runtime = 'nodejs';
@@ -36,7 +37,7 @@ export async function POST(request) {
     await kvSet(KEY, list);
     return Response.json({ ok: true, alert });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '알림 저장소 처리 중 오류가 발생했습니다.') }, { status: 500 });
   }
 }
 
@@ -51,6 +52,6 @@ export async function DELETE(request) {
     await kvSet(KEY, next);
     return Response.json({ ok: true });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '알림 저장소 처리 중 오류가 발생했습니다.') }, { status: 500 });
   }
 }
