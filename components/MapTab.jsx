@@ -111,10 +111,11 @@ export default function MapTab({
   }, []);
   const compact = mapW > 0 && mapW < 820;
   const [statusOpen, setStatusOpen] = useState(false);
-  // 좁아지는 순간 한 번만 목록을 접는다(사용자가 다시 펼치면 그대로 둔다).
+  // 좁아지는 순간 한 번만 목록을 접는다(사용자가 다시 펼치면 그대로 둔다). v186부터 폰도 접힌 채 시작해
+  // 지도를 넓게 보여주고, 아래쪽 "단지 탐색 N개 · 목록 열기" 막대로 연다.
   const autoMinimizedRef = useRef(false);
   useEffect(() => {
-    if (compact && !autoMinimizedRef.current && typeof window !== 'undefined' && window.innerWidth > 720) {
+    if (compact && !autoMinimizedRef.current && typeof window !== 'undefined') {
       autoMinimizedRef.current = true;
       setMapPanelMinimized(true);
     }
@@ -662,15 +663,23 @@ export default function MapTab({
               onClick={() => setMapPanelMinimized((v) => !v)}
             >
               <div>
-                <div style={{ fontSize: 14, fontWeight: 800 }}>단지 탐색</div>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>
+                  단지 탐색
+                  {mapPanelMinimized && (
+                    <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 600, color: PALETTE.textMuted }}>
+                      {(mapPanelList.total ?? complexCompare.length).toLocaleString()}개
+                    </span>
+                  )}
+                </div>
                 {!mapPanelMinimized && (
                   <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 3 }}>
                     최근 거래가 있는 단지를 선택하면 상세정보를 확인할 수 있어요.
                   </div>
                 )}
               </div>
-              <span style={{ fontSize: 16, color: PALETTE.textMuted, lineHeight: 1, flexShrink: 0, marginLeft: 8 }}>
-                {mapPanelMinimized ? '▸' : '▾'}
+              {/* 화살표만으로는 누르는 곳인지 알기 어려워서 글자로 보여준다(v186). */}
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: PALETTE.accent, flexShrink: 0, marginLeft: 8, whiteSpace: 'nowrap' }}>
+                {mapPanelMinimized ? '목록 열기' : '접기'}
               </span>
             </div>
             {!mapPanelMinimized && (
