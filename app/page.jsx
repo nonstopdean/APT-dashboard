@@ -234,6 +234,23 @@ export default function Page() {
   const [calcPriceInput, setCalcPriceInput] = useState('');
   const [nearbyRadius, setNearbyRadius] = useState(1000); // meters
   const [pinnedComplexes, setPinnedComplexes] = useState([]); // [{apt, dong, regionCode}] 최대 5개
+  // 비교함은 이 기기에 저장해 다음 방문에도 남긴다(v190, "홈"으로 초기화해도 유지). 첫 렌더의 빈 배열이 저장값을
+  // 덮어쓰지 않도록 저장 effect의 첫 실행은 건너뛴다(읽기 effect가 같은 렌더에서 먼저 돈다).
+  const PINNED_KEY = 'apt-dashboard-pinned';
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(PINNED_KEY) || '[]');
+      const ok = Array.isArray(saved)
+        ? saved.filter((p) => p && typeof p.apt === 'string' && typeof p.dong === 'string' && /^\d{5}$/.test(String(p.regionCode))).slice(0, 5)
+        : [];
+      if (ok.length) setPinnedComplexes(ok.map((p) => ({ apt: p.apt, dong: p.dong, regionCode: String(p.regionCode) })));
+    } catch (e) { /* 저장값이 깨졌거나 저장소를 못 쓰면 무시한다 */ }
+  }, []);
+  const pinnedSaveSkipRef = useRef(true);
+  useEffect(() => {
+    if (pinnedSaveSkipRef.current) { pinnedSaveSkipRef.current = false; return; }
+    try { window.localStorage.setItem(PINNED_KEY, JSON.stringify(pinnedComplexes)); } catch (e) { /* 저장 실패는 조용히 무시 */ }
+  }, [pinnedComplexes]);
   const [userAlerts, setUserAlerts] = useState([]);
   const [scenario, setScenario] = useState({ price: '', cash: '', rate: '4.0', years: '30', listingId: '' });
   const [myListings, setMyListings] = useState([]); // 사용자가 직접 기록한 매물 호가 (localStorage)
