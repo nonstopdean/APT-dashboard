@@ -672,7 +672,7 @@ export default function MapTab({
               )}
               {!clusterRows && !budgetMatches && mapViewportBounds && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
-                  현재 화면에 보이는 단지 {mapPanelList.length}개
+                  현재 화면의 거래 있는 단지 {mapPanelList.total ?? mapPanelList.length}개{(mapPanelList.total ?? 0) > mapPanelList.length ? ` (${mapPanelList.length}개까지 표시)` : ''}
                 </div>
               )}
               {(clusterRows || budgetMatches || mapPanelList).map((c, i) => {
