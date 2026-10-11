@@ -693,12 +693,19 @@ export default function MapTab({
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</div>
-                        <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong}{c.count != null ? ` · ${c.count}건` : ''}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</span>
+                          {isNew && <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: PALETTE.accent, background: '#FDECEC', borderRadius: 4, padding: '1px 4px' }}>신축</span>}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong}{built > 0 ? ` · ${built}년` : ''}{c.count != null ? ` · ${c.count}건` : ''}</div>
                       </div>
                       <div style={{ flexShrink: 0, textAlign: 'right' }}>
                         <div style={{ fontSize: 12.5, fontWeight: 800 }}>{priceVal != null ? fmtWon(priceVal) : '-'}</div>
-                        <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>{areaVal != null ? fmtArea(areaVal) : ''}</div>
+                        {ppp != null && <div style={{ fontSize: 10, color: PALETTE.textSecondary, marginTop: 2 }}>평당 {fmtWon(ppp)}</div>}
+                        <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 2 }}>
+                          {areaVal != null ? fmtArea(areaVal) : ''}
+                          {showChange && <span style={{ marginLeft: 4, fontWeight: 700, color: c.change > 0 ? PALETTE.up : c.change < 0 ? PALETTE.down : PALETTE.textMuted }}>{fmtPct(c.change)}</span>}
+                        </div>
                       </div>
                     </div>
                   </button>
