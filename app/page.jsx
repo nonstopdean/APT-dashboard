@@ -16,6 +16,8 @@ import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
 import { buildChangeIndex, changeNote } from '../lib/market-change';
+import { resolveMarkerCoord } from '../lib/geocode-pick';
+import { geocodeCache } from '../lib/geocodeCache';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1654,6 +1656,7 @@ export default function Page() {
   const [mapFocusKeys, setMapFocusKeys] = useState(null); // Set<string> | null
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
+  const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고). mapPanelList보다 앞에 둔다
   const [subwayLayerOn, setSubwayLayerOn] = useState(false);
   const [schoolLayerOn, setSchoolLayerOn] = useState(false);
   const [schoolLocations, setSchoolLocations] = useState([]);
@@ -1828,16 +1831,25 @@ export default function Page() {
     )).slice(0, 200);
   }, [schoolLayerOn, mapViewportBounds, schoolLocations]);
 
+  // 목록도 지도 핀과 같은 좌표로 화면 안인지 판단한다(정확한 위치가 있으면 그것, 없으면 동 중심점).
+  // v178까지는 동 중심점만 봐서, 핀은 화면 안인데 목록에서 빠지거나 그 반대가 생겼다. geocodeStats는 정확한
+  // 위치를 새로 찾을 때마다 바뀌므로 다시 계산하는 신호로 쓴다(geocodeCache 자체는 상태가 아니다).
   const mapPanelList = useMemo(() => {
     if (!mapViewportBounds) return complexCompare.slice(0, 40);
     const filtered = complexCompare.filter((c) => {
-      const m = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`);
-      if (!m || m.lat == null || m.lng == null) return false;
-      return m.lat >= mapViewportBounds.swLat && m.lat <= mapViewportBounds.neLat
-        && m.lng >= mapViewportBounds.swLng && m.lng <= mapViewportBounds.neLng;
+      const key = `${c.regionCode}|${c.dong}|${c.apt}`;
+      const m = mapComplexCoordByKey.get(key);
+      const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : null;
+      const { coord } = resolveMarkerCoord(approx, geocodeCache[key]);
+      if (!coord) return false;
+      return coord.lat >= mapViewportBounds.swLat && coord.lat <= mapViewportBounds.neLat
+        && coord.lng >= mapViewportBounds.swLng && coord.lng <= mapViewportBounds.neLng;
     });
-    return filtered.slice(0, 60);
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds]);
+    const out = filtered.slice(0, 60);
+    out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats]);
 
   const [globalSearch, setGlobalSearch] = useState('');
 
@@ -2258,7 +2270,6 @@ export default function Page() {
   const [mapZoomTier, setMapZoomTier] = useState('far');
   // 상세 창이 오른쪽에 붙어 차지한 폭(px). 지도 툴바가 이만큼 비켜준다. 창을 옮기거나 최소화해도 실제 폭을 따른다.
   const [detailInset, setDetailInset] = useState(420);
-  const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고)
   const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
   const loadedSidosRef = useRef(new Set());
 
