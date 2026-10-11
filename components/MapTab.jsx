@@ -552,9 +552,9 @@ export default function MapTab({
           {/* 지도 위 검색·필터(v184): 단지명·동 검색 + 평형·연식. 평형·연식은 왼쪽 조건 패널과 같은 값을 바꾼다.
               넓은 화면에서는 오른쪽 단지 목록 창과 안 겹치게 폭을 줄이고, 폰은 page.jsx CSS에서 전체 폭. */}
           {mapComplexes.length > 0 && (
-            <div style={{ flexBasis: '100%', display: 'flex', pointerEvents: 'none' }}>
+            <div style={{ flexBasis: '100%', minWidth: 0, maxWidth: '100%', display: 'flex', pointerEvents: 'none' }}>
               <div className="map-filter-row" style={{
-                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, maxWidth: 'min(640px, calc(100% - 280px))',
+                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: 'min(640px, calc(100% - 280px))', scrollbarWidth: 'thin',
                 overflowX: 'auto', background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
                 borderRadius: 12, padding: '5px 8px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)', backdropFilter: 'blur(8px)',
               }}>
