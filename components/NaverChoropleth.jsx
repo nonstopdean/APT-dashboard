@@ -526,9 +526,10 @@ export default function NaverChoropleth({
       if (cancelled || !containerRef.current || !window.naver?.maps) return;
 
       if (!mapRef.current) {
+        // 다른 탭(순위표 등)에서 지역을 눌러 넘어오면 focusLatLng가 이미 정해져 있다 — 그곳에서 시작한다(v188).
         mapRef.current = new window.naver.maps.Map(containerRef.current, {
-          center: new window.naver.maps.LatLng(37.5665, 126.978),
-          zoom: 11,
+          center: new window.naver.maps.LatLng(focusLatLng?.lat ?? 37.5665, focusLatLng?.lng ?? 126.978),
+          zoom: focusLatLng ? 13 : 11,
         });
         window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', () => zoomChangedRef.current?.());
       }
