@@ -6,7 +6,7 @@ import PinnedCompareDrawer from './PinnedCompareDrawer';
 import RecentTradesFeed from './RecentTradesFeed';
 import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
-import { PALETTE, fmtWon, fmtArea, monthLabel, APP_BUILD } from '../lib/ui-helpers';
+import { PALETTE, fmtWon, fmtArea, fmtPct, monthLabel, APP_BUILD } from '../lib/ui-helpers';
 import { pinnedKeyOf } from '../lib/compare-grid';
 import { changeCap, changeColor, formatChange } from '../lib/market-change';
 
@@ -679,6 +679,11 @@ export default function MapTab({
                 const coord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`) || codeToLatLng[c.regionCode];
                 const priceVal = c.latestPrice ?? (isRent ? c.deposit : c.amount);
                 const areaVal = c.latestArea ?? c.area;
+                // 평당가·신축·등락률(v182). 묶음/예산 목록 행에는 준공연도·등락률이 없어서 있는 것만 보인다.
+                const ppp = c.unitPrice ?? c.latestPyeong;
+                const built = Number(c.buildYear);
+                const isNew = built > 0 && new Date().getFullYear() - built <= 5;
+                const showChange = c.change != null && c.count >= 2;
                 return (
                   <button
                     key={`${c.regionCode}|${c.dong}|${c.apt}|${i}`}
