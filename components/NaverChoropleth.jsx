@@ -426,7 +426,12 @@ export default function NaverChoropleth({
     clustererRef.current = [];
     clusterSignatureRef.current = signature;
 
-    const cellDeg = 0.0008 * Math.pow(2, 20 - zoom);
+    // 묶는 칸은 화면 약 120px. 예전 값(0.0008 * 2^(20-zoom))은 어느 줌에서나 화면 약 750px라서 확대해도
+    // 핀이 거의 다 숫자 원으로 묶였고, 낱개로 세는 목록 수와 맞지 않았다(v178까지).
+    const vb = map.getBounds();
+    const vsize = map.getSize();
+    const degPerPx = vb && vsize?.height ? (vb.getNE().lat() - vb.getSW().lat()) / vsize.height : NaN;
+    const cellDeg = Number.isFinite(degPerPx) && degPerPx > 0 ? degPerPx * 120 : 0.0008 * Math.pow(2, 20 - zoom);
     const buckets = new Map();
     const pinnedMarkers = [];
     markersRef.current.forEach(({ marker, key }) => {
