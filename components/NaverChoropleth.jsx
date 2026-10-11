@@ -114,10 +114,10 @@ export default function NaverChoropleth({
     onViewportChangeRef.current({ swLat: sw.lat(), swLng: sw.lng(), neLat: ne.lat(), neLng: ne.lng() });
   };
 
-  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(3km+), mid는 13~15(1km 안팎),
-  // near는 16 이상(약 300m 이내)에 대응하도록 잡았다.
+  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 여러 개), mid는 13(구 하나 남짓, 동 색칠),
+  // near는 14 이상(단지 핀·묶음). v180까지 near가 16이라 건물이 보일 만큼 확대해야 단지가 나왔다.
   const FAR_ZOOM_LEVEL = 12;
-  const NEAR_ZOOM_LEVEL = 16;
+  const NEAR_ZOOM_LEVEL = 14;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
   // zoom_changed 리스너는 지도를 만들 때 한 번만 붙는다. 함수를 직접 넘기면 첫 렌더(단지 목록이 비어 있던 때)의
   // 함수가 계속 불려서, 확대 직후 "그릴 단지 없음"으로 끝나며 idle이 예약한 최신 마커 갱신까지 취소했다
@@ -473,14 +473,12 @@ export default function NaverChoropleth({
         Math.max(...group.map((g) => g.lng)) - Math.min(...group.map((g) => g.lng)),
       );
       window.naver.maps.Event.addListener(overlay, 'click', () => {
-        // 확대하면 갈라질 수 있을 때만 확대한다. 이미 최대 줌이거나 마커가 사실상 같은 위치(약 5m 이내)면
-        // 확대해도 영원히 안 풀리므로(예전엔 눌러도 아무 반응이 없었다) 그 안의 단지 목록을 열어준다.
+        // 누르면 항상 그 묶음의 단지 목록을 연다(v180까지는 확대만 해서, 다시 묶이거나 목록이 접혀 있으면
+        // "눌러도 반응 없음"으로 보였다). 갈라질 수 있으면 확대도 한다. 이미 최대 줌이거나 마커가 사실상 같은
+        // 위치(약 5m 이내)면 확대해도 안 풀리므로 목록만 연다.
         const canSeparate = spread > 0.00005 && map.getZoom() < 19;
-        if (canSeparate || !onClusterOpenRef.current) {
-          map.morph(new window.naver.maps.LatLng(lat, lng), Math.min(map.getZoom() + 2, 19));
-        } else {
-          onClusterOpenRef.current(memberKeys);
-        }
+        onClusterOpenRef.current?.(memberKeys);
+        if (canSeparate) map.morph(new window.naver.maps.LatLng(lat, lng), Math.min(map.getZoom() + 2, 19));
       });
       clustererRef.current.push({ overlay });
     });
