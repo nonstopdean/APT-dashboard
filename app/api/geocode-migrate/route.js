@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { kvReady } from '../../../lib/kv';
 import { migrateLegacyPage } from '../../../lib/geocode-store';
 
@@ -17,6 +18,6 @@ export async function GET(request) {
     const result = await migrateLegacyPage(cursor, count);
     return Response.json(result);
   } catch (e) {
-    return Response.json({ error: `변환 실패: ${e.message}` }, { status: 500 });
+    return Response.json({ error: `변환 실패: ${publicError(e, '저장소 오류')}` }, { status: 500 });
   }
 }
