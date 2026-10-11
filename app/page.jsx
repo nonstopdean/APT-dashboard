@@ -18,6 +18,7 @@ import { complexIdentity } from '../lib/complex-name';
 import { buildChangeIndex, changeNote } from '../lib/market-change';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache } from '../lib/geocodeCache';
+import { jeonseRatioSeries } from '../lib/jeonse-ratio';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1001,26 +1002,30 @@ export default function Page() {
 
   // 매매를 보고 있어도 이 단지의 전세가율을 같이 보여주기 위해, 최근 12개월 전세 실거래를
   // 가볍게 따로 받아온다 (isRent가 이미 전세면 따로 받을 필요 없다).
-  const [aptJeonseInfo, setAptJeonseInfo] = useState(null); // {avgDeposit, count} | null
+  // v191: 같은 12개월 매매도 받아 월별 전세가율(평당 기준) 추이 series를 같이 만든다.
+  const [aptJeonseInfo, setAptJeonseInfo] = useState(null); // {avgDeposit, count, series} | null
   useEffect(() => {
     setAptJeonseInfo(null);
     if (!selectedApt || isRent || isSilv || propertyType === 'offi') return undefined;
     let cancelled = false;
     const endYmJ = ymNow();
     const startYmJ = ymShift(endYmJ, -11);
-    fetch(`/api/rents?codes=${selectedApt.regionCode}&start=${startYmJ}&end=${endYmJ}`)
-      .then((res) => res.json())
-      .then((json) => {
+    const code = selectedApt.regionCode;
+    const rowsOf = (json) => (json?.months || []).flatMap((ym) => json?.data?.[`${code}_${ym}`] || []);
+    const same = (t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong;
+    Promise.all([
+      fetch(`/api/rents?codes=${code}&start=${startYmJ}&end=${endYmJ}`).then((res) => res.json()),
+      fetch(`/api/trades?codes=${code}&start=${startYmJ}&end=${endYmJ}`).then((res) => res.json()).catch(() => null),
+    ])
+      .then(([json, tradeJson]) => {
         if (cancelled) return;
         const months2 = json?.months || [];
-        const rows = [];
-        months2.forEach((ym) => {
-          (json?.data?.[`${selectedApt.regionCode}_${ym}`] || []).forEach((r) => rows.push(r));
-        });
-        const matched = rows.filter((t) => t.apt === selectedApt.apt && t.dong === selectedApt.dong && t.isJeonse && t.deposit != null);
+        const rentRows = rowsOf(json).filter(same);
+        const matched = rentRows.filter((t) => t.isJeonse && t.deposit != null);
         if (matched.length === 0) return;
         const avgDeposit = matched.reduce((s, t) => s + t.deposit, 0) / matched.length;
-        setAptJeonseInfo({ avgDeposit, count: matched.length });
+        const series = tradeJson ? jeonseRatioSeries(rowsOf(tradeJson).filter(same), rentRows, months2) : [];
+        setAptJeonseInfo({ avgDeposit, count: matched.length, series });
       })
       .catch(() => {});
     return () => { cancelled = true; };
