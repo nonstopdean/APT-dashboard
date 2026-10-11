@@ -8,7 +8,7 @@ import NaverChoropleth from '../components/NaverChoropleth';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
-import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, AlertCircle, X, Building2, ChevronLeft, ChevronRight, Home as HomeIcon, Map as MapIcon, LayoutDashboard, GitCompare, Menu } from 'lucide-react';
 import { REGION_GROUPS, regionLabel, SIDO_AGGREGATES, isSidoAggregate, expandRegionCode, isRegulatedByCode } from '../lib/regions';
 import { fetchDongGeoForSido, normalizeDongName } from '../lib/dong-geo';
 import { nearestStation, allStations } from '../lib/subway';
@@ -37,6 +37,13 @@ const UNIT_FILTER_LABELS = {
 };
 
 const DEFAULT_SELECTED = [];
+// 폰 하단 탭바의 "더보기"에 들어가는 탭(나머지 홈·지도·대시보드·비교는 탭바에 바로 있다).
+const MORE_TABS = [
+  { key: 'subscriptions', label: '분양정보' },
+  { key: 'analytics', label: '순위·통계' },
+  { key: 'market', label: '시장분석' },
+  { key: 'favorites', label: '즐겨찾기' },
+];
 const SIDO_FULL_TO_SHORT = {
   서울특별시: '서울', 부산광역시: '부산', 대구광역시: '대구', 인천광역시: '인천', 광주광역시: '광주',
   대전광역시: '대전', 울산광역시: '울산', 세종특별자치시: '세종', 경기도: '경기', 강원특별자치도: '강원',
@@ -1873,6 +1880,7 @@ export default function Page() {
 
   const [globalSearchOk, setGlobalSearchOk] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false); // 좁은 화면에서만 보이는 검색 줄
+  const [moreOpen, setMoreOpen] = useState(false); // 폰 하단 탭바의 "더보기" 메뉴
   const showSearchMsg = (text, ok = false) => { setGlobalSearchMsg(text); setGlobalSearchOk(ok); };
 
   // 검색으로 지역을 새로 고르거나 거래유형을 바꾸면, 바뀐 상태가 반영된 "다음 렌더"에서 조회한다.
@@ -2880,6 +2888,47 @@ export default function Page() {
         </div>
       )}
 
+      {/* 폰(≤720px) 하단 고정 탭바(v183). 폰에서는 상단 메뉴를 숨기고 자주 쓰는 4개 + 더보기를 아래에 둔다(CSS로만 보임). */}
+      <nav className="mobile-tabbar no-print" style={{ display: 'none' }}>
+        {[
+          { key: 'home', label: '홈', Icon: HomeIcon },
+          { key: 'map', label: '지도', Icon: MapIcon },
+          { key: 'normal', label: '대시보드', Icon: LayoutDashboard },
+          { key: 'compare', label: '비교', Icon: GitCompare },
+          { key: 'more', label: '더보기', Icon: Menu },
+        ].map(({ key, label, Icon }) => {
+          const on = key === 'more' ? (moreOpen || MORE_TABS.some((m) => m.key === viewMode)) : (!moreOpen && viewMode === key);
+          return (
+            <button
+              key={key} type="button" className={`mobile-tab${on ? ' on' : ''}`}
+              onClick={() => {
+                if (key === 'home') { goHome(); return; }
+                if (key === 'more') { setMoreOpen((v) => !v); return; }
+                setMoreOpen(false);
+                setViewMode(key);
+              }}
+            >
+              <Icon size={20} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+      {moreOpen && (
+        <div className="mobile-more-sheet no-print" style={{ display: 'none' }} onClick={() => setMoreOpen(false)}>
+          <div className="mobile-more-panel" onClick={(e) => e.stopPropagation()}>
+            {MORE_TABS.map((t) => (
+              <button
+                key={t.key} type="button" className={`mobile-more-item${viewMode === t.key ? ' on' : ''}`}
+                onClick={() => { setMoreOpen(false); setViewMode(t.key); }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {viewMode === 'map' ? (
         <MapTab
           selectedApt={selectedApt}
@@ -3748,15 +3797,28 @@ export default function Page() {
           .pcd-btn { padding: 10px 12px !important; font-size: 12.5px !important; }
         }
         @media (max-width: 720px) {
-          .hero-wrap { flex-direction: column !important; height: 90vh !important; }
+          .hero-wrap { flex-direction: column !important; height: calc(100vh - ${HEADER_HEIGHT + 60}px) !important; }
           .dash-sidebar-fixed {
             width: 100% !important; height: 58vh !important; border-right: none !important;
             border-bottom: 1px solid ${PALETTE.border};
           }
           .dash-main { padding: 16px !important; }
           .dash-title { font-size: 20px !important; }
-          .main-nav { gap: 0 !important; }
-          .main-nav > div { padding: 0 6px !important; font-size: 11px !important; }
+          /* 폰 하단 탭바(v183): 상단 메뉴 대신 화면 아래 5칸. 지도(.hero-wrap)는 그만큼 낮추고, 다른 탭은 본문 아래 여백으로 비켜준다. */
+          .main-nav { display: none !important; }
+          .mobile-tabbar {
+            display: grid !important; grid-template-columns: repeat(5, 1fr);
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 190;
+            height: calc(60px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+            background: ${PALETTE.panel}; border-top: 1px solid ${PALETTE.border}; box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+          }
+          .mobile-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: ${PALETTE.textMuted}; font-size: 11px; font-weight: 600; cursor: pointer; }
+          .mobile-tab.on { color: ${PALETTE.accent}; font-weight: 800; }
+          .mobile-more-sheet { display: block !important; position: fixed; inset: 0; z-index: 189; background: rgba(0,0,0,0.25); }
+          .mobile-more-panel { position: absolute; left: 8px; right: 8px; bottom: calc(68px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; background: ${PALETTE.panel}; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+          .mobile-more-item { padding: 14px 10px; border: none; border-radius: 8px; background: ${PALETTE.panelAlt}; font-size: 14px; font-weight: 700; color: ${PALETTE.textPrimary}; cursor: pointer; }
+          .mobile-more-item.on { background: #FDECEC; color: ${PALETTE.accent}; }
+          body { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
           .header-search { display: none !important; }
           .mobile-search-toggle { display: inline-flex !important; }
           .mobile-search-row { display: block !important; }
