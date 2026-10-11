@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { searchPnu, fetchApartHousingPrice } from '../../../lib/vworld';
 import { regionLabel } from '../../../lib/regions';
 
@@ -29,6 +30,6 @@ export async function GET(request) {
     const rows = await fetchApartHousingPrice(vworldKey, pnu, aptDong || undefined);
     return Response.json({ pnu, address, rows });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '공시가격을 불러오지 못했습니다.') }, { status: 500 });
   }
 }
