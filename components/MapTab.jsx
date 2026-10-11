@@ -591,7 +591,9 @@ export default function MapTab({
         {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
         {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
           <div className="map-timeline" style={{
-            position: 'absolute', bottom: 14, left: 14, right: 14 + (selectedApt ? detailInset : 0), zIndex: 20,
+            // 펼친 단지 목록(오른쪽, 바닥까지)과 겹치지 않게 그 폭만큼 비켜선다(v187). 폰은 page.jsx CSS가 위치를 정한다.
+            position: 'absolute', bottom: 14, left: 14, zIndex: 20,
+            right: 14 + (selectedApt ? detailInset : (allTx.length > 0 && !mapPanelMinimized ? (compact ? 260 : 292) + 10 : 0)),
             display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
             background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
