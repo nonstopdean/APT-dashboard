@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchAptBasicInfo } from '../../../lib/molit';
 
 export const runtime = 'nodejs';
@@ -23,6 +24,6 @@ export async function GET(request) {
     const info = await fetchAptBasicInfo(serviceKey, kaptCode);
     return Response.json({ info });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '단지 기본정보를 불러오지 못했습니다.') }, { status: 500 });
   }
 }
