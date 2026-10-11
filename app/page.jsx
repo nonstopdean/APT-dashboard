@@ -1454,18 +1454,30 @@ export default function Page() {
   const analyticsRows = useMemo(() => {
     const rows = [];
     if (analyticsScope === 'region') {
+      // 시·도 전체를 고르면 그 안의 구·시를 한 줄씩 펼쳐 순위를 매긴다(v188, 거래 API가 구·시별 자료도 함께 준다).
+      // 변동률은 첫 달·끝 달 한 달씩이 아니라 조회 기간 앞 절반 → 뒤 절반 평균 평당가로 비교하고(거래 적은 구의
+      // 한 달 튐을 줄임), "최근"은 마지막 3개월 평균이다.
+      const codes = [];
       selected.forEach((code) => {
-        const series = monthlyByRegion[code] || [];
-        const valid = series.filter((m) => m.avgPyeong != null);
-        const first = valid[0]; const last = valid[valid.length - 1];
-        const change = first?.avgPyeong ? ((last.avgPyeong - first.avgPyeong) / first.avgPyeong) * 100 : null;
-        const volume = series.reduce((sum, m) => sum + (m.count || 0), 0);
+        (isSidoAggregate(code) ? expandRegionCode(code) : [code]).forEach((c) => { if (!codes.includes(c)) codes.push(c); });
+      });
+      const half = Math.floor(months.length / 2);
+      codes.forEach((code) => {
+        const avgOf = (yms) => {
+          const vals = [];
+          yms.forEach((ym) => (rawByRegionMonth[`${code}_${ym}`] || []).forEach((t) => { const v = getUnitPrice(t); if (v) vals.push(v); }));
+          return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
+        };
+        const p1 = half > 0 ? avgOf(months.slice(0, half)) : null;
+        const p2 = half > 0 ? avgOf(months.slice(half)) : null;
         const prices = [];
-        series.forEach((m) => (rawByRegionMonth[`${code}_${m.ym}`] || []).forEach((t) => {
+        let volume = 0;
+        months.forEach((ym) => (rawByRegionMonth[`${code}_${ym}`] || []).forEach((t) => {
+          volume += 1;
           const v = isRent ? (t.isJeonse ? t.deposit : null) : t.amount; if (v != null) prices.push(v);
         }));
         rows.push({
-          key: code, name: labelFor(code), latest: last?.avgPyeong ?? null, change, volume,
+          key: code, code, name: labelFor(code), latest: avgOf(months.slice(-3)), change: p1 && p2 ? ((p2 - p1) / p1) * 100 : null, volume,
           min: prices.length ? Math.min(...prices) : null, max: prices.length ? Math.max(...prices) : null,
         });
       });
@@ -1490,7 +1502,8 @@ export default function Page() {
       });
     }
     return rows.filter((r) => r.latest != null || r.volume > 0);
-  }, [analyticsScope, selected, monthlyByRegion, rawByRegionMonth, allTx, isRent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyticsScope, selected, months, rawByRegionMonth, allTx, isRent, dealType]);
 
   const analyticsSorted = useMemo(() => {
     const arr = [...analyticsRows];
@@ -2987,6 +3000,7 @@ export default function Page() {
           analyticsSorted={analyticsSorted} setSelectedApt={setSelectedApt}
           complexCompare={complexCompare} ladderBaseline={ladderBaseline} setLadderBaseline={setLadderBaseline}
           styles={styles}
+          onRegionClick={(code) => { const ll = codeToLatLng[code]; if (ll) setFocusLatLng({ ...ll }); setViewMode('map'); }}
         />
       ) : viewMode === 'market' ? (
         <MarketTab
