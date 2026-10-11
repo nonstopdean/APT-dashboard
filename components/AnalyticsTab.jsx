@@ -12,7 +12,7 @@ export default function AnalyticsTab({
   analyticsScope, setAnalyticsScope, analyticsMetric, setAnalyticsMetric,
   analyticsSorted, setSelectedApt,
   complexCompare, ladderBaseline, setLadderBaseline,
-  styles,
+  styles, onRegionClick,
 }) {
   return (
     <div style={{ padding: '20px 20px 40px', maxWidth: 1400, margin: '0 auto' }}>
@@ -81,7 +81,11 @@ export default function AnalyticsTab({
       {analyticsScope !== 'ladder' && (
       <div style={styles.card} className="ui-card">
         <h2 style={styles.sectionTitle}>{analyticsScope === 'region' ? '지역별' : '단지별'} 분석 순위</h2>
-        <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>선택한 지표를 기준으로 정렬한 수치 비교입니다.</p>
+        <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
+          {analyticsScope === 'region'
+            ? '시·도 전체를 고르면 그 안의 구·시가 한 줄씩 나와요. 최근 값은 마지막 3개월 평균, 변동률은 조회 기간 앞 절반 → 뒤 절반 평균 비교예요. 지역 이름을 누르면 지도로 이동해요.'
+            : '선택한 지표를 기준으로 정렬한 수치 비교입니다.'}
+        </p>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -100,8 +104,11 @@ export default function AnalyticsTab({
                 <tr key={r.key}>
                   <td style={styles.td}>{i + 1}</td>
                   <td
-                    style={{ ...styles.td, color: analyticsScope === 'complex' ? PALETTE.accent : PALETTE.textPrimary, cursor: analyticsScope === 'complex' ? 'pointer' : 'default' }}
-                    onClick={() => analyticsScope === 'complex' && setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}
+                    style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer' }}
+                    onClick={() => {
+                      if (analyticsScope === 'complex') setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode });
+                      else if (onRegionClick && r.code) onRegionClick(r.code);
+                    }}
                   >
                     {r.name}
                     {r.sub && <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{r.sub}</div>}
