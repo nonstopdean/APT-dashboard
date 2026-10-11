@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchAptSubscriptions } from '../../../lib/applyhome';
 
 export const runtime = 'nodejs';
@@ -21,6 +22,6 @@ export async function GET(request) {
     const rows = await fetchAptSubscriptions(serviceKey, sido, from);
     return Response.json({ rows });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '청약 정보를 불러오지 못했습니다.') }, { status: 500 });
   }
 }
