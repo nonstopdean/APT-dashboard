@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchRoneSeries } from '../../../lib/rone';
 import { getClsId } from '../../../lib/rone-regions';
 
@@ -73,7 +74,7 @@ export async function GET(request) {
       });
       data[code] = series;
     } catch (e) {
-      errorMsg = errorMsg || e.message;
+      errorMsg = errorMsg || publicError(e, '부동산원 통계를 불러오지 못했습니다.');
       data[code] = [];
     }
   }));
