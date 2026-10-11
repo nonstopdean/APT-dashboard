@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchAptListBySigungu } from '../../../lib/molit';
 import { expandRegionCode } from '../../../lib/regions';
 
@@ -32,7 +33,7 @@ export async function GET(request) {
     try {
       data[code] = await fetchAptListBySigungu(serviceKey, code);
     } catch (e) {
-      errorMsg = errorMsg || e.message;
+      errorMsg = errorMsg || publicError(e, '단지 목록을 불러오지 못했습니다.');
       data[code] = [];
     }
   }));
