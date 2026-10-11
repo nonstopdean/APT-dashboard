@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchKosisPopulation } from '../../../lib/kosis';
 
 export const runtime = 'nodejs';
@@ -20,6 +21,6 @@ export async function GET(request) {
     const rows = await fetchKosisPopulation(apiKey, sido, 24);
     return Response.json({ rows });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '인구 통계를 불러오지 못했습니다.') }, { status: 500 });
   }
 }
