@@ -3842,6 +3842,9 @@ export default function Page() {
           .map-portal-toolbar { right: 8px !important; }
           .portal-pill { padding: 7px 9px !important; }
           .pcd-root { bottom: calc(34vh + 16px) !important; } /* 목록 시트(34vh) 위로 올려 겹치지 않게 */
+          /* 목록을 접으면(머리글만 약 50px) 타임머신·비교함도 아래로 내린다(v186) */
+          .hero-wrap:has(.map-complex-panel.is-min) .map-timeline,
+          .hero-wrap:has(.map-complex-panel.is-min) .pcd-root { bottom: 62px !important; }
         }
       ` }} />
     </div>
