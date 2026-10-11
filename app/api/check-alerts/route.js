@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchRegionMonth, lastNMonths } from '../../../lib/molit';
 import { kvReady, kvGet, kvSet } from '../../../lib/kv';
 import { regionLabel } from '../../../lib/regions';
@@ -77,7 +78,7 @@ export async function GET(request) {
         results.push({ code, current, note: '최초 기록 (다음부터 비교 시작)' });
       }
     } catch (e) {
-      results.push({ code, error: e.message });
+      results.push({ code, error: publicError(e, '조회 실패') });
     }
   }
 
@@ -118,7 +119,7 @@ export async function checkUserAlerts(serviceKey, webhookUrl) {
         alert.firedAt = new Date().toISOString();
       }
     } catch (e) {
-      results.push({ id: alert.id, error: e.message });
+      results.push({ id: alert.id, error: publicError(e, '알림 처리 실패') });
     }
   }
 
