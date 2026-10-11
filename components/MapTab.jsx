@@ -37,7 +37,7 @@ export default function MapTab({
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
   const [panelView, setPanelView] = useState('complexes'); // 오른쪽 패널: 'complexes'(단지) | 'trades'(최근 거래·신고가)
-  // 숫자 원을 눌러도 확대로 갈라지지 않을 때(같은 위치·최대 줌) 그 안의 단지 목록을 오른쪽 패널에 보여준다.
+  // 숫자 원을 누르면 그 안의 단지 목록을 오른쪽 패널에 보여준다(갈라질 수 있으면 지도도 확대된다).
   const [clusterKeys, setClusterKeys] = useState(null); // Set<string> | null
   const clusterRows = useMemo(() => {
     if (!clusterKeys) return null;
@@ -171,7 +171,7 @@ export default function MapTab({
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
             onGeocodeStats={setGeocodeStats}
-            onClusterOpen={(keys) => { setClusterKeys(new Set(keys)); setMapPanelMinimized(false); }}
+            onClusterOpen={(keys) => { setClusterKeys(new Set(keys)); setPanelView('complexes'); setMapPanelMinimized(false); }}
             pinnedKeys={pinnedKeys}
             stations={visibleStations}
             schools={visibleSchoolLocations}
@@ -648,7 +648,7 @@ export default function MapTab({
               ) : (<>
               {clusterRows && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span>같은 위치에 겹쳐 있는 단지 {clusterRows.length}개</span>
+                  <span>누른 묶음의 단지 {clusterRows.length}개</span>
                   <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }} onClick={() => setClusterKeys(null)}>전체 보기</span>
                 </div>
               )}
