@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchOffiTradeMonth, runPool, lastNMonths, monthsBetween } from '../../../lib/molit';
 import { expandRegionCode } from '../../../lib/regions';
 
@@ -70,7 +71,7 @@ export async function GET(request) {
   let errorMsg = null;
   results.forEach((r, i) => {
     if (r && r.error) {
-      errorMsg = errorMsg || r.error.message;
+      errorMsg = errorMsg || publicError(r.error, '일부 기간의 자료를 불러오지 못했습니다.');
       rawByMember[keys[i]] = [];
     } else {
       rawByMember[keys[i]] = r || [];
