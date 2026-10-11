@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { X } from 'lucide-react';
 import LongCompare from './LongCompare';
+import { jeonseRatio } from '../lib/jeonse-ratio';
 import { REGION_GROUPS, SIDO_AGGREGATES } from '../lib/regions';
 import {
   PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, fmtWon, labelFor,
@@ -19,6 +20,37 @@ export default function CompareTab({
   compareChartData, compareBarData, compareResultsList,
   styles,
 }) {
+  // 비교함 단지의 전세가율(v189): 단지가 속한 구마다 최근 6개월 매매·전월세를 받아(서버가 저장해 둔다) 단지별로 계산한다.
+  const pinnedKey = pinnedComplexes.map((p) => `${p.regionCode}|${p.dong}|${p.apt}`).join(',');
+  const [ratioByKey, setRatioByKey] = useState({});
+  useEffect(() => {
+    const codes = [...new Set(pinnedComplexes.map((p) => p.regionCode))].filter((c) => c && !/000$/.test(String(c)));
+    if (!codes.length) return undefined;
+    const d = new Date();
+    const end = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const s = new Date(d.getFullYear(), d.getMonth() - 5, 1);
+    const start = `${s.getFullYear()}${String(s.getMonth() + 1).padStart(2, '0')}`;
+    const rowsOf = (json, code) => (json?.months || []).flatMap((ym) => json?.data?.[`${code}_${ym}`] || []);
+    let cancelled = false;
+    Promise.all(codes.map((code) => Promise.all([
+      fetch(`/api/trades?codes=${code}&start=${start}&end=${end}`).then((r) => r.json()),
+      fetch(`/api/rents?codes=${code}&start=${start}&end=${end}`).then((r) => r.json()),
+    ]).then(([t, r]) => [code, rowsOf(t, code), rowsOf(r, code)]).catch(() => [code, [], []])))
+      .then((results) => {
+        if (cancelled) return;
+        const out = {};
+        pinnedComplexes.forEach((p) => {
+          const hit = results.find(([code]) => code === p.regionCode);
+          if (!hit) return;
+          const same = (x) => x.apt === p.apt && x.dong === p.dong;
+          out[`${p.regionCode}|${p.dong}|${p.apt}`] = jeonseRatio(hit[1].filter(same), hit[2].filter(same));
+        });
+        setRatioByKey(out);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinnedKey]);
+
   return (
     <div style={{ padding: '20px 20px 0' }}>
       {pinnedComplexes.length > 0 && (
@@ -29,6 +61,7 @@ export default function CompareTab({
           </div>
           <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '4px 0 12px' }}>
             단지 상세 화면의 "📊 단지 비교에 추가"로 담은 단지들이에요. 현재 조회된 실거래 기준이라 평형이 섞여 있을 수 있어요.
+            전세가율은 같은 단지의 최근 6개월 전세 평당 보증금 평균 ÷ 매매 평당가 평균이에요(평형 구성이 달라 근사치, 숫자에 마우스를 올리면 건수).
           </p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -39,12 +72,16 @@ export default function CompareTab({
                   <th style={styles.th}>평당가</th>
                   <th style={styles.th}>변동률</th>
                   <th style={styles.th}>거래량</th>
+                  <th style={styles.th}>면적</th>
+                  <th style={styles.th}>준공</th>
+                  <th style={styles.th}>전세가율</th>
                   <th style={styles.th}></th>
                 </tr>
               </thead>
               <tbody>
                 {pinnedComplexes.map((p) => {
                   const row = complexCompare.find((c) => c.apt === p.apt && c.dong === p.dong && c.regionCode === p.regionCode);
+                  const q = ratioByKey[`${p.regionCode}|${p.dong}|${p.apt}`];
                   return (
                     <tr key={`${p.regionCode}|${p.dong}|${p.apt}`}>
                       <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer' }} onClick={() => setSelectedApt(p)}>
@@ -54,6 +91,11 @@ export default function CompareTab({
                       <td style={styles.td}>{row?.unitPrice != null ? fmtManwon(Math.round(row.unitPrice)) : '-'}</td>
                       <td style={{ ...styles.td, color: row?.change > 0 ? PALETTE.up : row?.change < 0 ? PALETTE.down : PALETTE.textPrimary }}>{row ? fmtPct(row.change) : '-'}</td>
                       <td style={styles.td}>{row ? `${row.count}건` : '조회된 실거래 없음'}</td>
+                      <td style={styles.td}>{row?.area != null ? fmtArea(row.area) : '-'}</td>
+                      <td style={styles.td}>{row?.buildYear ? `${row.buildYear}년` : '-'}</td>
+                      <td style={styles.td} title={q ? `최근 6개월 매매 ${q.nSale}건 · 전세 ${q.nJeonse}건` : '불러오는 중'}>
+                        {!q ? '…' : q.ratio != null ? `${q.ratio.toFixed(0)}%` : '-'}
+                      </td>
                       <td style={styles.td}>
                         <X size={13} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setPinnedComplexes((prev) => prev.filter((x) => !(x.apt === p.apt && x.dong === p.dong && x.regionCode === p.regionCode)))} />
                       </td>
@@ -62,6 +104,13 @@ export default function CompareTab({
                 })}
               </tbody>
             </table>
+          </div>
+          {/* 담은 단지들의 1~10년 평당가 추이(v189) — 아래 A/B/C를 다시 고르지 않아도 바로 비교된다. */}
+          <div style={{ marginTop: 16 }}>
+            <LongCompare
+              isRent={isRent}
+              items={pinnedComplexes.map((p) => ({ kind: 'apt', apt: p.apt, dong: p.dong, regionCode: p.regionCode, label: p.apt }))}
+            />
           </div>
         </div>
       )}
