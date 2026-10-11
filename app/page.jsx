@@ -3837,14 +3837,14 @@ export default function Page() {
         }
         @media (max-width: 520px) {
           .map-complex-panel { left: 8px !important; right: 8px !important; width: auto !important; top: auto !important; height: 34vh !important; bottom: 8px !important; }
-          .map-complex-panel.is-min { top: auto !important; bottom: 8px !important; height: auto !important; }
+          .map-complex-panel.is-min { top: auto !important; bottom: 28px !important; height: auto !important; } /* 아래 네이버 로고·축척이 보이게(v187) */
           .map-timeline { right: 8px !important; bottom: calc(34vh + 16px) !important; }
           .map-portal-toolbar { right: 8px !important; }
           .portal-pill { padding: 7px 9px !important; }
           .pcd-root { bottom: calc(34vh + 16px) !important; } /* 목록 시트(34vh) 위로 올려 겹치지 않게 */
           /* 목록을 접으면(머리글만 약 50px) 타임머신·비교함도 아래로 내린다(v186) */
           .hero-wrap:has(.map-complex-panel.is-min) .map-timeline,
-          .hero-wrap:has(.map-complex-panel.is-min) .pcd-root { bottom: 62px !important; }
+          .hero-wrap:has(.map-complex-panel.is-min) .pcd-root { bottom: 82px !important; }
         }
       ` }} />
     </div>
