@@ -1904,6 +1904,13 @@ export default function Page() {
     if (!restoredRegionsRef.current) return;
     try { window.localStorage.setItem(LAST_REGIONS_KEY, JSON.stringify(selected)); } catch (e) { /* 저장 실패는 조용히 무시 */ }
   }, [selected]);
+  // 헤더 "홈": 고른 지역·조건·열린 창을 모두 처음 상태로 되돌린다. 상태가 여러 곳에 흩어져 있어 하나씩
+  // 되돌리는 대신, 기억해 둔 지역을 비우고 페이지를 새로 연다(처음 온 사람과 같은 화면: 지도 + 안내 카드).
+  // 매물 기록·즐겨찾기처럼 사용자가 직접 저장한 자료는 건드리지 않는다.
+  const goHome = () => {
+    try { window.localStorage.setItem(LAST_REGIONS_KEY, '[]'); } catch (e) { /* 저장소를 못 쓰면 새로고침만 한다 */ }
+    window.location.assign(window.location.pathname);
+  };
 
   // 헤더 검색창: "해운대 84 8억 이하"처럼 지역·면적·가격·거래유형을 한 번에 알아듣는다.
   // 이름이 겹치는 지역(중구·서구 등)은 임의로 고르지 않고 시·도를 되묻는다.
@@ -2782,14 +2789,15 @@ export default function Page() {
         padding: '0 16px', height: HEADER_HEIGHT, background: '#1A1A1A',
         boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, cursor: 'pointer' }} onClick={goHome} title="홈(처음 화면)">
           <Building2 size={20} color={PALETTE.accent} />
           <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>도갱노노</span>
         </div>
         <nav style={{ display: 'flex', gap: 2, height: '100%', flex: 1, minWidth: 0 }} className="main-nav">
           {[
-            { key: 'normal', label: '대시보드' },
+            { key: 'home', label: '홈' },
             { key: 'map', label: '지도' },
+            { key: 'normal', label: '대시보드' },
             { key: 'compare', label: '비교분석' },
             { key: 'subscriptions', label: '분양정보' },
             { key: 'analytics', label: '순위·통계' },
@@ -2798,7 +2806,7 @@ export default function Page() {
           ].map((t) => (
             <div
               key={t.key}
-              onClick={() => setViewMode(t.key)}
+              onClick={() => (t.key === 'home' ? goHome() : setViewMode(t.key))}
               style={{
                 display: 'flex', alignItems: 'center', height: '100%', padding: '0 7px', cursor: 'pointer',
                 fontSize: 12.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
