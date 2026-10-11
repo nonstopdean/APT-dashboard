@@ -1,3 +1,4 @@
+import { publicError } from '../../../lib/safe-error';
 import { fetchAptIdentityByAddress } from '../../../lib/molit';
 
 export const runtime = 'nodejs';
@@ -23,6 +24,6 @@ export async function GET(request) {
     const rows = await fetchAptIdentityByAddress(serviceKey, q);
     return Response.json({ rows });
   } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+    return Response.json({ error: publicError(e, '단지 정보를 불러오지 못했습니다.') }, { status: 500 });
   }
 }
