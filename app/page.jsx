@@ -18,7 +18,7 @@ import { complexIdentity } from '../lib/complex-name';
 import { buildChangeIndex, changeNote } from '../lib/market-change';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache } from '../lib/geocodeCache';
-import { jeonseRatioSeries } from '../lib/jeonse-ratio';
+import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1024,8 +1024,10 @@ export default function Page() {
         const matched = rentRows.filter((t) => t.isJeonse && t.deposit != null);
         if (matched.length === 0) return;
         const avgDeposit = matched.reduce((s, t) => s + t.deposit, 0) / matched.length;
-        const series = tradeJson ? jeonseRatioSeries(rowsOf(tradeJson).filter(same), rentRows, months2) : [];
-        setAptJeonseInfo({ avgDeposit, count: matched.length, series });
+        const saleRows = tradeJson ? rowsOf(tradeJson).filter(same) : [];
+        const series = tradeJson ? jeonseRatioSeries(saleRows, rentRows, months2) : [];
+        const gaps = gapByArea(saleRows, rentRows); // v192: 평형별 갭
+        setAptJeonseInfo({ avgDeposit, count: matched.length, series, gaps });
       })
       .catch(() => {});
     return () => { cancelled = true; };
