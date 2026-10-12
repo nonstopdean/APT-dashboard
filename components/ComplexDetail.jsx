@@ -5,7 +5,7 @@ import {
 import { X } from 'lucide-react';
 import { isRegulatedByCode } from '../lib/regions';
 import {
-  PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
+  PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, fmtWon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
 } from '../lib/ui-helpers';
 import FloatingWindow from './FloatingWindow';
 import DetailSections from './DetailSections';
@@ -120,6 +120,41 @@ export default function ComplexDetail({
             </div>
             <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
               그 달에 매매·전세가 모두 있었던 달만 점이 찍혀요. 오르면 매매가와 전세가의 차이(갭)가 좁아진다는 뜻이에요. 평형 구성이 달라 근사치예요.
+            </div>
+          </div>
+        );
+
+  // v192: 평형별 갭 = 최근 12개월 매매가 중간값 − 전세 보증금 중간값. 매매·전세가 둘 다 있는 면적만.
+  const gapCell = { padding: '5px 6px', textAlign: 'right', whiteSpace: 'nowrap' };
+  const bGapTable = (aptJeonseInfo?.gaps || []).length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>평형별 갭 (최근 12개월 중간값)</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                <thead>
+                  <tr style={{ color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
+                    <th style={{ ...gapCell, textAlign: 'left', fontWeight: 600 }}>전용면적</th>
+                    <th style={{ ...gapCell, fontWeight: 600 }}>매매</th>
+                    <th style={{ ...gapCell, fontWeight: 600 }}>전세</th>
+                    <th style={{ ...gapCell, fontWeight: 600 }}>갭</th>
+                    <th style={{ ...gapCell, fontWeight: 600 }}>전세가율</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aptJeonseInfo.gaps.map((g) => (
+                    <tr key={g.area} style={{ borderBottom: `1px solid ${PALETTE.border}` }} title={`매매 ${g.nSale}건 · 전세 ${g.nJeonse}건`}>
+                      <td style={{ ...gapCell, textAlign: 'left' }}>{fmtArea(g.area)}</td>
+                      <td style={gapCell}>{fmtWon(g.sale)}</td>
+                      <td style={gapCell}>{fmtWon(g.jeonse)}</td>
+                      <td style={{ ...gapCell, fontWeight: 800 }}>{fmtWon(g.gap)}</td>
+                      <td style={{ ...gapCell, color: PALETTE.textSecondary }}>{g.ratio.toFixed(0)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>
+              갭 = 매매가 − 전세 보증금. 전세를 끼고 살 때 필요한 돈의 대략적인 크기예요(세금·중개비 제외). 줄에 마우스를 대면 건수가 보여요.
             </div>
           </div>
         );
@@ -687,6 +722,7 @@ export default function ComplexDetail({
       {bSummaryCards}
       {bSampleInfo}
       {bJeonseTrend}
+      {bGapTable}
       {bVolumeBanner}
       {bAcqCalc}
       {bGongsiLoading}
@@ -740,7 +776,7 @@ export default function ComplexDetail({
       <DetailSections
         summaryLine={summaryLine}
         sections={[
-          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bSummaryCards, bSampleInfo, bJeonseTrend, bVolumeBanner, bCompareBtn, bAlert] },
+          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bSummaryCards, bSampleInfo, bJeonseTrend, bGapTable, bVolumeBanner, bCompareBtn, bAlert] },
           { id: 'trend', title: '가격 추이', defaultOpen: true, blocks: [bAreaChips, bTrendToggle, bTrendSingle, bTrendCompare, bVolumeChart] },
           { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bBasicInfo, bGongsiLoading, bGongsi] },
           { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
