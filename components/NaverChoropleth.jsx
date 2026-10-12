@@ -18,9 +18,21 @@ function markerHtmlOf(titleText, priceText, pinned) {
     `<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
 }
 
+// 핀에 적는 가격(v196). mode: 'deal'(평형 상관없이 가장 최근 거래) | 'p34'(34평 안팎 최근 거래) | 'unit'(최근 거래 평당가)
+function fmtPinPrice(v) {
+  if (!Number.isFinite(v)) return '';
+  return v >= 10000 ? `${(v / 10000).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(v).toLocaleString()}만`;
+}
+function pinPriceTextOf(c, mode) {
+  if (mode === 'unit') return Number.isFinite(c.latestPyeong) ? `${Math.round(c.latestPyeong).toLocaleString()}만/평` : '';
+  if (mode === 'p34') return fmtPinPrice(c.latest34Price);
+  return fmtPinPrice(c.latestPrice);
+}
+
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
   dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, onGeocodeStats, onClusterOpen, pinnedKeys, valueFormat, valueNotes, dongValueNotes, stations, schools,
+  pinPriceMode = 'deal',
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -41,6 +53,7 @@ export default function NaverChoropleth({
   });
   const onClusterOpenRef = useRef(onClusterOpen);
   const pinnedKeysRef = useRef(pinnedKeys || EMPTY_KEY_SET); // 비교함에 담은 단지 키 — 지도에서 ★로 강조하고 클러스터에 묻히지 않게 한다
+  const pinPriceModeRef = useRef(pinPriceMode);
   const refineTriedRef = useRef(new Set()); // 이번 접속에서 이미 다듬기를 시도한 단지 키(못 찾아도 재시도하지 않음)
   const unmountedRef = useRef(false);
   const districtMetaRef = useRef([]);
@@ -101,6 +114,27 @@ export default function NaverChoropleth({
     syncNaverClusterer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinnedKeys]);
+  // 이미 만들어진 마커의 가격 글자만 다시 맞춘다(v196) — 핀 가격 기준을 바꿨거나, 기간을 바꿔 같은 단지의 최근 거래가 달라졌을 때.
+  // 마커를 새로 만들지 않고 글자가 달라진 것만 setIcon 한다.
+  const refreshMarkerTexts = (list) => {
+    if (!window.naver?.maps) return;
+    const byKey = new Map((list || complexesRef.current || []).map((c) => [c.key, c]));
+    markersRef.current.forEach((m) => {
+      const c = byKey.get(m.key);
+      if (!c) return;
+      const priceText = pinPriceTextOf(c, pinPriceModeRef.current);
+      if (priceText === m.priceText) return;
+      m.priceText = priceText;
+      if (typeof m.marker.setIcon === 'function') {
+        m.marker.setIcon({ content: markerHtmlOf(m.title, priceText, m.pinned), anchor: new window.naver.maps.Point(0, 24) });
+      }
+    });
+  };
+  useEffect(() => {
+    pinPriceModeRef.current = pinPriceMode;
+    refreshMarkerTexts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinPriceMode]);
   useEffect(() => { unmountedRef.current = false; return () => { unmountedRef.current = true; }; }, []);
 
   // 현재 화면 범위를 부모(page.jsx)에 알려준다 — "단지 탐색" 목록을 화면에 보이는 단지로만
@@ -759,6 +793,7 @@ export default function NaverChoropleth({
       m.marker.setMap(null);
       return false;
     });
+    refreshMarkerTexts(candidate);
     const todo = candidate.filter((c) => !existingKeys.has(c.key));
     if (todo.length === 0) {
       syncNaverClusterer();
@@ -795,9 +830,7 @@ export default function NaverChoropleth({
         if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
       }
       if (seq !== markerSyncSeqRef.current || !coord) return;
-      const priceText = Number.isFinite(c.latestPrice)
-        ? (c.latestPrice >= 10000 ? `${(c.latestPrice / 10000).toFixed(c.latestPrice >= 100000 ? 0 : 1)}억` : `${Math.round(c.latestPrice).toLocaleString()}만`)
-        : '';
+      const priceText = pinPriceTextOf(c, pinPriceModeRef.current);
       const titleText = String(c.apt || '').replace(/[<>&"']/g, '');
       const pinned = pinnedKeysRef.current.has(c.key);
       const markerHtml = markerHtmlOf(titleText, priceText, pinned);
