@@ -442,7 +442,7 @@ export default function ComplexDetail({
 
   const bAreaChips = aptHistoryAreaOptions.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, color: PALETTE.textMuted }}>평형대</span>
+            <span style={{ fontSize: 11, color: PALETTE.textMuted }} title="공급면적 기준 평형(추정). 괄호 안은 전용면적이에요.">평형</span>
             <button
               onClick={() => { setHistoryAreaFilter('all'); setHistoryListLimit(30); }}
               style={{
@@ -473,7 +473,7 @@ export default function ComplexDetail({
 
   const bTrendToggle = aptHistoryAreaOptions.length > 1 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            {[['single', '단일 평형'], ['compare', '평형별 겹쳐보기']].map(([k, l]) => (
+            {[['single', '고른 평형만'], ['compare', '평형별 겹쳐보기']].map(([k, l]) => (
               <button
                 key={k}
                 onClick={() => setTrendViewMode(k)}
