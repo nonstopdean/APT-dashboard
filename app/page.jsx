@@ -1663,6 +1663,7 @@ export default function Page() {
     const seen = new Set();
     const list = [];
     const latestByKey = new Map();
+    const latest34ByKey = new Map(); // v196: 핀 "34평 기준" — 공급 33~35평(전용 약 80~88㎡) 중 가장 최근 거래
     allTxFiltered.forEach((t) => {
       const key = `${t.regionCode}|${t.dong}|${t.apt}`;
       const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
@@ -1670,6 +1671,11 @@ export default function Page() {
       const prev = latestByKey.get(key);
       if (price != null && (!prev || ym > prev.ym)) {
         latestByKey.set(key, { ym, price, pyeong: isRent ? t.depositPerPyeong : t.pricePerPyeong, area: t.area });
+      }
+      const sp = supplyPyeong(t.area);
+      if (price != null && sp >= 33 && sp <= 35) {
+        const prev34 = latest34ByKey.get(key);
+        if (!prev34 || ym > prev34.ym) latest34ByKey.set(key, { ym, price });
       }
     });
     const addItem = (apt, dong, regionCode) => {
@@ -1679,7 +1685,7 @@ export default function Page() {
       seen.add(key);
       const coord = findDongCentroid(regionCode, dong);
       const latest = latestByKey.get(key);
-      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area });
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price });
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
