@@ -3506,7 +3506,7 @@ export default function Page() {
 
             <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>
-                {unitLabel} 추이 (만원/3.3㎡{isRent ? ', 전세 거래 기준' : ''})
+                {unitLabel} 추이 (만원/3.3㎡, 공급면적 기준{isRent ? ', 전세 거래 기준' : ''})
               </h2>
               <div style={{ width: '100%', height: 280 }}>
                 <ResponsiveContainer>
