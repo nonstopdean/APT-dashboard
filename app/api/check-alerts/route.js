@@ -2,6 +2,7 @@ import { publicError } from '../../../lib/safe-error';
 import { fetchRegionMonth, lastNMonths } from '../../../lib/molit';
 import { kvReady, kvGet, kvSet } from '../../../lib/kv';
 import { regionLabel } from '../../../lib/regions';
+import { supplyPyeong } from '../../../lib/pyeong';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,7 @@ function avgPricePerPyeong(items) {
       const area = parseFloat(r.excluUseAr);
       const amount = parseInt(String(r.dealAmount ?? '').replace(/,/g, ''), 10);
       if (!area || !Number.isFinite(amount)) return null;
-      return amount / (area / 3.3058);
+      return amount / supplyPyeong(area); // v195: 화면과 같은 공급 평형(추정) 기준
     })
     .filter((v) => v);
   return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
@@ -59,7 +60,8 @@ export async function GET(request) {
         continue;
       }
 
-      const key = `apt-alert:${code}`;
+      // v195: 평당가 기준을 공급면적으로 바꿔 예전(전용 기준) 저장값과 비교하면 가짜 하락 알림이 가므로 키를 새로 쓴다.
+      const key = `apt-alert-s:${code}`;
       const prev = await kvGet(key);
       await kvSet(key, { value: current, ym: thisMonth, checkedAt: new Date().toISOString() });
 
