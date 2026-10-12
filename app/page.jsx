@@ -19,6 +19,7 @@ import { buildChangeIndex, changeNote } from '../lib/market-change';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
+import { supplyPyeong } from '../lib/pyeong';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -856,7 +857,7 @@ export default function Page() {
     const currentYear = new Date().getFullYear();
     return all.filter((t) => {
       if (unitSizeFilter !== 'all') {
-        const p = t.pyeong;
+        const p = supplyPyeong(t.area); // v193: 평형대는 공급면적 기준(추정) — 84㎡ = 34평 = 30평대
         const a = t.area;
         if (unitSizeFilter === 'u20' && !(p < 20)) return false;
         if (unitSizeFilter === '20s' && !(p >= 20 && p < 30)) return false;
@@ -1173,27 +1174,35 @@ export default function Page() {
   }, [aptHistory, isRent, aptBasicInfo]);
 
   // 같은 단지라도 전용면적(평형)마다 가격이 다르므로, 아실처럼 면적대별로 나눠서 볼 수 있게 한다.
+  // v193: 10평 단위가 아니라 공급 평형(추정) 하나하나로 나눈다 — 전용 59㎡ = 25평, 84㎡ = 34평처럼 평형 타입 하나가 한 칸.
   const aptHistoryAreaOptions = useMemo(() => {
     const groups = {};
     aptHistory.forEach((t) => {
-      if (t.pyeong == null) return;
-      const bucket = Math.floor(t.pyeong / 10) * 10;
-      groups[bucket] = (groups[bucket] || 0) + 1;
+      const p = supplyPyeong(t.area);
+      if (p == null) return;
+      const g = (groups[p] ||= { count: 0, sqm: {} });
+      g.count += 1;
+      const sqm = Math.round(t.area);
+      g.sqm[sqm] = (g.sqm[sqm] || 0) + 1;
     });
     return Object.keys(groups)
       .map(Number)
       .sort((a, b) => a - b)
-      .map((b) => ({
-        value: String(b),
-        label: `${b}평대`,
-        count: groups[b],
-      }));
+      .map((p) => {
+        const sqm = Object.entries(groups[p].sqm).sort((a, b) => b[1] - a[1])[0][0];
+        return { value: String(p), label: `${p}평(${sqm}㎡)`, count: groups[p].count };
+      });
   }, [aptHistory]);
+
+  // 다른 단지로 바꿨는데 고른 평형이 그 단지에 없으면 "전체"로 되돌린다.
+  useEffect(() => {
+    if (historyAreaFilter !== 'all' && !aptHistoryAreaOptions.some((o) => o.value === historyAreaFilter)) setHistoryAreaFilter('all');
+  }, [aptHistoryAreaOptions, historyAreaFilter]);
 
   const aptHistoryFiltered = useMemo(() => {
     if (historyAreaFilter === 'all') return aptHistory;
-    const bucket = parseInt(historyAreaFilter, 10);
-    return aptHistory.filter((t) => t.pyeong != null && Math.floor(t.pyeong / 10) * 10 === bucket);
+    const p = parseInt(historyAreaFilter, 10);
+    return aptHistory.filter((t) => supplyPyeong(t.area) === p);
   }, [aptHistory, historyAreaFilter]);
 
   // 이 단지의 역대 최고가·최저가, 고점 대비 하락폭, 최근 거래 간격을 계산한다.
@@ -1245,16 +1254,16 @@ export default function Page() {
     return Object.keys(byMonth).sort().map((ym) => ({ ym: monthLabel(ym), 건수: byMonth[ym] }));
   }, [aptHistoryFiltered]);
 
-  // 평형대별로 겹쳐 볼 수 있는 다중 라인 데이터 — 한 그래프 안에서 30평대/40평대 등을 동시에 비교한다.
+  // 평형별로 겹쳐 볼 수 있는 다중 라인 데이터 — 한 그래프 안에서 25평/34평 등을 동시에 비교한다(v193: 공급 평형 추정 기준).
   const aptTrendByArea = useMemo(() => {
     if (aptHistoryAreaOptions.length < 2) return { data: [], seriesKeys: [] };
+    const labelOf = Object.fromEntries(aptHistoryAreaOptions.map((o) => [o.value, o.label]));
     const byMonth = {};
     aptHistory.forEach((t) => {
-      if (t.pyeong == null) return;
+      const seriesKey = labelOf[String(supplyPyeong(t.area))];
+      if (!seriesKey) return;
       const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
       if (price == null) return;
-      const bucket = Math.floor(t.pyeong / 10) * 10;
-      const seriesKey = `${bucket}평대`;
       const ym = `${t.year}${String(t.month).padStart(2, '0')}`;
       ((byMonth[ym] ||= {})[seriesKey] ||= []).push(price);
     });
@@ -2543,7 +2552,7 @@ export default function Page() {
 
         {!isRone && !isRatio && (
         <div>
-          <label style={styles.label}>평형 (전용면적 기준)</label>
+          <label style={styles.label}>평형 (공급면적 기준, 추정)</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6 }}>
             {[['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상']].map(([k, l]) => (
               <div key={k} style={{ ...styles.toggleBtn(unitSizeFilter === k), padding: '7px 2px', fontSize: 11.5 }} onClick={() => setUnitSizeFilter(k)}>{l}</div>
