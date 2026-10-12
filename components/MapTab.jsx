@@ -10,6 +10,9 @@ import { PALETTE, fmtWon, fmtArea, fmtPct, monthLabel, APP_BUILD } from '../lib/
 import { pinnedKeyOf } from '../lib/compare-grid';
 import { changeCap, changeColor, formatChange } from '../lib/market-change';
 
+const PIN_PRICE_KEY = 'apt-dashboard-pin-price';
+const PIN_PRICE_MODES = [['deal', '최근 거래'], ['p34', '34평'], ['unit', '평당가']];
+
 // 지도 탭 전체(왼쪽 패널 + 지도 + 툴바 + 단지 탐색 패널). app/page.jsx 안에 있던
 // viewMode === 'map' 블록과 renderSeoulMap()을 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 export default function MapTab({
@@ -52,6 +55,18 @@ export default function MapTab({
   const matchKw = useCallback((c) => (
     String(c.apt || '').replace(/\s+/g, '').toLowerCase().includes(kwNorm) || String(c.dong || '').includes(kwNorm)
   ), [kwNorm]);
+  // 핀 가격 기준(v196): 평형이 섞인 "최근 거래" 대신 34평 기준이나 평당가로 단지끼리 바로 비교할 수 있게. 고른 값은 이 브라우저에 기억한다.
+  const [pinPriceMode, setPinPriceMode] = useState('deal');
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(PIN_PRICE_KEY);
+      if (PIN_PRICE_MODES.some(([k]) => k === saved)) setPinPriceMode(saved);
+    } catch (e) { /* 저장소를 못 쓰면 기본값 */ }
+  }, []);
+  const choosePinPriceMode = (k) => {
+    setPinPriceMode(k);
+    try { window.localStorage.setItem(PIN_PRICE_KEY, k); } catch (e) { /* 저장 실패는 무시 */ }
+  };
   const pinBase = mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes;
   const pinComplexes = useMemo(() => (kwNorm ? pinBase.filter(matchKw) : pinBase), [pinBase, kwNorm, matchKw]);
   const kwRows = useMemo(() => (kwNorm ? complexCompare.filter(matchKw) : null), [complexCompare, kwNorm, matchKw]);
@@ -189,6 +204,7 @@ export default function MapTab({
             onGeocodeStats={setGeocodeStats}
             onClusterOpen={(keys) => { setClusterKeys(new Set(keys)); setPanelView('complexes'); setMapPanelMinimized(false); }}
             pinnedKeys={pinnedKeys}
+            pinPriceMode={pinPriceMode}
             stations={visibleStations}
             schools={visibleSchoolLocations}
             height="100%"
@@ -572,6 +588,15 @@ export default function MapTab({
                   />
                   {mapKeyword && <span style={{ cursor: 'pointer', color: PALETTE.textMuted, fontSize: 13 }} onClick={() => setMapKeyword('')}>✕</span>}
                 </div>
+                {!isRone && !isRatio && (
+                  <>
+                    <span style={{ fontSize: 11, color: PALETTE.textMuted, flexShrink: 0 }} title="핀에 어떤 가격을 적을지 골라요. 34평은 공급 33~35평(전용 약 84㎡) 거래만 봐요.">핀</span>
+                    {PIN_PRICE_MODES.map(([k, l]) => (
+                      <button key={`p${k}`} onClick={() => choosePinPriceMode(k)} style={chipStyle(pinPriceMode === k)}>{l}</button>
+                    ))}
+                    <span style={{ width: 1, height: 18, background: PALETTE.border, flexShrink: 0 }} />
+                  </>
+                )}
                 {!isRone && !isRatio && setUnitSizeFilter && [['all', '전 평형'], ['u20', '~20평'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평+']].map(([k, l]) => (
                   <button key={`u${k}`} onClick={() => setUnitSizeFilter(k)} style={chipStyle(unitSizeFilter === k)}>{l}</button>
                 ))}
