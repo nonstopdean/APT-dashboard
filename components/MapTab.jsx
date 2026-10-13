@@ -45,12 +45,14 @@ export default function MapTab({
   // v201: 갭 순위 조건 — 준공 연식(년 이내, 'all'이면 전체)·34평 매매 최소 건수.
   const [gapAge, setGapAge] = useState('all');
   const [gapMinN, setGapMinN] = useState(2);
+  const [gapStation, setGapStation] = useState('all'); // v204: 가장 가까운 지하철역까지 직선거리(m) 이내, 'all'이면 전체
   const gapRows = useMemo(() => {
     if (!complexGapList) return null;
     const thisYear = new Date().getFullYear();
     return complexGapList.filter((g) => g.nSale >= gapMinN
-      && (gapAge === 'all' || (g.buildYear && thisYear - g.buildYear <= Number(gapAge))));
-  }, [complexGapList, gapAge, gapMinN]);
+      && (gapAge === 'all' || (g.buildYear && thisYear - g.buildYear <= Number(gapAge)))
+      && (gapStation === 'all' || (g.stationM != null && g.stationM <= Number(gapStation))));
+  }, [complexGapList, gapAge, gapMinN, gapStation]);
   // 갭 순위 탭을 열었을 때만 page.jsx가 전월세를 받아 계산한다. 매매가 아니면 탭이 없으므로 단지 탭으로 돌린다.
   useEffect(() => {
     if (panelView === 'gap' && dealType !== 'trade') { setPanelView('complexes'); return; }
@@ -765,6 +767,7 @@ export default function MapTab({
                     {[
                       ['준공', gapAge, setGapAge, [['all', '전체'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내']]],
                       ['34평 매매', gapMinN, setGapMinN, [[2, '2건+'], [5, '5건+'], [10, '10건+']]],
+                      ['역 거리', gapStation, setGapStation, [['all', '전체'], ['500', '500m 이내'], ['1000', '1km 이내']]],
                     ].map(([label, val, set, opts]) => (
                       <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 10.5, color: PALETTE.textMuted, width: 52, flexShrink: 0 }}>{label}</span>
@@ -797,6 +800,11 @@ export default function MapTab({
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i + 1}. {g.apt}</div>
                             <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(g.regionCode)} {g.dong}{g.buildYear ? ` · ${g.buildYear}년` : ''} · 매매 {g.nSale}·전세 {g.nJeonse}건</div>
+                            {g.stationName && (
+                              <div style={{ fontSize: 10.5, color: PALETTE.textSecondary, marginTop: 2 }} title="가장 가까운 지하철역까지 직선거리예요(걷는 길은 더 길 수 있어요).">
+                                🚇 {g.stationName.endsWith('역') ? g.stationName : `${g.stationName}역`} {g.stationM.toLocaleString()}m{g.stationExact ? '' : ' (동 중심 기준)'}
+                              </div>
+                            )}
                           </div>
                           <div style={{ flexShrink: 0, textAlign: 'right' }}>
                             <div style={{ fontSize: 12.5, fontWeight: 800 }}>갭 {fmtWon(g.gap)}</div>
