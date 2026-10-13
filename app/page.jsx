@@ -20,6 +20,7 @@ import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import { supplyPyeong } from '../lib/pyeong';
+import { peerPriceCompare } from '../lib/peer-compare';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1909,6 +1910,29 @@ export default function Page() {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats]);
+
+  // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
+  // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
+  const peer34 = useMemo(() => {
+    if (!selectedApt) return null;
+    const selfKey = `${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`;
+    const coordOf = (key) => {
+      if (key === selfKey && selectedApt.lat != null && selectedApt.lng != null) return { lat: selectedApt.lat, lng: selectedApt.lng };
+      const m = mapComplexCoordByKey.get(key);
+      const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : null;
+      const { coord } = resolveMarkerCoord(approx, geocodeCache[key]);
+      return coord || (key === selfKey ? findDongCentroid(selectedApt.regionCode, selectedApt.dong) : null);
+    };
+    return peerPriceCompare({
+      txs: allTxFiltered,
+      selfKey,
+      coordOf,
+      distanceOf: (a, b) => distanceMeters(a.lat, a.lng, b.lat, b.lng),
+      radius: nearbyRadius,
+      priceOf: (t) => (isRent ? (t.isJeonse ? t.deposit : null) : t.amount),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApt, allTxFiltered, mapComplexCoordByKey, nearbyRadius, isRent, geocodeStats]);
 
   const [globalSearch, setGlobalSearch] = useState('');
 
@@ -3804,7 +3828,7 @@ export default function Page() {
           aptBasicInfo={aptBasicInfo} nearestStationInfo={nearestStationInfo}
           nearbySchools={nearbySchools} schoolsLoading={schoolsLoading}
           nearbyRadius={nearbyRadius} setNearbyRadius={setNearbyRadius}
-          nearbyComplexes={nearbyComplexes} radiusSummary={radiusSummary}
+          nearbyComplexes={nearbyComplexes} radiusSummary={radiusSummary} peer34={peer34}
           similarComplexes={similarComplexes}
           pinnedComplexes={pinnedComplexes} setPinnedComplexes={setPinnedComplexes}
           setMapFocusKeys={setMapFocusKeys} setViewMode={setViewMode}
