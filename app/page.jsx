@@ -2416,13 +2416,14 @@ export default function Page() {
     if (!complexGapList) return null;
     return complexGapList.map((g) => {
       const m = mapComplexCoordByKey.get(g.key);
-      const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : null;
+      // mapComplexes에는 좌표가 없을 때가 많다(동 중심점은 지도 컴포넌트가 붙임) → 동 중심점을 직접 찾는다.
+      const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : findDongCentroid(g.regionCode, g.dong);
       const { coord, source } = resolveMarkerCoord(approx, geocodeCache[g.key]);
       const st = coord ? nearestStation(coord.lat, coord.lng) : null;
       return { ...g, stationName: st?.name || null, stationLine: st?.line || null, stationM: st ? st.distanceM : null, stationExact: source === 'exact' };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexGapList, mapComplexCoordByKey, geoTick, geocodeStats]);
+  }, [complexGapList, mapComplexCoordByKey, geoTick, geocodeStats, dongCentroids]);
   const dongGapIndex = useMemo(
     () => (gapMode && gapRentRows && dongLayerOn
       ? gapIndex(allTx, gapRentRows, (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null))
