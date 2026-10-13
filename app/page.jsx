@@ -1588,6 +1588,22 @@ export default function Page() {
 
   const [fullComplexList, setFullComplexList] = useState([]);
 
+  // v203: 선택하지 않은 구도 지도에서 둘러보고 누를 수 있게, 화면에 보이는 구를 자동으로 불러온 데이터(지도 핀 전용 —
+  // 대시보드·순위는 선택한 지역 그대로). { [regionCode]: { key, at, aptList: [{apt,dong}], trades: [행] } }, 최대 8곳.
+  const [browseData, setBrowseData] = useState({});
+  const browseEnd = months.length ? months[months.length - 1] : ymNow();
+  const browseStart = months.length ? months[0] : ymShift(browseEnd, -5);
+  const browseDataKey = `${dealType}|${browseStart}|${browseEnd}`;
+  const browseTx = useMemo(() => {
+    const sel = new Set(selected.flatMap((c) => expandRegionCode(c)));
+    const out = [];
+    Object.entries(browseData).forEach(([code, b]) => {
+      if (b.key !== browseDataKey || sel.has(code)) return;
+      b.trades.forEach((t) => out.push({ ...t, regionCode: code }));
+    });
+    return out;
+  }, [browseData, browseDataKey, selected]);
+
   useEffect(() => {
     if (selected.length === 0) { setFullComplexList([]); return undefined; }
     let cancelled = false;
@@ -1706,9 +1722,49 @@ export default function Page() {
       addItem(c.apt, c.dong, c.regionCode);
     }
     const out = list.slice(0, MAX_MAP_COMPLEXES);
+    // v203: 자동으로 불러온 주변 구의 단지(지도 핀 전용). 위치(동 중심점)를 아는 단지만 넣는다 — 모르는 단지까지 넣으면
+    // 지도가 수백 개를 한꺼번에 위치 검색하느라 느려진다. 같은 이름(표기만 다른) 목록 단지는 실거래 단지로 합친다.
+    const browseLatest = new Map();
+    const browseLatest34 = new Map();
+    const browseNames = new Map();
+    browseTx.forEach((t) => {
+      if (!t.apt || !t.dong) return;
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      browseNames.set(key, { apt: t.apt, dong: t.dong, regionCode: t.regionCode });
+      const price = isRent ? (t.isJeonse ? t.deposit : null) : t.amount;
+      if (price == null) return;
+      const ym = `${t.year}${String(t.month).padStart(2, '0')}${String(t.day ?? 0).padStart(2, '0')}`;
+      const prev = browseLatest.get(key);
+      if (!prev || ym > prev.ym) browseLatest.set(key, { ym, price, pyeong: isRent ? t.depositPerPyeong : t.pricePerPyeong, area: t.area });
+      const sp = supplyPyeong(t.area);
+      if (sp >= 33 && sp <= 35) {
+        const prev34 = browseLatest34.get(key);
+        if (!prev34 || ym > prev34.ym) browseLatest34.set(key, { ym, price });
+      }
+    });
+    const browseIds = new Set([...browseNames.values()].map((n) => complexIdentity(n.regionCode, n.dong, n.apt)));
+    const selectedMembers = new Set(selected.flatMap((c) => expandRegionCode(c)));
+    Object.entries(browseData).forEach(([code, b]) => {
+      if (b.key !== browseDataKey || selectedMembers.has(code)) return;
+      b.aptList.forEach((c) => {
+        if (!c.apt || !c.dong) return;
+        const key = `${code}|${c.dong}|${c.apt}`;
+        if (browseNames.has(key) || browseIds.has(complexIdentity(code, c.dong, c.apt))) return;
+        browseNames.set(key, { apt: c.apt, dong: c.dong, regionCode: code });
+      });
+    });
+    browseNames.forEach((n, key) => {
+      if (seen.has(key)) return;
+      const coord = findDongCentroid(n.regionCode, n.dong);
+      if (!coord) return;
+      seen.add(key);
+      const l = browseLatest.get(key);
+      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true });
+    });
     out.mergedByName = mergedByName; // 상태 카드에 "이름이 같아 합친 수"를 보여주기 위해 배열에 붙여둔다
     return out;
-  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected]);
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
 
@@ -2423,6 +2479,71 @@ export default function Page() {
   const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
   const loadedSidosRef = useRef(new Set());
 
+  // v203: 확대해서 보고 있는 화면에 걸친 구 중 선택 안 된 곳을 가까운 순으로 최대 4곳 자동으로 불러온다(지도 핀 전용).
+  // 멀리서 볼 때는 불러오지 않고, 지도를 멈춘 뒤 0.6초 기다렸다 받는다. 받은 구는 최대 8곳까지 기억한다.
+  const featureBoxes = useMemo(() => (mapFeatures || []).map((f) => {
+    const box = { codes: f.codes || [], minLat: 90, maxLat: -90, minLng: 180, maxLng: -180 };
+    const walk = (c) => {
+      if (typeof c[0] === 'number') {
+        const [lng, lat] = c;
+        if (lat < box.minLat) box.minLat = lat;
+        if (lat > box.maxLat) box.maxLat = lat;
+        if (lng < box.minLng) box.minLng = lng;
+        if (lng > box.maxLng) box.maxLng = lng;
+      } else c.forEach(walk);
+    };
+    walk(f.feature?.geometry?.coordinates || []);
+    return box;
+  }), [mapFeatures]);
+  const browseKey = useMemo(() => {
+    if (viewMode !== 'map' || mapZoomTier === 'far' || !mapViewportBounds) return '';
+    if (!(dealType === 'trade' || dealType === 'rent') || propertyType === 'offi') return '';
+    const b = mapViewportBounds;
+    const cLat = (b.swLat + b.neLat) / 2;
+    const cLng = (b.swLng + b.neLng) / 2;
+    const selectedMembers = new Set(selected.flatMap((c) => expandRegionCode(c)));
+    const hits = [];
+    featureBoxes.forEach((f) => {
+      if (f.maxLat < b.swLat || f.minLat > b.neLat || f.maxLng < b.swLng || f.minLng > b.neLng) return;
+      const d = ((f.minLat + f.maxLat) / 2 - cLat) ** 2 + ((f.minLng + f.maxLng) / 2 - cLng) ** 2;
+      f.codes.forEach((code) => { if (!selectedMembers.has(code)) hits.push([code, d]); });
+    });
+    hits.sort((x, y) => x[1] - y[1]);
+    return [...new Set(hits.map((h) => h[0]))].slice(0, 4).sort().join(',');
+  }, [viewMode, mapZoomTier, mapViewportBounds, dealType, propertyType, selected, featureBoxes]);
+  useEffect(() => {
+    if (!browseKey) return undefined;
+    const codes = browseKey.split(',').filter((c) => browseData[c]?.key !== browseDataKey);
+    if (!codes.length) return undefined;
+    const ep = dealType === 'rent' ? '/api/rents' : '/api/trades';
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      Promise.all(codes.map((code) => Promise.all([
+        fetch(`/api/apt-list?codes=${code}`).then((r) => r.json()).catch(() => null),
+        fetch(`${ep}?codes=${code}&start=${browseStart}&end=${browseEnd}`).then((r) => r.json()).catch(() => null),
+      ]).then(([list, tx]) => [code, list, tx]))).then((results) => {
+        if (cancelled) return;
+        setBrowseData((prev) => {
+          const next = { ...prev };
+          results.forEach(([code, list, tx]) => {
+            if (!list && !tx) return;
+            next[code] = {
+              key: browseDataKey,
+              at: Date.now(),
+              aptList: (list?.data?.[code] || []).map((it) => ({ apt: it.kaptName, dong: it.dong })),
+              trades: (tx?.months || []).flatMap((ym) => tx?.data?.[`${code}_${ym}`] || []),
+            };
+          });
+          Object.keys(next).sort((a, b) => next[b].at - next[a].at).slice(8).forEach((k) => { delete next[k]; });
+          return next;
+        });
+      });
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browseKey, browseDataKey]);
+  const browseRegionCount = browseKey ? browseKey.split(',').filter((c) => browseData[c]?.key === browseDataKey).length : 0;
+
   useEffect(() => {
     // 확대를 많이 안 하면(구 단위로만 보고 있으면) "동" 데이터는 아예 필요 없으므로,
     // 실제로 확대했을 때만 받아온다 — 안 그러면 지역 선택할 때마다 큰 파일을 미리 받아와서 느려진다.
@@ -2436,12 +2557,17 @@ export default function Page() {
         }
       }
     });
+    // v203: 자동으로 불러온 주변 구도 핀 위치(동 중심점)가 필요하다.
+    Object.keys(browseData).forEach((code) => {
+      const g = REGION_GROUPS.find((gg) => gg.items.some((it) => it.code === code));
+      if (g) neededSidos.add(g.sido);
+    });
     const toLoad = [...neededSidos].filter((s) => !loadedSidosRef.current.has(s));
     if (toLoad.length === 0) return undefined;
-    let cancelled = false;
+    // 받기 전에 "받음"으로 표시해 둔다 — 받는 사이에 effect가 또 돌아도 같은 시·도를 두 번 받지 않게(v203).
+    toLoad.forEach((s) => loadedSidosRef.current.add(s));
     Promise.all(toLoad.map(async (sido) => {
       const feats = await fetchDongGeoForSido(sido);
-      loadedSidosRef.current.add(sido);
       const group = REGION_GROUPS.find((g) => g.sido === sido);
       return feats.map((f) => {
         const parts = (f.properties.adm_nm || '').trim().split(/\s+/);
@@ -2459,11 +2585,11 @@ export default function Page() {
         return { feature: f, name: dongName, regionCode: code };
       }).filter((f) => f.regionCode);
     })).then((results) => {
-      if (cancelled) return;
+      // 받는 중에 effect가 다시 돌아도 결과는 버리지 않는다 — 이미 "받음"으로 표시해서(loadedSidosRef) 다시 받지 않기 때문(v203).
       setDongRawFeatures((prev) => [...prev, ...results.flat()]);
-    });
-    return () => { cancelled = true; };
-  }, [selected, mapZoomTier, dongLayerOn]);
+    }).catch(() => { toLoad.forEach((s) => loadedSidosRef.current.delete(s)); }); // 실패하면 다음에 다시 받게
+    return undefined;
+  }, [selected, mapZoomTier, dongLayerOn, browseData]);
 
   // 동별 가격/거래량 집계는 지도를 그릴 때마다 allTx를 반복 filter하지 않도록
   // 최초 1회 인덱스로 만들어둔다. 기존 O(동 수 × 거래건수) 구조를
@@ -3084,7 +3210,7 @@ export default function Page() {
           visibleSchoolLocations={visibleSchoolLocations} schoolLocationsLoading={schoolLocationsLoading}
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
-          complexGapList={complexGapList} setGapListOn={setGapListOn}
+          complexGapList={complexGapList} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
