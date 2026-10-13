@@ -188,7 +188,7 @@ export default function MapTab({
             features={seoulMapData.features}
             values={seoulMapData.values}
             colorFor={colorFor}
-            valueFormat={mapColorMode === 'change' || mapColorMode === 'volchange' ? formatChange : undefined}
+            valueFormat={mapColorMode === 'change' || mapColorMode === 'volchange' ? formatChange : mapColorMode === 'gap' ? fmtWon : undefined}
             valueNotes={seoulMapData.notes}
             dongValueNotes={dongMapData?.notes}
             borderColor={PALETTE.border}
@@ -392,7 +392,7 @@ export default function MapTab({
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>색칠 기준</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동']].map(([key, label]) => (
+                      {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동'], ...(dealType === 'trade' ? [['gap', '34평 갭']] : [])].map(([key, label]) => (
                         <button key={key} onClick={() => setMapColorMode(key)} style={{
                           flex: '1 1 calc(50% - 4px)', whiteSpace: 'nowrap', border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
                           background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
@@ -414,6 +414,12 @@ export default function MapTab({
                           ? '조회 기간의 앞 절반 → 뒤 절반 거래 건수 변화예요. 앞 기간이 5건 미만인 곳은 %가 크게 부풀려져서 회색으로 두었어요. 거래가 사라지면 -100%예요.'
                           : '조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화예요. 거래된 단지 구성에 따라 실제 시세와 다를 수 있고, 표본이 적은 곳(각 기간 3건 미만)은 회색이에요.'}
                         {' '}마우스를 올리면 근거가 되는 건수가 나와요.
+                      </div>
+                    )}
+                    {mapColorMode === 'gap' && (
+                      <div style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
+                        조회 기간 34평(전용 약 84㎡) 매매 중간값 − 전세 중간값이에요. 진할수록 전세를 끼고 살 때 필요한 돈(갭)이 커요.
+                        34평 매매·전세가 각각 2건 미만인 곳은 회색. 마우스를 올리면 매매·전세 값과 건수가 나와요.
                       </div>
                     )}
                   </div>
