@@ -37,10 +37,17 @@ export default function MapTab({
   mapViewportBounds, mapPanelList,
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
   unitSizeFilter, setUnitSizeFilter, buildYearFilter, setBuildYearFilter,
+  complexGapList, setGapListOn,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
-  const [panelView, setPanelView] = useState('complexes'); // 오른쪽 패널: 'complexes'(단지) | 'trades'(최근 거래·신고가)
+  const [panelView, setPanelView] = useState('complexes'); // 오른쪽 패널: 'complexes'(단지) | 'trades'(최근 거래·신고가) | 'gap'(34평 갭 순위, v200)
+  // 갭 순위 탭을 열었을 때만 page.jsx가 전월세를 받아 계산한다. 매매가 아니면 탭이 없으므로 단지 탭으로 돌린다.
+  useEffect(() => {
+    if (panelView === 'gap' && dealType !== 'trade') { setPanelView('complexes'); return; }
+    if (setGapListOn) setGapListOn(panelView === 'gap');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelView, dealType]);
   // 숫자 원을 누르면 그 안의 단지 목록을 오른쪽 패널에 보여준다(갈라질 수 있으면 지도도 확대된다).
   const [clusterKeys, setClusterKeys] = useState(null); // Set<string> | null
   const clusterRows = useMemo(() => {
@@ -717,7 +724,7 @@ export default function MapTab({
             </div>
             {!mapPanelMinimized && (
               <div style={{ display: 'flex', borderBottom: `1px solid ${PALETTE.border}` }}>
-                {[['complexes', '단지'], ['trades', '최근 거래·신고가']].map(([k, l]) => (
+                {[['complexes', '단지'], ['trades', '최근 거래·신고가'], ...(dealType === 'trade' ? [['gap', '34평 갭 순위']] : [])].map(([k, l]) => (
                   <button key={k} onClick={() => setPanelView(k)} style={{
                     flex: 1, border: 'none', background: 'transparent', padding: '8px 0', fontSize: 12.5, cursor: 'pointer',
                     fontWeight: panelView === k ? 800 : 500, color: panelView === k ? PALETTE.accent : PALETTE.textMuted,
@@ -738,6 +745,41 @@ export default function MapTab({
                     if (coord) setFocusLatLng(coord);
                   }}
                 />
+              ) : panelView === 'gap' ? (
+                <>
+                  <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, lineHeight: 1.5 }}>
+                    {!complexGapList
+                      ? '34평 매매·전세 거래를 불러오는 중…'
+                      : `조회 지역·기간의 34평(전용 약 84㎡) 갭이 작은 순 ${complexGapList.length}개 단지예요${complexGapList.length > 60 ? ' (60개까지 표시)' : ''}. 갭 = 매매 중간값 − 전세 중간값, 매매·전세 각 2건 이상인 단지만.`}
+                  </div>
+                  {complexGapList && complexGapList.length === 0 && (
+                    <div style={{ padding: '14px', fontSize: 11.5, color: PALETTE.textMuted }}>34평 매매·전세가 각각 2건 이상인 단지가 없어요. 기간을 늘려 보세요.</div>
+                  )}
+                  {(complexGapList || []).slice(0, 60).map((g, i) => {
+                    const coord = mapComplexCoordByKey.get(g.key) || codeToLatLng[g.regionCode];
+                    return (
+                      <button
+                        key={g.key}
+                        onClick={() => {
+                          setSelectedApt({ apt: g.apt, dong: g.dong, regionCode: g.regionCode, lat: coord?.lat, lng: coord?.lng });
+                          if (coord) setFocusLatLng(coord);
+                        }}
+                        style={{ width: '100%', textAlign: 'left', border: 'none', borderBottom: `1px solid ${PALETTE.border}`, background: 'transparent', padding: '10px 14px', cursor: 'pointer' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i + 1}. {g.apt}</div>
+                            <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(g.regionCode)} {g.dong} · 매매 {g.nSale}·전세 {g.nJeonse}건</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 800 }}>갭 {fmtWon(g.gap)}</div>
+                            <div style={{ fontSize: 10, color: PALETTE.textSecondary, marginTop: 2 }}>매매 {fmtWon(g.sale)} · 전세 {fmtWon(g.jeonse)}</div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
               ) : (<>
               {kwRows && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
