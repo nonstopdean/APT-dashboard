@@ -2300,7 +2300,10 @@ export default function Page() {
     if (mapColorMode === 'gap' && !gapMode) setMapColorMode('price');
   }, [mapColorMode, gapMode]);
   const [gapRentRaw, setGapRentRaw] = useState(null); // { key, data }
-  const gapRentKey = gapMode && months.length ? `${selected.join(',')}|${months[0]}|${months[months.length - 1]}` : null;
+  // v200: 지도 오른쪽 패널 "34평 갭 순위" 탭을 열었을 때도 같은 전월세가 필요하다(MapTab이 켜고 끈다).
+  const [gapListOn, setGapListOn] = useState(false);
+  const gapNeeded = (gapMode || gapListOn) && dealType === 'trade' && propertyType !== 'offi';
+  const gapRentKey = gapNeeded && months.length ? `${selected.join(',')}|${months[0]}|${months[months.length - 1]}` : null;
   useEffect(() => {
     if (!gapRentKey || gapRentRaw?.key === gapRentKey) return undefined;
     let cancelled = false;
@@ -2312,23 +2315,32 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gapRentKey]);
   const gapRentRows = useMemo(() => {
-    if (!gapMode || !gapRentRaw || gapRentRaw.key !== gapRentKey) return null;
+    if (!gapNeeded || !gapRentRaw || gapRentRaw.key !== gapRentKey) return null;
     const all = [];
     selected.forEach((code) => expandRegionCode(code).forEach((mc) => months.forEach((ym) => {
       (gapRentRaw.data[`${mc}_${ym}`] || []).forEach((r) => all.push({ ...r, regionCode: mc }));
     })));
     return all;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gapMode, gapRentRaw, gapRentKey]);
+  }, [gapNeeded, gapRentRaw, gapRentKey]);
   const regionGapIndex = useMemo(
-    () => (gapRentRows ? gapIndex(allTx, gapRentRows, (t) => t.regionCode || null) : null),
-    [allTx, gapRentRows],
+    () => (gapMode && gapRentRows ? gapIndex(allTx, gapRentRows, (t) => t.regionCode || null) : null),
+    [gapMode, allTx, gapRentRows],
   );
+  // v200: 단지별 34평 갭을 작은 순으로(매매·전세 각 2건 이상인 단지만). 오른쪽 패널 "34평 갭 순위" 탭에서 쓴다.
+  const complexGapList = useMemo(() => {
+    if (!gapListOn || !gapRentRows) return null;
+    const keyOf = (t) => (t.regionCode && t.dong && t.apt ? `${t.regionCode}|${t.dong}|${t.apt}` : null);
+    const idx = gapIndex(allTx, gapRentRows, keyOf);
+    return [...idx.entries()]
+      .map(([key, g]) => { const [regionCode, dong, apt] = key.split('|'); return { key, regionCode, dong, apt, ...g }; })
+      .sort((a, b) => a.gap - b.gap);
+  }, [gapListOn, allTx, gapRentRows]);
   const dongGapIndex = useMemo(
-    () => (gapRentRows && dongLayerOn
+    () => (gapMode && gapRentRows && dongLayerOn
       ? gapIndex(allTx, gapRentRows, (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null))
       : null),
-    [allTx, gapRentRows, dongLayerOn],
+    [gapMode, allTx, gapRentRows, dongLayerOn],
   );
   const gapNote = (g) => (g ? `34평 매매 ${fmtWon(g.sale)} − 전세 ${fmtWon(g.jeonse)} (매매 ${g.nSale}·전세 ${g.nJeonse}건)` : '');
 
@@ -3069,6 +3081,7 @@ export default function Page() {
           visibleSchoolLocations={visibleSchoolLocations} schoolLocationsLoading={schoolLocationsLoading}
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
+          complexGapList={complexGapList} setGapListOn={setGapListOn}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
