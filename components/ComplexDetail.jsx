@@ -586,7 +586,7 @@ export default function ComplexDetail({
               )}
             </div>
             {peerRows.map((r) => (
-              <div key={r.key} title={`${r.n}건 · ${r.self ? '이 단지' : `약 ${Math.round(r.distance).toLocaleString()}m`}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginBottom: 3 }}>
+              <div key={r.key} title={`${r.n}건 · ${r.self ? '이 단지' : r.distance < 50 ? `같은 동(${r.dong})` : `약 ${Math.round(r.distance).toLocaleString()}m`}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginBottom: 3 }}>
                 <span style={{ width: '36%', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: r.self ? 800 : 500 }}>
                   {peer34.rows.indexOf(r) + 1}. {r.apt}
                 </span>
