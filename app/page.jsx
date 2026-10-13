@@ -20,7 +20,7 @@ import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import { supplyPyeong } from '../lib/pyeong';
-import { peerPriceCompare, gapIndex } from '../lib/peer-compare';
+import { peerPriceCompare, gapIndex, gapSeries } from '../lib/peer-compare';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -1029,7 +1029,8 @@ export default function Page() {
         const saleRows = tradeJson ? rowsOf(tradeJson).filter(same) : [];
         const series = tradeJson ? jeonseRatioSeries(saleRows, rentRows, months2) : [];
         const gaps = gapByArea(saleRows, rentRows); // v192: 평형별 갭
-        setAptJeonseInfo({ avgDeposit, count: matched.length, series, gaps });
+        const gapTrend = tradeJson ? gapSeries(saleRows, rentRows, months2) : []; // v202: 34평 갭 추이(3개월 이동 구간)
+        setAptJeonseInfo({ avgDeposit, count: matched.length, series, gaps, gapTrend });
       })
       .catch(() => {});
     return () => { cancelled = true; };
