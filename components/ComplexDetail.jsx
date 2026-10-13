@@ -159,6 +159,34 @@ export default function ComplexDetail({
           </div>
         );
 
+  // v202: 34평 갭 추이 — 각 달은 그 달 포함 최근 3개월 34평 매매 중간값 − 전세 중간값(억). 값이 있는 달이 3개 이상일 때만.
+  const gapTrendData = (aptJeonseInfo?.gapTrend || []).map((p) => ({
+    label: `${p.ym.slice(2, 4)}.${p.ym.slice(4, 6)}`,
+    갭: p.gap != null ? Math.round(p.gap / 100) / 100 : null,
+    sale: p.sale, jeonse: p.jeonse, nSale: p.nSale, nJeonse: p.nJeonse,
+  }));
+  const bGapTrend = gapTrendData.filter((p) => p.갭 != null).length >= 3 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>34평 갭 추이 (최근 12개월, 3개월 이동 구간)</div>
+            <div style={{ height: 140 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={gapTrendData} margin={{ top: 6, right: 8, left: -14, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.border} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} domain={['auto', 'auto']} unit="억" />
+                  <Tooltip
+                    formatter={(v, n, item) => [`${v}억 (매매 ${fmtWon(item?.payload?.sale)} − 전세 ${fmtWon(item?.payload?.jeonse)}, ${item?.payload?.nSale}·${item?.payload?.nJeonse}건)`, '갭']}
+                  />
+                  <Line type="monotone" dataKey="갭" stroke={PALETTE.down} strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
+              각 달은 그 달까지 최근 3개월 34평(전용 약 84㎡) 거래로 계산해요. 오르면 전세를 끼고 사는 데 드는 돈이 커지고 있다는 뜻이에요. 매매·전세가 다 있는 달만 점이 찍혀요.
+            </div>
+          </div>
+        );
+
   const bSampleInfo = aptSummary && (
           <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '-8px 0 6px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span>
@@ -778,6 +806,7 @@ export default function ComplexDetail({
       {bSampleInfo}
       {bJeonseTrend}
       {bGapTable}
+      {bGapTrend}
       {bVolumeBanner}
       {bAcqCalc}
       {bGongsiLoading}
@@ -832,7 +861,7 @@ export default function ComplexDetail({
       <DetailSections
         summaryLine={summaryLine}
         sections={[
-          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bSummaryCards, bSampleInfo, bJeonseTrend, bGapTable, bVolumeBanner, bCompareBtn, bAlert] },
+          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bSummaryCards, bSampleInfo, bJeonseTrend, bGapTable, bGapTrend, bVolumeBanner, bCompareBtn, bAlert] },
           { id: 'trend', title: '가격 추이', defaultOpen: true, blocks: [bAreaChips, bTrendToggle, bTrendSingle, bTrendCompare, bVolumeChart] },
           { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bBasicInfo, bGongsiLoading, bGongsi] },
           { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
