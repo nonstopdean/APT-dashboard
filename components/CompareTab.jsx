@@ -5,6 +5,7 @@ import {
 import { X } from 'lucide-react';
 import LongCompare from './LongCompare';
 import { jeonseRatio } from '../lib/jeonse-ratio';
+import { pyeongMedians } from '../lib/peer-compare';
 import { REGION_GROUPS, SIDO_AGGREGATES } from '../lib/regions';
 import {
   PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, fmtWon, labelFor,
@@ -43,13 +44,21 @@ export default function CompareTab({
           const hit = results.find(([code]) => code === p.regionCode);
           if (!hit) return;
           const same = (x) => x.apt === p.apt && x.dong === p.dong;
-          out[`${p.regionCode}|${p.dong}|${p.apt}`] = jeonseRatio(hit[1].filter(same), hit[2].filter(same));
+          // v198: 같은 6개월 데이터로 34평(공급 33~35평) 매매·전세 중간값과 갭도 같이 낸다 — 평형이 섞인 "최근가" 대신 같은 평형끼리 비교.
+          out[`${p.regionCode}|${p.dong}|${p.apt}`] = { ...jeonseRatio(hit[1].filter(same), hit[2].filter(same)), p34: pyeongMedians(hit[1].filter(same), hit[2].filter(same)) };
         });
         setRatioByKey(out);
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinnedKey]);
+  // 34평 칸마다 담은 단지 중 가장 낮은 값(값이 있는 단지가 2개 이상일 때만 강조한다).
+  const min34 = { count: {} };
+  ['sale', 'jeonse', 'gap'].forEach((f) => {
+    const vals = pinnedComplexes.map((p) => ratioByKey[`${p.regionCode}|${p.dong}|${p.apt}`]?.p34?.[f]).filter((v) => v != null);
+    min34[f] = vals.length ? Math.min(...vals) : null;
+    min34.count[f] = vals.length;
+  });
 
   return (
     <div style={{ padding: '20px 20px 0' }}>
@@ -62,6 +71,7 @@ export default function CompareTab({
           <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '4px 0 12px' }}>
             단지 상세 화면의 "📊 단지 비교에 추가"로 담은 단지들이에요. 현재 조회된 실거래 기준이라 평형이 섞여 있을 수 있어요.
             전세가율은 같은 단지의 최근 6개월 전세 평당 보증금 평균 ÷ 매매 평당가 평균이에요(평형 구성이 달라 근사치, 숫자에 마우스를 올리면 건수).
+            34평 칸은 최근 6개월 34평(전용 약 84㎡) 거래의 중간값이라 같은 평형끼리 바로 비교돼요. 담은 단지 중 가장 낮은 값은 파란색.
           </p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -75,6 +85,9 @@ export default function CompareTab({
                   <th style={styles.th}>면적</th>
                   <th style={styles.th}>준공</th>
                   <th style={styles.th}>전세가율</th>
+                  <th style={styles.th}>34평 매매</th>
+                  <th style={styles.th}>34평 전세</th>
+                  <th style={styles.th}>34평 갭</th>
                   <th style={styles.th}></th>
                 </tr>
               </thead>
@@ -82,6 +95,12 @@ export default function CompareTab({
                 {pinnedComplexes.map((p) => {
                   const row = complexCompare.find((c) => c.apt === p.apt && c.dong === p.dong && c.regionCode === p.regionCode);
                   const q = ratioByKey[`${p.regionCode}|${p.dong}|${p.apt}`];
+                  const p34 = q?.p34;
+                  const cell34 = (v, field, n) => {
+                    if (!q) return <td style={styles.td}>…</td>;
+                    const isMin = v != null && v === min34[field] && min34.count[field] > 1;
+                    return <td style={{ ...styles.td, color: isMin ? PALETTE.down : PALETTE.textPrimary, fontWeight: isMin ? 800 : 500 }} title={n != null ? `최근 6개월 34평 ${n}건` : undefined}>{v != null ? fmtWon(v) : '-'}</td>;
+                  };
                   return (
                     <tr key={`${p.regionCode}|${p.dong}|${p.apt}`}>
                       <td style={{ ...styles.td, color: PALETTE.accent, cursor: 'pointer' }} onClick={() => setSelectedApt(p)}>
@@ -96,6 +115,9 @@ export default function CompareTab({
                       <td style={styles.td} title={q ? `최근 6개월 매매 ${q.nSale}건 · 전세 ${q.nJeonse}건` : '불러오는 중'}>
                         {!q ? '…' : q.ratio != null ? `${q.ratio.toFixed(0)}%` : '-'}
                       </td>
+                      {cell34(p34?.sale, 'sale', p34?.nSale)}
+                      {cell34(p34?.jeonse, 'jeonse', p34?.nJeonse)}
+                      {cell34(p34?.gap, 'gap', p34 ? `매매 ${p34.nSale}·전세 ${p34.nJeonse}` : null)}
                       <td style={styles.td}>
                         <X size={13} style={{ cursor: 'pointer', color: PALETTE.textMuted }} onClick={() => setPinnedComplexes((prev) => prev.filter((x) => !(x.apt === p.apt && x.dong === p.dong && x.regionCode === p.regionCode)))} />
                       </td>
