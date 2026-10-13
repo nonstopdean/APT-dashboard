@@ -17,7 +17,7 @@ import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
 import { buildChangeIndex, changeNote } from '../lib/market-change';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
-import { geocodeCache } from '../lib/geocodeCache';
+import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import { supplyPyeong } from '../lib/pyeong';
 import { peerPriceCompare, gapIndex, gapSeries } from '../lib/peer-compare';
@@ -2395,6 +2395,34 @@ export default function Page() {
       .map(([key, g]) => { const [regionCode, dong, apt] = key.split('|'); return { key, regionCode, dong, apt, buildYear: builtByKey.get(key) || null, ...g }; })
       .sort((a, b) => a.gap - b.gap);
   }, [gapListOn, allTx, gapRentRows]);
+  // v204: 갭 순위 단지마다 가장 가까운 지하철역. 동 중심점은 수백 m 틀릴 수 있어서, 순위에 오른 단지는
+  // 서버에 저장된 정확한 좌표를 먼저 한 번에 물어본다(받으면 geoTick으로 다시 계산). 정확한 좌표가 없으면 동 중심 기준.
+  // 조건(연식·건수·역 거리)으로 거른 뒤에도 정확한 좌표가 있도록 앞쪽 150개까지 묻는다.
+  const [geoTick, setGeoTick] = useState(0);
+  useEffect(() => {
+    if (!complexGapList) return undefined;
+    const keys = complexGapList.slice(0, 150).map((g) => g.key).filter((k) => geocodeCache[k] === undefined);
+    if (!keys.length) return undefined;
+    let cancelled = false;
+    fetchServerGeocodeCache(keys).then((hits) => {
+      if (cancelled) return;
+      const entries = Object.entries(hits || {});
+      entries.forEach(([k, coord]) => { geocodeCache[k] = coord; });
+      if (entries.length) setGeoTick((n) => n + 1);
+    });
+    return () => { cancelled = true; };
+  }, [complexGapList]);
+  const complexGapRows = useMemo(() => {
+    if (!complexGapList) return null;
+    return complexGapList.map((g) => {
+      const m = mapComplexCoordByKey.get(g.key);
+      const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : null;
+      const { coord, source } = resolveMarkerCoord(approx, geocodeCache[g.key]);
+      const st = coord ? nearestStation(coord.lat, coord.lng) : null;
+      return { ...g, stationName: st?.name || null, stationLine: st?.line || null, stationM: st ? st.distanceM : null, stationExact: source === 'exact' };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complexGapList, mapComplexCoordByKey, geoTick, geocodeStats]);
   const dongGapIndex = useMemo(
     () => (gapMode && gapRentRows && dongLayerOn
       ? gapIndex(allTx, gapRentRows, (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null))
@@ -3210,7 +3238,7 @@ export default function Page() {
           visibleSchoolLocations={visibleSchoolLocations} schoolLocationsLoading={schoolLocationsLoading}
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
-          complexGapList={complexGapList} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
+          complexGapList={complexGapRows} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
