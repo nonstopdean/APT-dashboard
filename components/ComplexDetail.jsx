@@ -27,7 +27,7 @@ export default function ComplexDetail({
   poiInfo, poiLoading,
   gongsiInfo, gongsiLoading,
   aptBasicInfo, nearestStationInfo, nearbySchools, schoolsLoading,
-  nearbyRadius, setNearbyRadius, nearbyComplexes, radiusSummary,
+  nearbyRadius, setNearbyRadius, nearbyComplexes, radiusSummary, peer34,
   similarComplexes,
   pinnedComplexes, setPinnedComplexes,
   setMapFocusKeys, setViewMode,
@@ -547,6 +547,61 @@ export default function ComplexDetail({
           </div>
         );
 
+  // v197: 주변 34평 시세 — 아래 "주변 단지 비교"와 같은 반경 안 단지들의 조회 기간 34평 거래 중간값을 막대로 비교한다.
+  const peerTop = peer34 ? peer34.rows.slice(0, 10) : [];
+  const peerRows = peer34 && peer34.self && !peerTop.includes(peer34.self) ? [...peerTop, peer34.self] : peerTop;
+  const peerMax = peerRows.reduce((m, r) => Math.max(m, r.median), 0);
+  const bPeer34 = peer34 && peer34.rows.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>주변 34평 {isRent ? '전세' : '시세'}</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[[500, '500m'], [1000, '1km'], [2000, '2km']].map(([r, l]) => (
+                  <button
+                    key={r}
+                    onClick={() => setNearbyRadius(r)}
+                    style={{
+                      border: `1px solid ${nearbyRadius === r ? PALETTE.accent : PALETTE.border}`,
+                      background: nearbyRadius === r ? 'rgba(239,68,68,0.10)' : 'transparent',
+                      color: nearbyRadius === r ? PALETTE.up : PALETTE.textSecondary,
+                      borderRadius: 8, padding: '3px 9px', fontSize: 11, cursor: 'pointer',
+                    }}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 11.5, marginBottom: 6, lineHeight: 1.5 }}>
+              {!peer34.self ? (
+                '이 단지는 조회 기간에 34평 거래가 없어서, 주변 단지 34평 시세만 보여 줘요.'
+              ) : peer34.peerCount === 0 ? (
+                <>이 단지 34평 <b>{fmtWon(peer34.self.median)}</b> · 이 반경 안에 34평 거래가 있는 다른 단지가 없어요. 반경을 넓혀 보세요.</>
+              ) : (
+                <>
+                  이 단지 34평 <b>{fmtWon(peer34.self.median)}</b> · 반경 안 {peer34.rows.length}개 단지 중 <b>{peer34.rank}번째</b>로 비싸요 ·
+                  주변 중간값 {fmtWon(peer34.peerMedian)} 대비{' '}
+                  <b style={{ color: peer34.diffPct > 0 ? PALETTE.up : peer34.diffPct < 0 ? PALETTE.down : PALETTE.textPrimary }}>{fmtPct(peer34.diffPct)}</b>
+                </>
+              )}
+            </div>
+            {peerRows.map((r) => (
+              <div key={r.key} title={`${r.n}건 · ${r.self ? '이 단지' : `약 ${Math.round(r.distance).toLocaleString()}m`}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, marginBottom: 3 }}>
+                <span style={{ width: '36%', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: r.self ? 800 : 500 }}>
+                  {peer34.rows.indexOf(r) + 1}. {r.apt}
+                </span>
+                <span style={{ flex: 1, height: 8, background: PALETTE.panelAlt, borderRadius: 4, overflow: 'hidden' }}>
+                  <span style={{ display: 'block', height: '100%', width: `${peerMax ? (r.median / peerMax) * 100 : 0}%`, background: r.self ? PALETTE.accent : PALETTE.borderStrong, borderRadius: 4 }} />
+                </span>
+                <span style={{ width: 52, flexShrink: 0, textAlign: 'right', fontWeight: r.self ? 800 : 600 }}>{fmtWon(r.median)}</span>
+              </div>
+            ))}
+            <div style={{ fontSize: 10, color: PALETTE.textMuted, marginTop: 3 }}>
+              조회 기간의 34평(공급 33~35평, 전용 약 84㎡) 거래 중간값이에요. 줄에 마우스를 대면 건수·거리가 보여요. 위치를 못 찾은 단지는 동 중심 기준이라 거리가 근사치예요.
+            </div>
+          </div>
+        );
+
   const bRadiusSummary = radiusSummary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
             {radiusSummary.map((r) => (
@@ -742,6 +797,7 @@ export default function ComplexDetail({
       {bTrendSingle}
       {bTrendCompare}
       {bVolumeChart}
+      {bPeer34}
       {bRadiusSummary}
       {bRadiusCard}
       {bSimilar}
@@ -781,7 +837,7 @@ export default function ComplexDetail({
           { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bBasicInfo, bGongsiLoading, bGongsi] },
           { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
           { id: 'history', title: '거래 내역', defaultOpen: true, blocks: [bHistory] },
-          { id: 'nearby', title: '주변·비교', defaultOpen: false, blocks: [bRadiusSummary, bRadiusCard, bSimilar] },
+          { id: 'nearby', title: '주변·비교', defaultOpen: true, blocks: [bPeer34, bRadiusSummary, bRadiusCard, bSimilar] },
           { id: 'calc', title: '계산기', defaultOpen: false, blocks: [bAcqCalc, bSwapCalc] },
         ]}
       />
