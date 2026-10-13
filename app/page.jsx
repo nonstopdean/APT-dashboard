@@ -2577,7 +2577,8 @@ export default function Page() {
     // 확대를 많이 안 하면(구 단위로만 보고 있으면) "동" 데이터는 아예 필요 없으므로,
     // 실제로 확대했을 때만 받아온다 — 안 그러면 지역 선택할 때마다 큰 파일을 미리 받아와서 느려진다.
     // "동 색칠 끄기"가 켜져 있으면 아예 받아오지도 않는다.
-    if (!dongLayerOn || mapZoomTier === 'far') return undefined;
+    // v206: 갭 순위 탭은 줌과 상관없이 단지마다 역 거리를 내야 해서(동 중심점 필요) 멀리 볼 때도 받는다.
+    if (!dongLayerOn || (mapZoomTier === 'far' && !gapListOn)) return undefined;
     const neededSidos = new Set();
     selected.forEach((code) => {
       for (const g of REGION_GROUPS) {
@@ -2618,7 +2619,7 @@ export default function Page() {
       setDongRawFeatures((prev) => [...prev, ...results.flat()]);
     }).catch(() => { toLoad.forEach((s) => loadedSidosRef.current.delete(s)); }); // 실패하면 다음에 다시 받게
     return undefined;
-  }, [selected, mapZoomTier, dongLayerOn, browseData]);
+  }, [selected, mapZoomTier, dongLayerOn, browseData, gapListOn]);
 
   // 동별 가격/거래량 집계는 지도를 그릴 때마다 allTx를 반복 filter하지 않도록
   // 최초 1회 인덱스로 만들어둔다. 기존 O(동 수 × 거래건수) 구조를
