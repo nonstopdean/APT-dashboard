@@ -2332,8 +2332,10 @@ export default function Page() {
     if (!gapListOn || !gapRentRows) return null;
     const keyOf = (t) => (t.regionCode && t.dong && t.apt ? `${t.regionCode}|${t.dong}|${t.apt}` : null);
     const idx = gapIndex(allTx, gapRentRows, keyOf);
+    const builtByKey = new Map(); // v201: 순위 조건(준공 연식)용 — 매매 행의 건축년도
+    allTx.forEach((t) => { const k = keyOf(t); const y = Number(t.buildYear); if (k && y > 0 && !builtByKey.has(k)) builtByKey.set(k, y); });
     return [...idx.entries()]
-      .map(([key, g]) => { const [regionCode, dong, apt] = key.split('|'); return { key, regionCode, dong, apt, ...g }; })
+      .map(([key, g]) => { const [regionCode, dong, apt] = key.split('|'); return { key, regionCode, dong, apt, buildYear: builtByKey.get(key) || null, ...g }; })
       .sort((a, b) => a.gap - b.gap);
   }, [gapListOn, allTx, gapRentRows]);
   const dongGapIndex = useMemo(
