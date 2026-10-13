@@ -42,6 +42,15 @@ export default function MapTab({
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
   const [panelView, setPanelView] = useState('complexes'); // 오른쪽 패널: 'complexes'(단지) | 'trades'(최근 거래·신고가) | 'gap'(34평 갭 순위, v200)
+  // v201: 갭 순위 조건 — 준공 연식(년 이내, 'all'이면 전체)·34평 매매 최소 건수.
+  const [gapAge, setGapAge] = useState('all');
+  const [gapMinN, setGapMinN] = useState(2);
+  const gapRows = useMemo(() => {
+    if (!complexGapList) return null;
+    const thisYear = new Date().getFullYear();
+    return complexGapList.filter((g) => g.nSale >= gapMinN
+      && (gapAge === 'all' || (g.buildYear && thisYear - g.buildYear <= Number(gapAge))));
+  }, [complexGapList, gapAge, gapMinN]);
   // 갭 순위 탭을 열었을 때만 page.jsx가 전월세를 받아 계산한다. 매매가 아니면 탭이 없으므로 단지 탭으로 돌린다.
   useEffect(() => {
     if (panelView === 'gap' && dealType !== 'trade') { setPanelView('complexes'); return; }
@@ -747,15 +756,28 @@ export default function MapTab({
                 />
               ) : panelView === 'gap' ? (
                 <>
-                  <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, lineHeight: 1.5 }}>
-                    {!complexGapList
-                      ? '34평 매매·전세 거래를 불러오는 중…'
-                      : `조회 지역·기간의 34평(전용 약 84㎡) 갭이 작은 순 ${complexGapList.length}개 단지예요${complexGapList.length > 60 ? ' (60개까지 표시)' : ''}. 갭 = 매매 중간값 − 전세 중간값, 매매·전세 각 2건 이상인 단지만.`}
+                  <div style={{ padding: '8px 14px', borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {[
+                      ['준공', gapAge, setGapAge, [['all', '전체'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내']]],
+                      ['34평 매매', gapMinN, setGapMinN, [[2, '2건+'], [5, '5건+'], [10, '10건+']]],
+                    ].map(([label, val, set, opts]) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10.5, color: PALETTE.textMuted, width: 52, flexShrink: 0 }}>{label}</span>
+                        {opts.map(([k, l]) => (
+                          <button key={k} onClick={() => set(k)} style={{ ...chipStyle(val === k), padding: '3px 8px', fontSize: 10.5 }}>{l}</button>
+                        ))}
+                      </div>
+                    ))}
                   </div>
-                  {complexGapList && complexGapList.length === 0 && (
-                    <div style={{ padding: '14px', fontSize: 11.5, color: PALETTE.textMuted }}>34평 매매·전세가 각각 2건 이상인 단지가 없어요. 기간을 늘려 보세요.</div>
+                  <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, lineHeight: 1.5 }}>
+                    {!gapRows
+                      ? '34평 매매·전세 거래를 불러오는 중…'
+                      : `조회 지역·기간의 34평(전용 약 84㎡) 갭이 작은 순 ${gapRows.length}개 단지예요${gapRows.length < complexGapList.length ? `(조건 전 ${complexGapList.length}개)` : ''}${gapRows.length > 60 ? ' · 60개까지 표시' : ''}. 갭 = 매매 중간값 − 전세 중간값, 매매·전세 각 2건 이상인 단지만.`}
+                  </div>
+                  {gapRows && gapRows.length === 0 && (
+                    <div style={{ padding: '14px', fontSize: 11.5, color: PALETTE.textMuted }}>조건에 맞는 단지가 없어요. 조건을 넓히거나 기간을 늘려 보세요.</div>
                   )}
-                  {(complexGapList || []).slice(0, 60).map((g, i) => {
+                  {(gapRows || []).slice(0, 60).map((g, i) => {
                     const coord = mapComplexCoordByKey.get(g.key) || codeToLatLng[g.regionCode];
                     return (
                       <button
@@ -769,7 +791,7 @@ export default function MapTab({
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i + 1}. {g.apt}</div>
-                            <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(g.regionCode)} {g.dong} · 매매 {g.nSale}·전세 {g.nJeonse}건</div>
+                            <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(g.regionCode)} {g.dong}{g.buildYear ? ` · ${g.buildYear}년` : ''} · 매매 {g.nSale}·전세 {g.nJeonse}건</div>
                           </div>
                           <div style={{ flexShrink: 0, textAlign: 'right' }}>
                             <div style={{ fontSize: 12.5, fontWeight: 800 }}>갭 {fmtWon(g.gap)}</div>
