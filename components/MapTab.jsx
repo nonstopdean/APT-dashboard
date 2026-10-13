@@ -37,7 +37,7 @@ export default function MapTab({
   mapViewportBounds, mapPanelList,
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
   unitSizeFilter, setUnitSizeFilter, buildYearFilter, setBuildYearFilter,
-  complexGapList, setGapListOn,
+  complexGapList, setGapListOn, browseRegionCount = 0,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
@@ -507,6 +507,11 @@ export default function MapTab({
             ) : (
               <>
                 <b>{selected.length}</b>개 지역 · <b>{allTx.length.toLocaleString()}</b>건 조회
+                {browseRegionCount > 0 && (
+                  <span title="지도로 보고 있는 주변 구를 자동으로 불러와 핀만 보여 줘요. 대시보드·순위는 선택한 지역 기준이에요.">
+                    {' '}· 주변 <b>{browseRegionCount}</b>곳 자동 표시
+                  </span>
+                )}
                 {compact && mapComplexes.length > 0 && (
                   <span
                     style={{ marginLeft: 6, cursor: 'pointer', color: PALETTE.accent, fontSize: 10.5 }}
