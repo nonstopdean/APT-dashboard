@@ -79,10 +79,20 @@ export default function ComplexDetail({
             </div>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 거래건수 ÷ 세대수 × 100. 세대수 대비 거래가 얼마나 활발한지 보는 참고 지표예요.">
               <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>거래회전율(최근 1년)</div>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.turnoverRate != null ? `${aptSummary.turnoverRate.toFixed(1)}%` : '-'}</div>
-              <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
-                {aptSummary.turnoverRate != null ? `거래 ${aptSummary.last12moCount}건 / 세대수 ${aptBasicInfo?.households}` : '세대수 정보 없음'}
-              </div>
+              {(() => {
+                // v218: 국토부 기본정보에 세대수가 없으면 입지 요약의 세대수(단지 식별정보)로 계산한다.
+                const altHH = aptSummary.turnoverRate == null ? locSummary?.households : null;
+                const rate = aptSummary.turnoverRate ?? (altHH ? (aptSummary.last12moCount / altHH) * 100 : null);
+                const hhLabel = aptSummary.turnoverRate != null ? aptBasicInfo?.households : altHH?.toLocaleString();
+                return (
+                  <>
+                    <div style={{ fontSize: 15, fontWeight: 800 }}>{rate != null ? `${rate.toFixed(1)}%` : '-'}</div>
+                    <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
+                      {rate != null ? `거래 ${aptSummary.last12moCount}건 / 세대수 ${hhLabel}` : '세대수 정보 없음'}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             {aptJeonseInfo && aptSummary.recentAvg != null && (
               <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 이 단지 전세 거래 평균 ÷ 최근 3개월 매매 평균 × 100. 표본이 적으면 오차가 클 수 있어요.">
