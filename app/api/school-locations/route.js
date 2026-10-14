@@ -18,20 +18,14 @@ export async function GET(request) {
     return Response.json({ error: 'sido가 필요합니다.' }, { status: 400 });
   }
 
-  const debug = searchParams.get('debug') === '1';
-
+  // v211: 예전 debug=1 모드는 요청 주소(서비스 키 포함)를 응답에 그대로 돌려줘서 없앴다(규칙 6).
   try {
     const schools = [];
     let pageNo = 1;
     const numOfRows = 1000;
     // 한 시/도에 학교가 많아도(서울 1,300여 개 등) 넉넉히 받아오되, 과도한 호출은 막는다.
     for (let i = 0; i < 5; i += 1) {
-      // debug 모드에서는 lnmadr 대신 schoolNm 등 다른 조합도 ?debugParam=값 형태로 바로 테스트할 수 있게 한다.
-      const debugParamName = searchParams.get('debugParamName');
-      const debugParamValue = searchParams.get('debugParamValue');
-      const filterParam = (debug && debugParamName)
-        ? `&${debugParamName}=${encodeURIComponent(debugParamValue || '')}`
-        : `&cddcNm=${encodeURIComponent(`${sido}교육청`)}`;
+      const filterParam = `&cddcNm=${encodeURIComponent(`${sido}교육청`)}`;
       const url = `https://api.data.go.kr/openapi/tn_pubr_public_elesch_mskul_lc_api`
         + `?serviceKey=${apiKey}&pageNo=${pageNo}&numOfRows=${numOfRows}&type=json`
         + filterParam;
@@ -41,10 +35,6 @@ export async function GET(request) {
       const rawText = await res.text();
       let json;
       try { json = JSON.parse(rawText); } catch (e) { json = null; }
-      // debug=1이면 실제 응답 구조를 그대로 보여준다 — 파싱 가정이 맞는지 확인하는 용도.
-      if (debug) {
-        return Response.json({ status: res.status, url, rawTextSnippet: rawText.slice(0, 2000), parsed: json });
-      }
       const items = json?.body?.items ?? json?.response?.body?.items;
       const rows = Array.isArray(items) ? items : (items?.item ? (Array.isArray(items.item) ? items.item : [items.item]) : []);
       if (rows.length === 0) break;
