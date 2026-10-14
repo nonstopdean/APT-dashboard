@@ -15,6 +15,7 @@ import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
+import { normalizeComplexName } from '../lib/complex-match';
 import { buildChangeIndex, changeNote } from '../lib/market-change';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
@@ -1813,6 +1814,49 @@ export default function Page() {
     });
     return best ? { name: best.name, m: Math.round(best.m), exact: source === 'exact' } : null;
   };
+  // v212: 세대수 조건. 조건을 켜면 단지가 있는 구마다 /api/households(한국부동산원 단지 식별정보, 서버 저장)를 한 번씩 받는다.
+  // 이름은 같은 동 안에서 정규화한 이름이 같으면 그 세대수, 아니면 한쪽이 다른 쪽을 포함하는 후보가 하나뿐일 때만 쓴다.
+  const [listHH, setListHH] = useState('all'); // 'all' | '300' | '500' | '1000' (세대 이상)
+  const [hhData, setHhData] = useState({}); // 구 코드 -> [[동, 세대수, 연도, 이름들]]
+  const hhAskedRef = useRef(new Set());
+  useEffect(() => {
+    if (listHH === 'all') return undefined;
+    const codes = [...new Set([...complexCompare.map((c) => c.regionCode), ...mapComplexes.map((c) => c.regionCode)])]
+      .filter((c) => /^\d{5}$/.test(c || '') && !hhAskedRef.current.has(c)).slice(0, 8);
+    if (!codes.length) return undefined;
+    codes.forEach((c) => hhAskedRef.current.add(c));
+    (async () => {
+      for (const code of codes) {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const json = await fetch(`/api/households?code=${code}`).then((r) => r.json());
+          if (Array.isArray(json?.rows)) setHhData((prev) => ({ ...prev, [code]: json.rows }));
+          else hhAskedRef.current.delete(code); // 실패하면 다음에 다시
+        } catch (e) { hhAskedRef.current.delete(code); }
+      }
+    })();
+    return undefined; // 받은 결과는 버리지 않는다(구마다 한 번만 묻기 때문)
+  }, [listHH, complexCompare, mapComplexes]);
+  const hhIndex = useMemo(() => {
+    const idx = new Map(); // `${구}|${동}` -> [{ h, names }]
+    Object.entries(hhData).forEach(([code, rows]) => rows.forEach(([d, h, , names]) => {
+      const k = `${code}|${normalizeDongName(d)}`;
+      if (!idx.has(k)) idx.set(k, []);
+      idx.get(k).push({ h, names: String(names).split('|').map(normalizeComplexName) });
+    }));
+    return idx;
+  }, [hhData]);
+  // undefined = 그 구를 아직 안 받음(거르지 않는다), null = 받았지만 못 찾음
+  const householdsOf = (regionCode, dong, apt) => {
+    if (!hhData[regionCode]) return undefined;
+    const list = hhIndex.get(`${regionCode}|${normalizeDongName(dong)}`) || [];
+    const n = normalizeComplexName(apt);
+    if (!n) return null;
+    const exact = list.filter((r) => r.names.includes(n));
+    if (exact.length) return Math.max(...exact.map((r) => r.h));
+    const partial = list.filter((r) => r.names.some((x) => x.length >= 2 && (x.includes(n) || n.includes(x))));
+    return partial.length === 1 ? partial[0].h : null;
+  };
   // v208: 역 거리 조건을 켜면 조회 지역 단지들의 서버 저장 좌표를 300개씩 받아 둔다(동 중심점만으로는 동 하나가 통째로 들어가거나 빠진다).
   const [listGeoTick, setListGeoTick] = useState(0);
   useEffect(() => {
@@ -2020,6 +2064,7 @@ export default function Page() {
     // v207: 역 거리 조건은 60개로 자르기 전에 건다(자른 뒤 거르면 화면 안에 맞는 단지가 있어도 빠진다).
     const maxM = listStation === 'all' ? null : Number(listStation);
     const maxSchoolM = listSchool === 'all' || !elemSchools ? null : Number(listSchool); // v211: 학교 위치를 받기 전엔 거르지 않는다
+    const minHH = listHH === 'all' ? null : Number(listHH); // v212
     const nearStation = (c) => {
       if (maxM != null) {
         const st = stationInfoOf(c.regionCode, c.dong, c.apt);
@@ -2029,9 +2074,13 @@ export default function Page() {
         const sc = schoolInfoOf(c.regionCode, c.dong, c.apt);
         if (sc == null || sc.m > maxSchoolM) return false;
       }
+      if (minHH != null) {
+        const h = householdsOf(c.regionCode, c.dong, c.apt);
+        if (h !== undefined && (h == null || h < minHH)) return false; // 그 구를 아직 안 받았으면 거르지 않는다
+      }
       return true;
     };
-    if (!mapViewportBounds) return (maxM == null && maxSchoolM == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
+    if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
     const filtered = complexCompare.filter((c) => {
       const key = `${c.regionCode}|${c.dong}|${c.apt}`;
       const m = mapComplexCoordByKey.get(key);
@@ -2046,7 +2095,7 @@ export default function Page() {
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools]);
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
@@ -3323,6 +3372,7 @@ export default function Page() {
           complexGapList={complexGapRows} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
+          householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
