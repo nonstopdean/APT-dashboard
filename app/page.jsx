@@ -1800,7 +1800,7 @@ export default function Page() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [listSchool, currentSidoFull]);
+  }, [listSchool, schoolWanted, currentSidoFull]);
   const schoolInfoOf = (regionCode, dong, apt) => {
     if (!elemSchools) return null;
     const { coord, source } = complexCoordOf(regionCode, dong, apt);
@@ -1820,7 +1820,7 @@ export default function Page() {
   const [hhData, setHhData] = useState({}); // 구 코드 -> [[동, 세대수, 연도, 이름들]]
   const hhAskedRef = useRef(new Set());
   useEffect(() => {
-    if (listHH === 'all') return undefined;
+    if (listHH === 'all' && !hhWanted) return undefined;
     const codes = [...new Set([...complexCompare.map((c) => c.regionCode), ...mapComplexes.map((c) => c.regionCode)])]
       .filter((c) => /^\d{5}$/.test(c || '') && !hhAskedRef.current.has(c)).slice(0, 8);
     if (!codes.length) return undefined;
@@ -1836,7 +1836,7 @@ export default function Page() {
       }
     })();
     return undefined; // 받은 결과는 버리지 않는다(구마다 한 번만 묻기 때문)
-  }, [listHH, complexCompare, mapComplexes]);
+  }, [listHH, hhWanted, complexCompare, mapComplexes]);
   const hhIndex = useMemo(() => {
     const idx = new Map(); // `${구}|${동}` -> [{ h, names }]
     Object.entries(hhData).forEach(([code, rows]) => rows.forEach(([d, h, , names]) => {
@@ -3378,6 +3378,7 @@ export default function Page() {
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
+          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
