@@ -1767,6 +1767,16 @@ export default function Page() {
   }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected]);
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
+  // v207: 단지 목록 행의 가장 가까운 지하철역. 좌표는 핀과 같은 규칙(정확한 위치 > 동 중심점).
+  const stationInfoOf = (regionCode, dong, apt) => {
+    const key = `${regionCode}|${dong}|${apt}`;
+    const m = mapComplexCoordByKey.get(key);
+    const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : findDongCentroid(regionCode, dong);
+    const { coord, source } = resolveMarkerCoord(approx, geocodeCache[key]);
+    const st = coord ? nearestStation(coord.lat, coord.lng) : null;
+    return st ? { name: st.name, m: st.distanceM, exact: source === 'exact' } : null;
+  };
+  const [listStation, setListStation] = useState('all'); // v207: 단지 목록 역 거리 조건(m 이내, 'all'이면 전체)
 
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
   const [priceMoveFilter, setPriceMoveFilter] = useState('all'); // 'all' | 'high' | 'drop'
@@ -1952,7 +1962,14 @@ export default function Page() {
   // v178까지는 동 중심점만 봐서, 핀은 화면 안인데 목록에서 빠지거나 그 반대가 생겼다. geocodeStats는 정확한
   // 위치를 새로 찾을 때마다 바뀌므로 다시 계산하는 신호로 쓴다(geocodeCache 자체는 상태가 아니다).
   const mapPanelList = useMemo(() => {
-    if (!mapViewportBounds) return complexCompare.slice(0, 40);
+    // v207: 역 거리 조건은 60개로 자르기 전에 건다(자른 뒤 거르면 화면 안에 맞는 단지가 있어도 빠진다).
+    const maxM = listStation === 'all' ? null : Number(listStation);
+    const nearStation = (c) => {
+      if (maxM == null) return true;
+      const st = stationInfoOf(c.regionCode, c.dong, c.apt);
+      return st != null && st.m <= maxM;
+    };
+    if (!mapViewportBounds) return (maxM == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
     const filtered = complexCompare.filter((c) => {
       const key = `${c.regionCode}|${c.dong}|${c.apt}`;
       const m = mapComplexCoordByKey.get(key);
@@ -1960,13 +1977,14 @@ export default function Page() {
       const { coord } = resolveMarkerCoord(approx, geocodeCache[key]);
       if (!coord) return false;
       return coord.lat >= mapViewportBounds.swLat && coord.lat <= mapViewportBounds.neLat
-        && coord.lng >= mapViewportBounds.swLng && coord.lng <= mapViewportBounds.neLng;
+        && coord.lng >= mapViewportBounds.swLng && coord.lng <= mapViewportBounds.neLng
+        && nearStation(c);
     });
     const out = filtered.slice(0, 60);
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats]);
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
@@ -2578,7 +2596,7 @@ export default function Page() {
     // 실제로 확대했을 때만 받아온다 — 안 그러면 지역 선택할 때마다 큰 파일을 미리 받아와서 느려진다.
     // "동 색칠 끄기"가 켜져 있으면 아예 받아오지도 않는다.
     // v206: 갭 순위 탭은 줌과 상관없이 단지마다 역 거리를 내야 해서(동 중심점 필요) 멀리 볼 때도 받는다.
-    if (!dongLayerOn || (mapZoomTier === 'far' && !gapListOn)) return undefined;
+    if (!dongLayerOn || (mapZoomTier === 'far' && !gapListOn && listStation === 'all')) return undefined;
     const neededSidos = new Set();
     selected.forEach((code) => {
       for (const g of REGION_GROUPS) {
@@ -2619,7 +2637,7 @@ export default function Page() {
       setDongRawFeatures((prev) => [...prev, ...results.flat()]);
     }).catch(() => { toLoad.forEach((s) => loadedSidosRef.current.delete(s)); }); // 실패하면 다음에 다시 받게
     return undefined;
-  }, [selected, mapZoomTier, dongLayerOn, browseData, gapListOn]);
+  }, [selected, mapZoomTier, dongLayerOn, browseData, gapListOn, listStation]);
 
   // 동별 가격/거래량 집계는 지도를 그릴 때마다 allTx를 반복 filter하지 않도록
   // 최초 1회 인덱스로 만들어둔다. 기존 O(동 수 × 거래건수) 구조를
@@ -3241,6 +3259,7 @@ export default function Page() {
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
           complexGapList={complexGapRows} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
+          stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
