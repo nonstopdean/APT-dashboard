@@ -1852,8 +1852,13 @@ export default function Page() {
     const list = hhIndex.get(`${regionCode}|${normalizeDongName(dong)}`) || [];
     const n = normalizeComplexName(apt);
     if (!n) return null;
+    // v213: 대표 이름(공시가격 단지명)이 같은 것이 하나면 그것, 아니면 다른 이름까지 봐서 하나일 때만.
+    // "현대아파트"처럼 같은 동에 후보가 여럿이면 모른다고 본다(예전엔 가장 큰 값을 골라 틀릴 수 있었다).
+    const primary = list.filter((r) => r.names[0] === n);
+    if (primary.length === 1) return primary[0].h;
     const exact = list.filter((r) => r.names.includes(n));
-    if (exact.length) return Math.max(...exact.map((r) => r.h));
+    if (exact.length === 1) return exact[0].h;
+    if (exact.length > 1) return null;
     const partial = list.filter((r) => r.names.some((x) => x.length >= 2 && (x.includes(n) || n.includes(x))));
     return partial.length === 1 ? partial[0].h : null;
   };
