@@ -3276,7 +3276,7 @@ export default function Page() {
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
           complexGapList={complexGapRows} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
-          stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation}
+          stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
