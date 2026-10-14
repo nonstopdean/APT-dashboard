@@ -11,6 +11,7 @@ import { pinnedKeyOf } from '../lib/compare-grid';
 import { changeCap, changeColor, formatChange } from '../lib/market-change';
 
 const PIN_PRICE_KEY = 'apt-dashboard-pin-price';
+const GAP_FILTER_KEY = 'apt-dashboard-gap-filters'; // v215
 const PIN_PRICE_MODES = [['deal', '최근 거래'], ['p34', '34평'], ['unit', '평당가']];
 
 // 지도 탭 전체(왼쪽 패널 + 지도 + 툴바 + 단지 탐색 패널). app/page.jsx 안에 있던
@@ -72,6 +73,28 @@ export default function MapTab({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complexGapList, gapAge, gapMinN, gapStation, gapSchool, gapHH, elemSchools, hhData]);
+  // v215: 갭 순위 조건을 이 브라우저에 기억한다(localStorage apt-dashboard-gap-filters). 저장 effect의 첫 실행은 건너뛴다.
+  const gapFilterSaveRef = useRef(false);
+  useEffect(() => {
+    try {
+      const v = JSON.parse(window.localStorage.getItem(GAP_FILTER_KEY) || 'null');
+      if (v && typeof v === 'object') {
+        if (['all', '10', '15', '20'].includes(v.age)) setGapAge(v.age);
+        if ([2, 5, 10].includes(v.minN)) setGapMinN(v.minN);
+        if (['all', '500', '1000'].includes(v.station)) setGapStation(v.station);
+        if (['all', '300', '500'].includes(v.school)) setGapSchool(v.school);
+        if (['all', '300', '500', '1000'].includes(v.hh)) setGapHH(v.hh);
+      }
+    } catch (e) { /* 저장소를 못 쓰면 기본값 */ }
+  }, []);
+  useEffect(() => {
+    if (!gapFilterSaveRef.current) { gapFilterSaveRef.current = true; return; }
+    try {
+      window.localStorage.setItem(GAP_FILTER_KEY, JSON.stringify({ age: gapAge, minN: gapMinN, station: gapStation, school: gapSchool, hh: gapHH }));
+    } catch (e) { /* 저장 실패는 무시 */ }
+  }, [gapAge, gapMinN, gapStation, gapSchool, gapHH]);
+  const gapFilterOn = gapAge !== 'all' || gapMinN !== 2 || gapStation !== 'all' || gapSchool !== 'all' || gapHH !== 'all';
+  const resetGapFilters = () => { setGapAge('all'); setGapMinN(2); setGapStation('all'); setGapSchool('all'); setGapHH('all'); };
   // 갭 순위 탭에서 학교·세대수 조건을 켜면 page.jsx가 그 자료를 받도록 알린다.
   useEffect(() => {
     if (setSchoolWanted) setSchoolWanted(panelView === 'gap' && gapSchool !== 'all');
@@ -838,6 +861,9 @@ export default function MapTab({
                         ))}
                       </div>
                     ))}
+                    {gapFilterOn && (
+                      <span style={{ alignSelf: 'flex-end', fontSize: 10.5, color: PALETTE.accent, textDecoration: 'underline', cursor: 'pointer' }} onClick={resetGapFilters}>조건 모두 해제</span>
+                    )}
                   </div>
                   <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, lineHeight: 1.5 }}>
                     {!gapRows
@@ -909,6 +935,14 @@ export default function MapTab({
                     <button key={k} onClick={() => setListHH(k)} style={{ ...chipStyle(listHH === k), padding: '3px 8px', fontSize: 10.5 }}>{l}</button>
                   ))}
                   {listHH !== 'all' && hhData && Object.keys(hhData).length === 0 && <span style={{ fontSize: 10, color: PALETTE.textMuted }}>세대수 불러오는 중…</span>}
+                  {(listStation !== 'all' || listSchool !== 'all' || listHH !== 'all') && (
+                    <span
+                      style={{ marginLeft: 'auto', fontSize: 10.5, color: PALETTE.accent, textDecoration: 'underline', cursor: 'pointer' }}
+                      onClick={() => { if (setListStation) setListStation('all'); if (setListSchool) setListSchool('all'); setListHH('all'); }}
+                    >
+                      조건 모두 해제
+                    </span>
+                  )}
                 </div>
               )}
               {kwRows && (
