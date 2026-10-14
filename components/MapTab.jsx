@@ -41,6 +41,7 @@ export default function MapTab({
   stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
+  setSchoolWanted, setHhWanted,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
@@ -49,13 +50,34 @@ export default function MapTab({
   const [gapAge, setGapAge] = useState('all');
   const [gapMinN, setGapMinN] = useState(2);
   const [gapStation, setGapStation] = useState('all'); // v204: 가장 가까운 지하철역까지 직선거리(m) 이내, 'all'이면 전체
+  // v214: 초등학교 거리·세대수 조건(단지 탭과 같은 자료를 쓰되 조건은 따로). 학교 위치·세대수는 받기 전엔 거르지 않는다.
+  const [gapSchool, setGapSchool] = useState('all'); // 'all' | '300' | '500' (m 이내)
+  const [gapHH, setGapHH] = useState('all'); // 'all' | '300' | '500' | '1000' (세대 이상)
   const gapRows = useMemo(() => {
     if (!complexGapList) return null;
     const thisYear = new Date().getFullYear();
-    return complexGapList.filter((g) => g.nSale >= gapMinN
-      && (gapAge === 'all' || (g.buildYear && thisYear - g.buildYear <= Number(gapAge)))
-      && (gapStation === 'all' || (g.stationM != null && g.stationM <= Number(gapStation))));
-  }, [complexGapList, gapAge, gapMinN, gapStation]);
+    return complexGapList.filter((g) => {
+      if (g.nSale < gapMinN) return false;
+      if (gapAge !== 'all' && !(g.buildYear && thisYear - g.buildYear <= Number(gapAge))) return false;
+      if (gapStation !== 'all' && !(g.stationM != null && g.stationM <= Number(gapStation))) return false;
+      if (gapSchool !== 'all' && schoolInfoOf && elemSchools) {
+        const sc = schoolInfoOf(g.regionCode, g.dong, g.apt);
+        if (sc == null || sc.m > Number(gapSchool)) return false;
+      }
+      if (gapHH !== 'all' && householdsOf) {
+        const h = householdsOf(g.regionCode, g.dong, g.apt);
+        if (h !== undefined && (h == null || h < Number(gapHH))) return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complexGapList, gapAge, gapMinN, gapStation, gapSchool, gapHH, elemSchools, hhData]);
+  // 갭 순위 탭에서 학교·세대수 조건을 켜면 page.jsx가 그 자료를 받도록 알린다.
+  useEffect(() => {
+    if (setSchoolWanted) setSchoolWanted(panelView === 'gap' && gapSchool !== 'all');
+    if (setHhWanted) setHhWanted(panelView === 'gap' && gapHH !== 'all');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelView, gapSchool, gapHH]);
   // 갭 순위 탭을 열었을 때만 page.jsx가 전월세를 받아 계산한다. 매매가 아니면 탭이 없으므로 단지 탭으로 돌린다.
   useEffect(() => {
     if (panelView === 'gap' && dealType !== 'trade') { setPanelView('complexes'); return; }
@@ -806,6 +828,8 @@ export default function MapTab({
                       ['준공', gapAge, setGapAge, [['all', '전체'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내']]],
                       ['34평 매매', gapMinN, setGapMinN, [[2, '2건+'], [5, '5건+'], [10, '10건+']]],
                       ['역 거리', gapStation, setGapStation, [['all', '전체'], ['500', '500m 이내'], ['1000', '1km 이내']]],
+                      ['초등학교', gapSchool, setGapSchool, [['all', '전체'], ['300', '300m 이내'], ['500', '500m 이내']]],
+                      ['세대수', gapHH, setGapHH, [['all', '전체'], ['300', '300+'], ['500', '500+'], ['1000', '1000+']]],
                     ].map(([label, val, set, opts]) => (
                       <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 10.5, color: PALETTE.textMuted, width: 52, flexShrink: 0 }}>{label}</span>
@@ -818,13 +842,15 @@ export default function MapTab({
                   <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, lineHeight: 1.5 }}>
                     {!gapRows
                       ? '34평 매매·전세 거래를 불러오는 중…'
-                      : `조회 지역·기간의 34평(전용 약 84㎡) 갭이 작은 순 ${gapRows.length}개 단지예요${gapRows.length < complexGapList.length ? `(조건 전 ${complexGapList.length}개)` : ''}${gapRows.length > 60 ? ' · 60개까지 표시' : ''}. 갭 = 매매 중간값 − 전세 중간값, 매매·전세 각 2건 이상인 단지만.`}
+                      : `조회 지역·기간의 34평(전용 약 84㎡) 갭이 작은 순 ${gapRows.length}개 단지예요${gapRows.length < complexGapList.length ? `(조건 전 ${complexGapList.length}개)` : ''}${gapRows.length > 60 ? ' · 60개까지 표시' : ''}. 갭 = 매매 중간값 − 전세 중간값, 매매·전세 각 2건 이상인 단지만.${gapSchool !== 'all' && !elemSchools ? ' (학교 위치 불러오는 중…)' : ''}${gapHH !== 'all' && hhData && Object.keys(hhData).length === 0 ? ' (세대수 불러오는 중…)' : ''}`}
                   </div>
                   {gapRows && gapRows.length === 0 && (
                     <div style={{ padding: '14px', fontSize: 11.5, color: PALETTE.textMuted }}>조건에 맞는 단지가 없어요. 조건을 넓히거나 기간을 늘려 보세요.</div>
                   )}
                   {(gapRows || []).slice(0, 60).map((g, i) => {
                     const coord = mapComplexCoordByKey.get(g.key) || codeToLatLng[g.regionCode];
+                    const gsc = schoolInfoOf ? schoolInfoOf(g.regionCode, g.dong, g.apt) : null; // v214 (학교 위치를 받았을 때만)
+                    const ghh = householdsOf ? householdsOf(g.regionCode, g.dong, g.apt) : null; // v214 (세대수를 받았을 때만)
                     return (
                       <button
                         key={g.key}
@@ -837,10 +863,15 @@ export default function MapTab({
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i + 1}. {g.apt}</div>
-                            <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(g.regionCode)} {g.dong}{g.buildYear ? ` · ${g.buildYear}년` : ''} · 매매 {g.nSale}·전세 {g.nJeonse}건</div>
+                            <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(g.regionCode)} {g.dong}{g.buildYear ? ` · ${g.buildYear}년` : ''} · 매매 {g.nSale}·전세 {g.nJeonse}건{ghh ? ` · ${ghh.toLocaleString()}세대` : ''}</div>
                             {g.stationName && (
                               <div style={{ fontSize: 10.5, color: PALETTE.textSecondary, marginTop: 2 }} title="가장 가까운 지하철역까지 직선거리예요(걷는 길은 더 길 수 있어요).">
                                 🚇 {g.stationName.endsWith('역') ? g.stationName : `${g.stationName}역`} {g.stationM.toLocaleString()}m{g.stationExact ? '' : ' (동 중심 기준)'}
+                              </div>
+                            )}
+                            {gsc && (
+                              <div style={{ fontSize: 10.5, color: PALETTE.textSecondary, marginTop: 2 }} title="가장 가까운 초등학교까지 직선거리예요(학구·통학로는 다를 수 있어요).">
+                                🏫 {gsc.name} {gsc.m.toLocaleString()}m{gsc.exact ? '' : ' (동 중심 기준)'}
                               </div>
                             )}
                           </div>
