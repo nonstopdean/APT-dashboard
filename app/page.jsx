@@ -1787,9 +1787,11 @@ export default function Page() {
   const elemSchoolCacheRef = useRef({}); // sido(전체이름) -> 초등학교[]
   // v214: 갭 순위 탭에서 학교·세대수 조건을 켜도 같은 자료를 받는다(MapTab이 알려 준다).
   const [schoolWanted, setSchoolWanted] = useState(false);
+  const detailOpen = Boolean(selectedApt); // v216
   const [hhWanted, setHhWanted] = useState(false);
   useEffect(() => {
-    if ((listSchool === 'all' && !schoolWanted) || !currentSidoFull) return undefined;
+    // v216: 단지 상세를 열어도 받는다(입지 요약의 가장 가까운 초등학교).
+    if ((listSchool === 'all' && !schoolWanted && !detailOpen) || !currentSidoFull) return undefined;
     const cached = elemSchoolCacheRef.current[currentSidoFull];
     if (cached) { setElemSchools(cached); return undefined; }
     let cancelled = false;
@@ -1803,7 +1805,7 @@ export default function Page() {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [listSchool, schoolWanted, currentSidoFull]);
+  }, [listSchool, schoolWanted, currentSidoFull, detailOpen]);
   const schoolInfoOf = (regionCode, dong, apt) => {
     if (!elemSchools) return null;
     const { coord, source } = complexCoordOf(regionCode, dong, apt);
@@ -1865,6 +1867,32 @@ export default function Page() {
     const partial = list.filter((r) => r.names.some((x) => x.length >= 2 && (x.includes(n) || n.includes(x))));
     return partial.length === 1 ? partial[0].h : null;
   };
+  // v216: 단지 상세 "입지 요약"(가장 가까운 역·초등학교 거리, 세대수). 세대수는 단지 식별정보를 받았으면 그것, 아니면 기본정보.
+  const locSummary = selectedApt ? (() => {
+    const { regionCode, dong, apt } = selectedApt;
+    const h = householdsOf(regionCode, dong, apt);
+    const basicH = aptBasicInfo?.households ? parseInt(String(aptBasicInfo.households).replace(/[^0-9]/g, ''), 10) : null;
+    return {
+      station: stationInfoOf(regionCode, dong, apt),
+      school: schoolInfoOf(regionCode, dong, apt),
+      schoolLoading: !elemSchools,
+      households: (Number.isFinite(h) && h > 0) ? h : (Number.isFinite(basicH) && basicH > 0 ? basicH : null),
+    };
+  })() : null;
+  // 상세를 연 단지의 정확한 좌표가 아직 없으면 서버 저장분을 물어본다(받으면 listGeoTick으로 다시 그림).
+  useEffect(() => {
+    if (!selectedApt) return undefined;
+    const key = `${selectedApt.regionCode}|${selectedApt.dong}|${selectedApt.apt}`;
+    if (geocodeCache[key] !== undefined) return undefined;
+    let cancelled = false;
+    fetchServerGeocodeCache([key]).then((hits) => {
+      const c = hits?.[key];
+      if (!c) return;
+      geocodeCache[key] = c;
+      if (!cancelled) setListGeoTick((n) => n + 1);
+    });
+    return () => { cancelled = true; };
+  }, [selectedApt]);
   // v215: 단지 목록 조건(역·초교·세대수)을 이 브라우저에 기억한다(localStorage apt-dashboard-list-filters).
   // 저장 effect의 첫 실행은 건너뛴다 — 첫 렌더의 기본값('all')이 저장값을 덮지 않게(비교함 저장과 같은 방식).
   const listFilterSaveRef = useRef(false);
@@ -4205,7 +4233,7 @@ export default function Page() {
           terrainInfo={terrainInfo} terrainLoading={terrainLoading} winterSun={winterSun}
           poiInfo={poiInfo} poiLoading={poiLoading}
           gongsiInfo={gongsiInfo} gongsiLoading={gongsiLoading}
-          aptBasicInfo={aptBasicInfo} nearestStationInfo={nearestStationInfo}
+          aptBasicInfo={aptBasicInfo} nearestStationInfo={nearestStationInfo} locSummary={locSummary}
           nearbySchools={nearbySchools} schoolsLoading={schoolsLoading}
           nearbyRadius={nearbyRadius} setNearbyRadius={setNearbyRadius}
           nearbyComplexes={nearbyComplexes} radiusSummary={radiusSummary} peer34={peer34}
