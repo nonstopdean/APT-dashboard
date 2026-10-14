@@ -1768,19 +1768,55 @@ export default function Page() {
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
   // v207: 단지 목록 행의 가장 가까운 지하철역. 좌표는 핀과 같은 규칙(정확한 위치 > 동 중심점).
-  const stationInfoOf = (regionCode, dong, apt) => {
+  const complexCoordOf = (regionCode, dong, apt) => {
     const key = `${regionCode}|${dong}|${apt}`;
     const m = mapComplexCoordByKey.get(key);
     const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : findDongCentroid(regionCode, dong);
-    const { coord, source } = resolveMarkerCoord(approx, geocodeCache[key]);
+    return resolveMarkerCoord(approx, geocodeCache[key]);
+  };
+  const stationInfoOf = (regionCode, dong, apt) => {
+    const { coord, source } = complexCoordOf(regionCode, dong, apt);
     const st = coord ? nearestStation(coord.lat, coord.lng) : null;
     return st ? { name: st.name, m: st.distanceM, exact: source === 'exact' } : null;
   };
   const [listStation, setListStation] = useState('all'); // v207: 단지 목록 역 거리 조건(m 이내, 'all'이면 전체)
+  // v211: 가장 가까운 초등학교(초품아 조건). 학교 위치는 조건을 켰을 때만 지금 보는 시·도 것을 받는다(약 5초, 학교 레이어와 같은 저장분).
+  const [listSchool, setListSchool] = useState('all'); // 'all' | '300' | '500' (m 이내)
+  const [elemSchools, setElemSchools] = useState(null); // 초등학교 [{name, lat, lng}] | null(아직 없음)
+  const elemSchoolCacheRef = useRef({}); // sido(전체이름) -> 초등학교[]
+  useEffect(() => {
+    if (listSchool === 'all' || !currentSidoFull) return undefined;
+    const cached = elemSchoolCacheRef.current[currentSidoFull];
+    if (cached) { setElemSchools(cached); return undefined; }
+    let cancelled = false;
+    fetch(`/api/school-locations?sido=${encodeURIComponent(currentSidoFull)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        const list = (json?.schools || []).filter((s) => s.kind === '초등학교');
+        if (!list.length) return;
+        elemSchoolCacheRef.current[currentSidoFull] = list;
+        if (!cancelled) setElemSchools(list);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [listSchool, currentSidoFull]);
+  const schoolInfoOf = (regionCode, dong, apt) => {
+    if (!elemSchools) return null;
+    const { coord, source } = complexCoordOf(regionCode, dong, apt);
+    if (!coord) return null;
+    let best = null;
+    const dLat = 0.02; // 약 2km 밖 학교는 건너뛴다(계산 줄이기)
+    elemSchools.forEach((s) => {
+      if (Math.abs(s.lat - coord.lat) > dLat || Math.abs(s.lng - coord.lng) > dLat * 1.3) return;
+      const m = distanceMeters(coord.lat, coord.lng, s.lat, s.lng);
+      if (!best || m < best.m) best = { name: s.name, m };
+    });
+    return best ? { name: best.name, m: Math.round(best.m), exact: source === 'exact' } : null;
+  };
   // v208: 역 거리 조건을 켜면 조회 지역 단지들의 서버 저장 좌표를 300개씩 받아 둔다(동 중심점만으로는 동 하나가 통째로 들어가거나 빠진다).
   const [listGeoTick, setListGeoTick] = useState(0);
   useEffect(() => {
-    if (listStation === 'all') return undefined;
+    if (listStation === 'all' && listSchool === 'all') return undefined;
     // v210: 지도 핀(거래 없는 목록 단지·주변 구 포함)도 같은 조건으로 거르므로 mapComplexes 키도 함께 묻는다.
     const keys = [...new Set([...complexCompare.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`), ...mapComplexes.map((c) => c.key)])]
       .filter((k) => geocodeCache[k] === undefined).slice(0, 2400);
@@ -1795,7 +1831,7 @@ export default function Page() {
       }
     })();
     return () => { cancelled = true; };
-  }, [listStation, complexCompare, mapComplexes]);
+  }, [listStation, listSchool, complexCompare, mapComplexes]);
 
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
   const [priceMoveFilter, setPriceMoveFilter] = useState('all'); // 'all' | 'high' | 'drop'
@@ -1983,12 +2019,19 @@ export default function Page() {
   const mapPanelList = useMemo(() => {
     // v207: 역 거리 조건은 60개로 자르기 전에 건다(자른 뒤 거르면 화면 안에 맞는 단지가 있어도 빠진다).
     const maxM = listStation === 'all' ? null : Number(listStation);
+    const maxSchoolM = listSchool === 'all' || !elemSchools ? null : Number(listSchool); // v211: 학교 위치를 받기 전엔 거르지 않는다
     const nearStation = (c) => {
-      if (maxM == null) return true;
-      const st = stationInfoOf(c.regionCode, c.dong, c.apt);
-      return st != null && st.m <= maxM;
+      if (maxM != null) {
+        const st = stationInfoOf(c.regionCode, c.dong, c.apt);
+        if (st == null || st.m > maxM) return false;
+      }
+      if (maxSchoolM != null) {
+        const sc = schoolInfoOf(c.regionCode, c.dong, c.apt);
+        if (sc == null || sc.m > maxSchoolM) return false;
+      }
+      return true;
     };
-    if (!mapViewportBounds) return (maxM == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
+    if (!mapViewportBounds) return (maxM == null && maxSchoolM == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
     const filtered = complexCompare.filter((c) => {
       const key = `${c.regionCode}|${c.dong}|${c.apt}`;
       const m = mapComplexCoordByKey.get(key);
@@ -2003,7 +2046,7 @@ export default function Page() {
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick]);
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
@@ -2615,7 +2658,7 @@ export default function Page() {
     // 실제로 확대했을 때만 받아온다 — 안 그러면 지역 선택할 때마다 큰 파일을 미리 받아와서 느려진다.
     // "동 색칠 끄기"가 켜져 있으면 아예 받아오지도 않는다.
     // v206: 갭 순위 탭은 줌과 상관없이 단지마다 역 거리를 내야 해서(동 중심점 필요) 멀리 볼 때도 받는다.
-    if (!dongLayerOn || (mapZoomTier === 'far' && !gapListOn && listStation === 'all')) return undefined;
+    if (!dongLayerOn || (mapZoomTier === 'far' && !gapListOn && listStation === 'all' && listSchool === 'all')) return undefined;
     const neededSidos = new Set();
     selected.forEach((code) => {
       for (const g of REGION_GROUPS) {
@@ -2656,7 +2699,7 @@ export default function Page() {
       setDongRawFeatures((prev) => [...prev, ...results.flat()]);
     }).catch(() => { toLoad.forEach((s) => loadedSidosRef.current.delete(s)); }); // 실패하면 다음에 다시 받게
     return undefined;
-  }, [selected, mapZoomTier, dongLayerOn, browseData, gapListOn, listStation]);
+  }, [selected, mapZoomTier, dongLayerOn, browseData, gapListOn, listStation, listSchool]);
 
   // 동별 가격/거래량 집계는 지도를 그릴 때마다 allTx를 반복 filter하지 않도록
   // 최초 1회 인덱스로 만들어둔다. 기존 O(동 수 × 거래건수) 구조를
@@ -3279,6 +3322,7 @@ export default function Page() {
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
           complexGapList={complexGapRows} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
+          schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
