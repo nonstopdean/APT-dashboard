@@ -1785,8 +1785,11 @@ export default function Page() {
   const [listSchool, setListSchool] = useState('all'); // 'all' | '300' | '500' (m 이내)
   const [elemSchools, setElemSchools] = useState(null); // 초등학교 [{name, lat, lng}] | null(아직 없음)
   const elemSchoolCacheRef = useRef({}); // sido(전체이름) -> 초등학교[]
+  // v214: 갭 순위 탭에서 학교·세대수 조건을 켜도 같은 자료를 받는다(MapTab이 알려 준다).
+  const [schoolWanted, setSchoolWanted] = useState(false);
+  const [hhWanted, setHhWanted] = useState(false);
   useEffect(() => {
-    if (listSchool === 'all' || !currentSidoFull) return undefined;
+    if ((listSchool === 'all' && !schoolWanted) || !currentSidoFull) return undefined;
     const cached = elemSchoolCacheRef.current[currentSidoFull];
     if (cached) { setElemSchools(cached); return undefined; }
     let cancelled = false;
