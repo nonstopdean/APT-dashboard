@@ -1825,8 +1825,8 @@ export default function Page() {
   const [hhData, setHhData] = useState({}); // 구 코드 -> [[동, 세대수, 연도, 이름들]]
   const hhAskedRef = useRef(new Set());
   useEffect(() => {
-    if (listHH === 'all' && !hhWanted) return undefined;
-    const codes = [...new Set([...complexCompare.map((c) => c.regionCode), ...mapComplexes.map((c) => c.regionCode)])]
+    if (listHH === 'all' && !hhWanted && !detailOpen) return undefined; // v217: 상세를 열어도(입지 요약 세대수)
+    const codes = [...new Set([selectedApt?.regionCode, ...complexCompare.map((c) => c.regionCode), ...mapComplexes.map((c) => c.regionCode)])]
       .filter((c) => /^\d{5}$/.test(c || '') && !hhAskedRef.current.has(c)).slice(0, 8);
     if (!codes.length) return undefined;
     codes.forEach((c) => hhAskedRef.current.add(c));
@@ -1841,7 +1841,7 @@ export default function Page() {
       }
     })();
     return undefined; // 받은 결과는 버리지 않는다(구마다 한 번만 묻기 때문)
-  }, [listHH, hhWanted, complexCompare, mapComplexes]);
+  }, [listHH, hhWanted, detailOpen, selectedApt, complexCompare, mapComplexes]);
   const hhIndex = useMemo(() => {
     const idx = new Map(); // `${구}|${동}` -> [{ h, names }]
     Object.entries(hhData).forEach(([code, rows]) => rows.forEach(([d, h, , names]) => {
