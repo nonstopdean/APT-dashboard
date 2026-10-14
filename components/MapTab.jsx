@@ -38,7 +38,7 @@ export default function MapTab({
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
   unitSizeFilter, setUnitSizeFilter, buildYearFilter, setBuildYearFilter,
   complexGapList, setGapListOn, browseRegionCount = 0,
-  stationInfoOf, listStation = 'all', setListStation,
+  stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
@@ -87,7 +87,6 @@ export default function MapTab({
     try { window.localStorage.setItem(PIN_PRICE_KEY, k); } catch (e) { /* 저장 실패는 무시 */ }
   };
   const pinBase = mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes;
-  const pinComplexes = useMemo(() => (kwNorm ? pinBase.filter(matchKw) : pinBase), [pinBase, kwNorm, matchKw]);
   // v207: 역 거리 조건. "현재 화면" 목록은 page.jsx가 이미 걸러서 주고, 검색·묶음·예산 목록은 여기서 거른다.
   const nearStation = (c) => {
     if (listStation === 'all' || !stationInfoOf) return true;
@@ -112,6 +111,14 @@ export default function MapTab({
 
   // 비교함에 담은 단지 키(지도에서 ★로 강조). pinnedComplexes가 바뀔 때만 새 Set을 만들어 지도가 불필요하게 다시 그려지지 않게 한다.
   const pinnedKeys = useMemo(() => new Set((pinnedComplexes || []).map(pinnedKeyOf)), [pinnedComplexes]);
+  // 지도 핀: 검색어와 역 거리 조건(v209)으로 거른다. 비교함 단지(★)는 조건과 상관없이 남긴다.
+  // 조건이 없으면 원래 배열을 그대로 넘긴다(참조가 바뀌면 지도가 마커를 다시 그린다, 규칙 3).
+  // 정확한 좌표를 새로 받으면(listGeoTick) 다시 거른다.
+  const pinComplexes = useMemo(() => {
+    if (!kwNorm && listStation === 'all') return pinBase;
+    return pinBase.filter((c) => (!kwNorm || matchKw(c)) && (pinnedKeys.has(c.key) || nearStation(c)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinBase, kwNorm, matchKw, listStation, listGeoTick, pinnedKeys]);
   // 비교함 → "지도에서 이 단지들만 보기": 기존 "비교 목록만 보는 중" 필터를 쓰고, 좌표를 아는 첫 단지로 지도를 옮긴다.
   const focusPinnedOnMap = (keys) => {
     setMapFocusKeys(new Set(keys));
@@ -735,7 +742,7 @@ export default function MapTab({
                   단지 탐색
                   {mapPanelMinimized && (
                     <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 600, color: PALETTE.textMuted }}>
-                      {(mapPanelList.total ?? complexCompare.length).toLocaleString()}개
+                      {(mapPanelList.total ?? complexCompare.length).toLocaleString()}개{listStation !== 'all' ? ` · 역 ${stationLabel} 이내` : ''}
                     </span>
                   )}
                 </div>
