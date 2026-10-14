@@ -26,7 +26,7 @@ export default function ComplexDetail({
   terrainInfo, terrainLoading, winterSun,
   poiInfo, poiLoading,
   gongsiInfo, gongsiLoading,
-  aptBasicInfo, nearestStationInfo, nearbySchools, schoolsLoading,
+  aptBasicInfo, nearestStationInfo, nearbySchools, schoolsLoading, locSummary,
   nearbyRadius, setNearbyRadius, nearbyComplexes, radiusSummary, peer34,
   similarComplexes,
   pinnedComplexes, setPinnedComplexes,
@@ -372,6 +372,25 @@ export default function ComplexDetail({
             <p style={{ fontSize: 9.5, color: PALETTE.textMuted, margin: '8px 0 0' }}>
               중개보수·이사비·법무비 등은 대략치예요. 실제 자금 계획은 은행·중개사 확인이 필요해요.
             </p>
+          </div>
+        );
+
+  // v216: 입지 요약 — 목록과 같은 좌표 규칙(정확한 위치 > 동 중심점)으로 가장 가까운 역·초등학교 거리와 세대수를 한 줄에.
+  const locParts = locSummary ? [
+    locSummary.station && `🚇 ${locSummary.station.name.endsWith('역') ? locSummary.station.name : `${locSummary.station.name}역`} ${locSummary.station.m.toLocaleString()}m`,
+    locSummary.school && `🏫 ${locSummary.school.name} ${locSummary.school.m.toLocaleString()}m`,
+    locSummary.households && `🏢 ${locSummary.households.toLocaleString()}세대`,
+  ].filter(Boolean) : [];
+  const locApprox = locSummary && ((locSummary.station && !locSummary.station.exact) || (locSummary.school && !locSummary.school.exact));
+  const bLocSummary = locParts.length > 0 && (
+          <div
+            style={{ fontSize: 12, color: PALETTE.textSecondary, background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px', marginBottom: 10, lineHeight: 1.6 }}
+            title="직선거리예요(걷는 길·학구는 다를 수 있어요)."
+          >
+            <b style={{ color: PALETTE.textPrimary, marginRight: 6 }}>입지</b>
+            {locParts.join(' · ')}
+            {locApprox && <span style={{ color: PALETTE.textMuted }}> (동 중심 기준)</span>}
+            {locSummary.schoolLoading && <span style={{ color: PALETTE.textMuted }}> · 초등학교 찾는 중…</span>}
           </div>
         );
 
@@ -861,7 +880,7 @@ export default function ComplexDetail({
       <DetailSections
         summaryLine={summaryLine}
         sections={[
-          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bSummaryCards, bSampleInfo, bJeonseTrend, bGapTable, bGapTrend, bVolumeBanner, bCompareBtn, bAlert] },
+          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bLocSummary, bSummaryCards, bSampleInfo, bJeonseTrend, bGapTable, bGapTrend, bVolumeBanner, bCompareBtn, bAlert] },
           { id: 'trend', title: '가격 추이', defaultOpen: true, blocks: [bAreaChips, bTrendToggle, bTrendSingle, bTrendCompare, bVolumeChart] },
           { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bBasicInfo, bGongsiLoading, bGongsi] },
           { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
