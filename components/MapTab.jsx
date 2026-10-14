@@ -38,6 +38,7 @@ export default function MapTab({
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
   unitSizeFilter, setUnitSizeFilter, buildYearFilter, setBuildYearFilter,
   complexGapList, setGapListOn, browseRegionCount = 0,
+  stationInfoOf, listStation = 'all', setListStation,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
@@ -87,7 +88,18 @@ export default function MapTab({
   };
   const pinBase = mapFocusMatches || budgetMatches || priceMoveMatches || mapComplexes;
   const pinComplexes = useMemo(() => (kwNorm ? pinBase.filter(matchKw) : pinBase), [pinBase, kwNorm, matchKw]);
-  const kwRows = useMemo(() => (kwNorm ? complexCompare.filter(matchKw) : null), [complexCompare, kwNorm, matchKw]);
+  // v207: 역 거리 조건. "현재 화면" 목록은 page.jsx가 이미 걸러서 주고, 검색·묶음·예산 목록은 여기서 거른다.
+  const nearStation = (c) => {
+    if (listStation === 'all' || !stationInfoOf) return true;
+    const st = stationInfoOf(c.regionCode, c.dong, c.apt);
+    return st != null && st.m <= Number(listStation);
+  };
+  const kwRows = useMemo(
+    () => (kwNorm ? complexCompare.filter((c) => matchKw(c) && nearStation(c)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [complexCompare, kwNorm, matchKw, listStation],
+  );
+  const stationLabel = listStation === '500' ? '500m' : '1km';
   const chipStyle = (on) => ({
     flexShrink: 0, border: `1px solid ${on ? PALETTE.accent : PALETTE.border}`, borderRadius: 999, padding: '5px 10px', whiteSpace: 'nowrap',
     background: on ? PALETTE.accent : '#fff', color: on ? '#fff' : PALETTE.textSecondary, fontSize: 11.5, fontWeight: on ? 700 : 500, cursor: 'pointer',
@@ -816,6 +828,14 @@ export default function MapTab({
                   })}
                 </>
               ) : (<>
+              {setListStation && (
+                <div style={{ padding: '6px 14px', borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, color: PALETTE.textMuted, width: 52, flexShrink: 0 }}>역 거리</span>
+                  {[['all', '전체'], ['500', '500m 이내'], ['1000', '1km 이내']].map(([k, l]) => (
+                    <button key={k} onClick={() => setListStation(k)} style={{ ...chipStyle(listStation === k), padding: '3px 8px', fontSize: 10.5 }}>{l}</button>
+                  ))}
+                </div>
+              )}
               {kwRows && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span>"{mapKeyword.trim()}" 검색 결과 {kwRows.length}개{kwRows.length > 60 ? ' (60개까지 표시)' : ''}</span>
@@ -824,7 +844,7 @@ export default function MapTab({
               )}
               {!kwRows && clusterRows && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span>누른 묶음의 단지 {clusterRows.length}개</span>
+                  <span>누른 묶음의 단지 {clusterRows.length}개{listStation !== 'all' ? ` · 역 ${stationLabel} 이내 ${clusterRows.filter(nearStation).length}개` : ''}</span>
                   <span style={{ cursor: 'pointer', color: PALETTE.accent, textDecoration: 'underline', flexShrink: 0 }} onClick={() => setClusterKeys(null)}>전체 보기</span>
                 </div>
               )}
@@ -835,7 +855,7 @@ export default function MapTab({
                   <span>
                     {budgetMatches.length === 0
                       ? `예산 ${budgetAmount}억 이하인 단지가 없어요`
-                      : `예산 ${budgetAmount}억 이하 단지 ${budgetMatches.length}개`}
+                      : `예산 ${budgetAmount}억 이하 단지 ${budgetMatches.length}개${listStation !== 'all' ? ` · 역 ${stationLabel} 이내 ${budgetMatches.filter(nearStation).length}개` : ''}`}
                   </span>
                   <span
                     data-budget-clear="1"
@@ -848,10 +868,10 @@ export default function MapTab({
               )}
               {!kwRows && !clusterRows && !budgetMatches && mapViewportBounds && (
                 <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}` }}>
-                  현재 화면의 거래 있는 단지 {mapPanelList.total ?? mapPanelList.length}개{(mapPanelList.total ?? 0) > mapPanelList.length ? ` (${mapPanelList.length}개까지 표시)` : ''}
+                  현재 화면의 거래 있는 단지{listStation !== 'all' ? `(역 ${stationLabel} 이내)` : ''} {mapPanelList.total ?? mapPanelList.length}개{(mapPanelList.total ?? 0) > mapPanelList.length ? ` (${mapPanelList.length}개까지 표시)` : ''}
                 </div>
               )}
-              {(kwRows ? kwRows.slice(0, 60) : (clusterRows || budgetMatches || mapPanelList)).map((c, i) => {
+              {(kwRows ? kwRows.slice(0, 60) : (clusterRows || budgetMatches)?.filter(nearStation) || mapPanelList).map((c, i) => {
                 const coord = mapComplexCoordByKey.get(`${c.regionCode}|${c.dong}|${c.apt}`) || codeToLatLng[c.regionCode];
                 const priceVal = c.latestPrice ?? (isRent ? c.deposit : c.amount);
                 const areaVal = c.latestArea ?? c.area;
@@ -860,6 +880,7 @@ export default function MapTab({
                 const built = Number(c.buildYear);
                 const isNew = built > 0 && new Date().getFullYear() - built <= 5;
                 const showChange = c.change != null && c.count >= 2;
+                const st = stationInfoOf ? stationInfoOf(c.regionCode, c.dong, c.apt) : null; // v207
                 return (
                   <button
                     key={`${c.regionCode}|${c.dong}|${c.apt}|${i}`}
@@ -879,6 +900,11 @@ export default function MapTab({
                           {isNew && <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: PALETTE.accent, background: '#FDECEC', borderRadius: 4, padding: '1px 4px' }}>신축</span>}
                         </div>
                         <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong}{built > 0 ? ` · ${built}년` : ''}{c.count != null ? ` · ${c.count}건` : ''}</div>
+                        {st && (
+                          <div style={{ fontSize: 10.5, color: PALETTE.textSecondary, marginTop: 2 }} title="가장 가까운 지하철역까지 직선거리예요(걷는 길은 더 길 수 있어요).">
+                            🚇 {st.name.endsWith('역') ? st.name : `${st.name}역`} {st.m.toLocaleString()}m{st.exact ? '' : ' (동 중심 기준)'}
+                          </div>
+                        )}
                       </div>
                       <div style={{ flexShrink: 0, textAlign: 'right' }}>
                         <div style={{ fontSize: 12.5, fontWeight: 800 }}>{priceVal != null ? fmtWon(priceVal) : '-'}</div>
