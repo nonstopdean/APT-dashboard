@@ -1777,6 +1777,23 @@ export default function Page() {
     return st ? { name: st.name, m: st.distanceM, exact: source === 'exact' } : null;
   };
   const [listStation, setListStation] = useState('all'); // v207: 단지 목록 역 거리 조건(m 이내, 'all'이면 전체)
+  // v208: 역 거리 조건을 켜면 조회 지역 단지들의 서버 저장 좌표를 300개씩 받아 둔다(동 중심점만으로는 동 하나가 통째로 들어가거나 빠진다).
+  const [listGeoTick, setListGeoTick] = useState(0);
+  useEffect(() => {
+    if (listStation === 'all') return undefined;
+    const keys = complexCompare.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`).filter((k) => geocodeCache[k] === undefined).slice(0, 1500);
+    if (!keys.length) return undefined;
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < keys.length && !cancelled; i += 300) {
+        const hits = await fetchServerGeocodeCache(keys.slice(i, i + 300));
+        const entries = Object.entries(hits || {});
+        entries.forEach(([k, coord]) => { geocodeCache[k] = coord; }); // 취소돼도 받은 좌표는 남긴다(다시 묻지 않으므로)
+        if (!cancelled && entries.length) setListGeoTick((n) => n + 1);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [listStation, complexCompare]);
 
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
   const [priceMoveFilter, setPriceMoveFilter] = useState('all'); // 'all' | 'high' | 'drop'
@@ -1984,7 +2001,7 @@ export default function Page() {
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids]);
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
