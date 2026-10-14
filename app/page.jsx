@@ -1781,7 +1781,9 @@ export default function Page() {
   const [listGeoTick, setListGeoTick] = useState(0);
   useEffect(() => {
     if (listStation === 'all') return undefined;
-    const keys = complexCompare.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`).filter((k) => geocodeCache[k] === undefined).slice(0, 1500);
+    // v210: 지도 핀(거래 없는 목록 단지·주변 구 포함)도 같은 조건으로 거르므로 mapComplexes 키도 함께 묻는다.
+    const keys = [...new Set([...complexCompare.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`), ...mapComplexes.map((c) => c.key)])]
+      .filter((k) => geocodeCache[k] === undefined).slice(0, 2400);
     if (!keys.length) return undefined;
     let cancelled = false;
     (async () => {
@@ -1793,7 +1795,7 @@ export default function Page() {
       }
     })();
     return () => { cancelled = true; };
-  }, [listStation, complexCompare]);
+  }, [listStation, complexCompare, mapComplexes]);
 
   const [budgetSearchOpen, setBudgetSearchOpen] = useState(false);
   const [priceMoveFilter, setPriceMoveFilter] = useState('all'); // 'all' | 'high' | 'drop'
