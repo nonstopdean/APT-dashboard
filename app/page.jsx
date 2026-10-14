@@ -1865,6 +1865,25 @@ export default function Page() {
     const partial = list.filter((r) => r.names.some((x) => x.length >= 2 && (x.includes(n) || n.includes(x))));
     return partial.length === 1 ? partial[0].h : null;
   };
+  // v215: 단지 목록 조건(역·초교·세대수)을 이 브라우저에 기억한다(localStorage apt-dashboard-list-filters).
+  // 저장 effect의 첫 실행은 건너뛴다 — 첫 렌더의 기본값('all')이 저장값을 덮지 않게(비교함 저장과 같은 방식).
+  const listFilterSaveRef = useRef(false);
+  useEffect(() => {
+    try {
+      const v = JSON.parse(window.localStorage.getItem('apt-dashboard-list-filters') || 'null');
+      if (v && typeof v === 'object') {
+        if (['all', '500', '1000'].includes(v.station)) setListStation(v.station);
+        if (['all', '300', '500'].includes(v.school)) setListSchool(v.school);
+        if (['all', '300', '500', '1000'].includes(v.hh)) setListHH(v.hh);
+      }
+    } catch (e) { /* 저장소를 못 쓰면 기본값 */ }
+  }, []);
+  useEffect(() => {
+    if (!listFilterSaveRef.current) { listFilterSaveRef.current = true; return; }
+    try {
+      window.localStorage.setItem('apt-dashboard-list-filters', JSON.stringify({ station: listStation, school: listSchool, hh: listHH }));
+    } catch (e) { /* 저장 실패는 무시 */ }
+  }, [listStation, listSchool, listHH]);
   // v208: 역 거리 조건을 켜면 조회 지역 단지들의 서버 저장 좌표를 300개씩 받아 둔다(동 중심점만으로는 동 하나가 통째로 들어가거나 빠진다).
   const [listGeoTick, setListGeoTick] = useState(0);
   useEffect(() => {
