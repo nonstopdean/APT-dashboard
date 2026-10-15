@@ -42,7 +42,7 @@ export default function MapTab({
   stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
-  setSchoolWanted, setHhWanted,
+  setSchoolWanted, setHhWanted, setPanelCover,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
@@ -214,6 +214,7 @@ export default function MapTab({
   const mapObserverRef = useRef(null);
   const mapAreaRef = useCallback((el) => {
     if (mapObserverRef.current) { mapObserverRef.current.disconnect(); mapObserverRef.current = null; }
+    mapElRef.current = el;
     if (!el) return;
     const measure = () => {
       const w = Math.round(el.getBoundingClientRect().width);
@@ -226,6 +227,23 @@ export default function MapTab({
     }
   }, []);
   const compact = mapW > 0 && mapW < 820;
+  // v219: 목록 창이 지도를 가린 만큼 "현재 화면" 목록 범위를 줄이도록 page.jsx에 알린다.
+  // 오른쪽에 떠 있으면 가리지 않은 가로 비율(lng), 폰처럼 아래 시트면 세로 비율(lat). 접혀 있으면 null.
+  // 렌더마다 재되 값이 같으면 상태를 바꾸지 않는다(소수 둘째 자리까지).
+  const mapElRef = useRef(null);
+  const panelElRef = useRef(null);
+  useEffect(() => {
+    if (!setPanelCover) return;
+    let cover = null;
+    const m = mapElRef.current && mapElRef.current.getBoundingClientRect();
+    const p = panelElRef.current && panelElRef.current.getBoundingClientRect();
+    if (m && p && !mapPanelMinimized && m.width > 0 && m.height > 0) {
+      const r2 = (v) => Math.round(Math.max(0.2, Math.min(1, v)) * 100) / 100;
+      if (p.width < m.width * 0.8 && p.left > m.left + m.width * 0.3) cover = { lng: r2((p.left - m.left) / m.width) };
+      else if (p.top > m.top + m.height * 0.2) cover = { lat: r2((p.top - m.top) / m.height) };
+    }
+    setPanelCover((prev) => (JSON.stringify(prev) === JSON.stringify(cover) ? prev : cover));
+  });
   const [statusOpen, setStatusOpen] = useState(false);
   // 좁아지는 순간 한 번만 목록을 접는다(사용자가 다시 펼치면 그대로 둔다). v186부터 폰도 접힌 채 시작해
   // 지도를 넓게 보여주고, 아래쪽 "단지 탐색 N개 · 목록 열기" 막대로 연다.
@@ -785,7 +803,7 @@ export default function MapTab({
         {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
         {/* 단지 상세 패널이 오른쪽에 떠 있을 때는 겹치지 않게 숨긴다. */}
         {allTx.length > 0 && !selectedApt && (
-          <div className={`map-complex-panel${mapPanelMinimized ? ' is-min' : ''}`} style={{
+          <div ref={panelElRef} className={`map-complex-panel${mapPanelMinimized ? ' is-min' : ''}`} style={{
             // 도구줄(카드 포함) 바로 아래. 아직 못 쟀거나 한 줄뿐이면 예전 값(72)을 유지한다.
             position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: compact ? 260 : 292, zIndex: 19,
             bottom: mapPanelMinimized ? 'auto' : 18,
