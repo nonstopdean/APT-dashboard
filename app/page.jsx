@@ -1937,6 +1937,7 @@ export default function Page() {
   const [mapFocusKeys, setMapFocusKeys] = useState(null); // Set<string> | null
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
+  const [panelCover, setPanelCover] = useState(null); // v219: 목록 창이 가리지 않은 지도 비율 { lng } 또는 { lat } | null(MapTab이 잰다)
   const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고). mapPanelList보다 앞에 둔다
   const [subwayLayerOn, setSubwayLayerOn] = useState(false);
   const [schoolLayerOn, setSchoolLayerOn] = useState(false);
@@ -2136,21 +2137,27 @@ export default function Page() {
       return true;
     };
     if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
+    // v219: 목록 창(넓은 화면은 오른쪽, 폰은 아래 시트)이 가린 부분은 "현재 화면"에서 뺄다. 화면 비율로 경도/위도를 자른다
+    // (작은 범위라 메르카토르 왜곡은 무시). 지도 범위 자체(mapViewportBounds)는 역·학교 표시와 주변 구 불러오기에 그대로 쓴다.
+    const vb = !panelCover ? mapViewportBounds
+      : panelCover.lng ? { ...mapViewportBounds, neLng: mapViewportBounds.swLng + (mapViewportBounds.neLng - mapViewportBounds.swLng) * panelCover.lng }
+        : panelCover.lat ? { ...mapViewportBounds, swLat: mapViewportBounds.neLat - (mapViewportBounds.neLat - mapViewportBounds.swLat) * panelCover.lat }
+          : mapViewportBounds;
     const filtered = complexCompare.filter((c) => {
       const key = `${c.regionCode}|${c.dong}|${c.apt}`;
       const m = mapComplexCoordByKey.get(key);
       const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : null;
       const { coord } = resolveMarkerCoord(approx, geocodeCache[key]);
       if (!coord) return false;
-      return coord.lat >= mapViewportBounds.swLat && coord.lat <= mapViewportBounds.neLat
-        && coord.lng >= mapViewportBounds.swLng && coord.lng <= mapViewportBounds.neLng
+      return coord.lat >= vb.swLat && coord.lat <= vb.neLat
+        && coord.lng >= vb.swLng && coord.lng <= vb.neLng
         && nearStation(c);
     });
     const out = filtered.slice(0, 60);
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex]);
+  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex, panelCover]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
@@ -3428,7 +3435,7 @@ export default function Page() {
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
-          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted}
+          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
