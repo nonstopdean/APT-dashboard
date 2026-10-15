@@ -2137,7 +2137,7 @@ export default function Page() {
       return true;
     };
     if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
-    // v219: 목록 창(넓은 화면은 오른쪽, 폰은 아래 시트)이 가린 부분은 "현재 화면"에서 뺄다. 화면 비율로 경도/위도를 자른다
+    // v219: 목록 창(넓은 화면은 오른쪽, 폰은 아래 시트)이 가린 부분은 "현재 화면"에서 뺀다. 화면 비율로 경도/위도를 자른다
     // (작은 범위라 메르카토르 왜곡은 무시). 지도 범위 자체(mapViewportBounds)는 역·학교 표시와 주변 구 불러오기에 그대로 쓴다.
     const vb = !panelCover ? mapViewportBounds
       : panelCover.lng ? { ...mapViewportBounds, neLng: mapViewportBounds.swLng + (mapViewportBounds.neLng - mapViewportBounds.swLng) * panelCover.lng }
