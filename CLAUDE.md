@@ -24,7 +24,7 @@
 - `components/`: `MapTab`(지도 탭 전체, 상태 카드·레이어 패널·목록 패널) · `NaverChoropleth`(네이버 지도: 구/동 색칠, 마커, 클러스터, 위치 다듬기) · `KakaoChoropleth`(키 없을 때의 대체 지도, 기능이 적다) · `ComplexDetail`(단지 상세; 지도 탭에서는 `FloatingWindow` 안에 `DetailSections`로 묶여 나오고, 다른 탭 모달은 예전 순서 그대로) · `PinnedCompareDrawer`(비교함: 목록/표) · `FloatingWindow`(이동·크기조절·최소화 창)
 - `lib/` (순수 함수 위주, 테스트하기 쉬움): `ui-helpers`(공유 상수·포맷; **앱 안에서 순환 import를 피하는 말단 모듈**, `APP_BUILD` 여기) · `regions`(지역 코드) · `search-parse`(헤더 검색 문장 해석) · `geocode-pick`(카카오 결과 지역 검증, 좌표 우선순위) · `geocode-store`/`geocode-warm`/`kv`(서버 좌표 저장·예열) · `geocodeCache`(브라우저 캐시, 서버 조회 통계) · `complex-match`(단지명 정규화의 **유일한** 출처) · `complex-name`(이름 같은 단지 병합) · `compare-grid`(비교 표 계산) · `market-change`(가격변동/거래량변동 계산) · `window-layout`(창 배치 수학) · `health`
 - `app/api/*`: 거래(`trades`,`rents`,`offi-*`,`silv-trades`), 단지(`apt-list`,`apt-basic`,`apt-identity`), `gongsi`, `poi`, `schools`,`school-locations`, 인구(`population`,`migration`), `rone`, `subscriptions`, 알림(`user-alerts`,`check-alerts`), 좌표(`geocode`,`geocode-warmup`,`geocode-migrate`), `health`
-- 관리자 페이지: `/admin/warmup`(지역별 좌표 예열 + "기존 좌표 변환"), `/admin/health`(배포 상태 점검). 둘 다 로그인 없음.
+- 관리자 페이지: `/admin/warmup`(지역별 좌표 예열 + "기존 좌표 변환"), `/admin/health`(배포 상태 점검). v220부터 Vercel 환경변수 `ADMIN_TOKEN` 값을 페이지 입력칸에 넣어야 쓸 수 있다(`x-admin-token` 헤더, `lib/admin-auth.js`, 값이 없으면 잠김). `/api/health`는 잠겨 있어도 빌드 번호는 돌려준다.
 
 ## 좌표 저장 (Upstash)
 - 새 형식 `geoi:<지역코드>|<동>|<정규화한 단지명>`(표기가 달라도 같은 단지로 찾음), 옛 형식 `geo:<지역코드>|<동>|<단지명>`.
@@ -100,6 +100,7 @@
 - **v216~217 = 단지 상세 "입지 요약"**(지도 탭 상세 창 '요약' 맨 위 한 줄, 다른 탭 모달은 규칙 5대로 그대로): "🚇 ○○역 N m · 🏫 ○○초등학교 N m · 🏢 N세대"(`page.jsx` `locSummary` → `ComplexDetail.jsx` `bLocSummary`). 좌표는 목록과 같은 `complexCoordOf`(상세를 열면 그 단지 서버 좌표도 물어봄), 동 중심이면 "(동 중심 기준)". 상세를 열면 학교 위치(지금 시·도)와 그 구의 `/api/households`도 받는다(v217: 헬리오시티처럼 국토부 기본정보에 세대수가 없어 빠지던 것). 세대수는 식별정보 매칭 우선, 없으면 기본정보. 검증(실제 사이트): 헬리오시티 송파역 504m·서울가락초등학교 258m·9,510세대 — 서버 좌표와 학교 API로 따로 계산한 값과 일치. 참고: 기존 "거래 회전율" 카드는 여전히 기본정보 세대수만 써서 헬리오시티는 "세대수 정보 없음".
 - **v218 = 거래회전율도 식별정보 세대수 사용**(`ComplexDetail.jsx` 요약 카드): 기본정보 세대수가 없으면 `locSummary.households`로 계산. 검증: 헬리오시티 "1.8% · 거래 174건 / 세대수 9,510"(174÷9,510=1.83%).
 - **v219 = "현재 화면" 목록에서 목록 창이 가린 부분 제외**(`MapTab.jsx`가 렌더마다 목록 창·지도 영역 크기를 재서 `setPanelCover`로 알림, `page.jsx` `mapPanelList`만 범위를 자름): 오른쪽 창이면 가리지 않은 가로 비율만큼 경도, 폰 아래 시트면 세로 비율만큼 위도를 자른다(접으면 전체). 지도 범위 자체(`mapViewportBounds`)는 역·학교 표시와 주변 구 불러오기에 그대로. 검증(실제 사이트, 송파): 1300px 화면 창이 오른쪽 33% → 열기 176개·접기 210개, 폰(375px) 시트가 아래 43% → 181개·222개.
+- **v220 = 관리자 기능 잠금**(`lib/admin-auth.js` 새 파일, `components/AdminTokenBox.jsx` 새 파일): `geocode-warmup`·`geocode-migrate`는 `ADMIN_TOKEN`과 같은 `x-admin-token` 헤더가 없으면 401(값이 없으면 503) — 주소(쿼리)로는 받지 않는다. `/api/health`는 잠겨 있으면 `{build, checkedAt, locked}`만. 관리자 페이지는 입력칸에 넣은 값을 그 탭의 sessionStorage에만 기억. 점검 목록에 `CRON_SECRET`(매일 알림 잠금, 선택) 추가.
 - 사용자가 준 참고 자료(다른 AI가 만든 "집시세" diff, TanStack/Tailwind라 직접 적용 불가)의 아이디어: 폰 하단 고정 탭바, 지도 위 검색창·필터 칩, 폰에서 목록 열기/닫기 버튼, 목록에 평당가·"신축" 배지, 지도 키 없을 때 안내 카드.
 - **아직 확인 안 된 것**: 폰 화면, 위치 다듬기가 실제 브라우저에서 단지를 낱개로 푸는지.
 - 지도 카드(상단 오른쪽) 맨 아래에 `빌드 vNNN`이 표시된다. 릴리스마다 `lib/ui-helpers.js`의 `APP_BUILD`를 올린다.
@@ -108,4 +109,4 @@
 - 카카오 대체 지도는 학교·지하철 레이어, 위치 다듬기, 변화 모드 툴팁이 없다.
 - 가격변동은 "같은 단지"가 아니라 "그 기간에 거래된 단지들의 평균" 비교라 구성 효과로 왜곡될 수 있다(화면에 안내됨).
 - 미분양 데이터는 공공 API가 없어 보류. "목록만" 단지(K-apt에만 있고 거래 없음)의 비슷한 이름 병합은 실제 데이터를 본 뒤 결정.
-- 후보: 시장 신호(가격·거래량 동시 판단) 모드, 목록만 단지 정리, 카카오 지도 기능 맞추기, 점검 페이지 접근 제한.
+- 후보: 시장 신호(가격·거래량 동시 판단) 모드, 목록만 단지 정리, 카카오 지도 기능 맞추기.
