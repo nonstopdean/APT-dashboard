@@ -46,6 +46,12 @@ export default function MapTab({
   setSchoolWanted, setHhWanted, setPanelCover,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  // v222: 주소 끝에 ?map=kakao를 붙이면 네이버 키가 있어도 카카오 대체 지도로 본다(대체 지도 확인용).
+  // 첫 렌더는 서버와 같게(네이버) 그리고, 화면에 붙은 뒤에 바꾼다(하이드레이션 불일치 방지).
+  const [forceKakao, setForceKakao] = useState(false);
+  useEffect(() => {
+    try { if (new URLSearchParams(window.location.search).get('map') === 'kakao' && process.env.NEXT_PUBLIC_KAKAO_MAP_KEY) setForceKakao(true); } catch (e) { /* 무시 */ }
+  }, []);
   // v221: "목록만" 단지(단지 목록에는 있지만 조회 기간 거래가 없는 단지) 핀을 끌 수 있게 — 가격 없는 핀이 많아 지도가 복잡했다.
   // 기본은 예전처럼 보임. 고른 값은 기억한다. 비교함(★) 단지는 끄더라도 남긴다.
   const [showListOnly, setShowListOnly] = useState(true);
@@ -343,7 +349,7 @@ export default function MapTab({
 
     return heroWrap(
       <>
-        {process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID ? (
+        {process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID && !forceKakao ? (
           <NaverChoropleth
             features={seoulMapData.features}
             values={seoulMapData.values}
@@ -384,6 +390,10 @@ export default function MapTab({
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
+            pinnedKeys={pinnedKeys}
+            pinPriceMode={pinPriceMode}
+            stations={visibleStations}
+            schools={visibleSchoolLocations}
             height="100%"
           />
         ) : (
