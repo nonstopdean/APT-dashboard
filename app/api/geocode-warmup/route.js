@@ -4,6 +4,7 @@ import { expandRegionCode, regionLabel } from '../../../lib/regions';
 import { placeContextOf } from '../../../lib/geocode-pick';
 import { readCoords, writeCoords } from '../../../lib/geocode-store';
 import { warmRegion } from '../../../lib/geocode-warm';
+import { adminDenied } from '../../../lib/admin-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,9 @@ export const maxDuration = 60;
 const DEFAULT_BUDGET_MS = 45000;
 
 export async function GET(request) {
+  // v220: 카카오·국토부 호출을 많이 쓰므로 관리자만 실행할 수 있다(lib/admin-auth.js).
+  const denied = adminDenied(request);
+  if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const code = (searchParams.get('code') || '').trim();
   const force = searchParams.get('force') === '1'; // 이미 저장된 단지도 다시 찾는다(잘못 저장된 값을 고칠 때)
