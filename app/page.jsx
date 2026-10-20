@@ -54,6 +54,12 @@ const SIDO_FULL_TO_SHORT = {
   충청북도: '충북', 충청남도: '충남', 전북특별자치도: '전북', 전라남도: '전남', 경상북도: '경북',
   경상남도: '경남', 제주특별자치도: '제주',
 };
+// v221: 조건 패널의 시·도 버튼 이름. 예전엔 끝의 '도'까지 지워서 "경상북"·"충청남"처럼 보였다.
+// 시는 짧게(서울·부산), 도는 '도'까지(경기도·경상북도), 특별자치도는 흔히 쓰는 이름(강원도·전라북도·제주도). 정식 이름은 title로.
+const SIDO_BUTTON_LABEL = {
+  강원특별자치도: '강원도', 전북특별자치도: '전라북도', 제주특별자치도: '제주도',
+};
+const sidoButtonLabel = (sido) => SIDO_BUTTON_LABEL[sido] || sido.replace(/특별자치시$|광역시$|특별시$/, '');
 
 const ACCENT_TEXT = '#FFFFFF';
 
@@ -1937,7 +1943,7 @@ export default function Page() {
   const [mapFocusKeys, setMapFocusKeys] = useState(null); // Set<string> | null
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
-  const [panelCover, setPanelCover] = useState(null); // v219: 목록 창이 가리지 않은 지도 비율 { lng } 또는 { lat } | null(MapTab이 잰다)
+  const [panelCover, setPanelCover] = useState(null); // v219: 목록 창이 가리지 않은 지도 쪽과 비율 { side, frac }(v221) | null(MapTab이 잰다)
   const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고). mapPanelList보다 앞에 둔다
   const [subwayLayerOn, setSubwayLayerOn] = useState(false);
   const [schoolLayerOn, setSchoolLayerOn] = useState(false);
@@ -2139,10 +2145,18 @@ export default function Page() {
     if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
     // v219: 목록 창(넓은 화면은 오른쪽, 폰은 아래 시트)이 가린 부분은 "현재 화면"에서 뺀다. 화면 비율로 경도/위도를 자른다
     // (작은 범위라 메르카토르 왜곡은 무시). 지도 범위 자체(mapViewportBounds)는 역·학교 표시와 주변 구 불러오기에 그대로 쓴다.
-    const vb = !panelCover ? mapViewportBounds
-      : panelCover.lng ? { ...mapViewportBounds, neLng: mapViewportBounds.swLng + (mapViewportBounds.neLng - mapViewportBounds.swLng) * panelCover.lng }
-        : panelCover.lat ? { ...mapViewportBounds, swLat: mapViewportBounds.neLat - (mapViewportBounds.neLat - mapViewportBounds.swLat) * panelCover.lat }
-          : mapViewportBounds;
+    // v221: 목록 창을 옮길 수 있어서 { side: 'left'|'right'|'top'|'bottom', frac } — 가리지 않은 쪽의 비율만 남긴다.
+    const vb = (() => {
+      const b = mapViewportBounds;
+      if (!panelCover || !(panelCover.frac > 0)) return b;
+      const dLng = (b.neLng - b.swLng) * panelCover.frac;
+      const dLat = (b.neLat - b.swLat) * panelCover.frac;
+      if (panelCover.side === 'left') return { ...b, neLng: b.swLng + dLng };
+      if (panelCover.side === 'right') return { ...b, swLng: b.neLng - dLng };
+      if (panelCover.side === 'top') return { ...b, swLat: b.neLat - dLat };
+      if (panelCover.side === 'bottom') return { ...b, neLat: b.swLat + dLat };
+      return b;
+    })();
     const filtered = complexCompare.filter((c) => {
       const key = `${c.regionCode}|${c.dong}|${c.apt}`;
       const m = mapComplexCoordByKey.get(key);
@@ -3104,9 +3118,10 @@ export default function Page() {
                   <div
                     key={g.sido}
                     onClick={() => setSidebarDrillSido(g.sido)}
-                    style={{ ...styles.toggleBtn(false), padding: '8px 2px', fontSize: 12.5 }}
+                    title={g.sido}
+                    style={{ ...styles.toggleBtn(false), padding: '8px 2px', fontSize: 12.5, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                   >
-                    {g.sido.replace(/특별자치시|특별자치도|광역시|특별시|도$/, '')}
+                    {sidoButtonLabel(g.sido)}
                   </div>
                 ))}
               {isRone && RONE_ONLY_EXTRA.map((it) => (
@@ -4272,6 +4287,8 @@ export default function Page() {
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
         .ui-card:hover { box-shadow: 0 6px 16px rgba(33,31,26,0.08); transform: translateY(-1px); }
+        /* v221: 카드가 좁아져도 글자가 카드 밖으로 넘치지 않게(격자 칸 안에서 줄어들고, 끊을 곳 없는 긴 글자는 줄바꿈) */
+        .ui-card { min-width: 0; overflow-wrap: break-word; }
         .ui-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(178,58,46,0.32); }
         .ui-btn:active:not(:disabled) { transform: translateY(0); opacity: 0.92; }
         .ui-btn:disabled { opacity: 0.65; cursor: default; }
@@ -4316,7 +4333,7 @@ export default function Page() {
           .mobile-search-toggle { display: inline-flex !important; }
           .mobile-search-row { display: block !important; }
           .map-complex-panel { width: 240px !important; top: 68px !important; bottom: 12px !important; }
-          .map-status-card { display: none !important; }
+          .map-status-card, .map-status-reopen { display: none !important; }
           .map-portal-toolbar { top: 8px !important; left: 8px !important; right: 8px !important; }
           .map-filter-row { max-width: 100% !important; }
           /* 세로로 쌓이는 모바일 배치에서 접힌 패널의 펼치기 버튼(폭 28px·높이 100%)이 화면 전체 높이를 차지해 지도를 밀어냈다 */
