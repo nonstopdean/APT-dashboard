@@ -1,18 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { REGION_GROUPS } from '../../../lib/regions';
+import AdminTokenBox, { useAdminToken } from '../../../components/AdminTokenBox';
 
 export default function WarmupPage() {
   const [log, setLog] = useState([]);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [summary, setSummary] = useState({}); // { [sidoName]: { total, found } }
+  // v220: 서버가 관리자 비밀 값을 확인한다. 틀리면(locked) 남은 지역은 부르지 않고 멈춘다.
+  const { token, setToken, headers } = useAdminToken();
+  const lockedRef = useRef(false);
 
   const appendLog = (line) => setLog((prev) => [...prev, line]);
 
   const runSido = async (sido) => {
-    if (running) return;
+    if (running || lockedRef.current) return;
     setRunning(true);
     const items = sido.items;
     setProgress({ done: 0, total: items.length });
@@ -20,6 +24,7 @@ export default function WarmupPage() {
     let sidoFound = 0;
     for (let i = 0; i < items.length; i += 1) {
       const it = items[i];
+      if (lockedRef.current) break;
       appendLog(`⏳ ${it.name} 예열 중...`);
       try {
         // 서버가 시간 제한 안에서 멈추면(partial) 이어서 다시 부른다. 이미 저장된 단지는 건너뛰므로 여러 번 불러도 안전하다.
@@ -31,9 +36,10 @@ export default function WarmupPage() {
         for (;;) {
           calls += 1;
           // eslint-disable-next-line no-await-in-loop
-          const res = await fetch(`/api/geocode-warmup?code=${it.code}&member=${member}&start=${start}`);
+          const res = await fetch(`/api/geocode-warmup?code=${it.code}&member=${member}&start=${start}`, { headers });
           // eslint-disable-next-line no-await-in-loop
           const json = await res.json();
+          if (json.locked) { lockedRef.current = true; setToken(''); }
           if (json.error) { failed = json.error; break; }
           // 새로 찾은 수와 못 찾은 수는 호출마다 서로 다른 단지라서 더한다.
           // "이미 저장돼 있던 수(cached)"는 첫 호출 것만 쓴다 — 이어서 부르면 앞 호출에서 새로 저장한 단지가
@@ -80,9 +86,10 @@ export default function WarmupPage() {
     try {
       do {
         // eslint-disable-next-line no-await-in-loop
-        const res = await fetch(`/api/geocode-migrate?cursor=${encodeURIComponent(cursor)}&count=500`);
+        const res = await fetch(`/api/geocode-migrate?cursor=${encodeURIComponent(cursor)}&count=500`, { headers });
         // eslint-disable-next-line no-await-in-loop
         const json = await res.json();
+        if (json.locked) setToken('');
         if (json.error) { appendLog(`❌ 변환 실패: ${json.error}`); break; }
         scanned += json.scanned || 0;
         created += json.created || 0;
@@ -103,6 +110,7 @@ export default function WarmupPage() {
     if (running) return;
     setLog([]);
     setSummary({});
+    lockedRef.current = false;
     // eslint-disable-next-line no-restricted-syntax
     for (const g of REGION_GROUPS) {
       // eslint-disable-next-line no-await-in-loop
@@ -119,8 +127,9 @@ export default function WarmupPage() {
         시/도 하나를 고르면 그 안의 모든 시/군/구를 순서대로 예열해요 (지역마다 몇 초~몇 십 초 걸릴 수 있어요).
         한 번 예열해두면, 그 지역은 이후 방문자 누구에게나 빠르게 나와요.
       </p>
+      <AdminTokenBox token={token} setToken={(v) => { lockedRef.current = false; setToken(v); }} />
       <button
-        disabled={running}
+        disabled={running || !token}
         onClick={runAll}
         style={{
           padding: '10px 16px', borderRadius: 8, border: 'none', marginBottom: 16,
@@ -131,7 +140,7 @@ export default function WarmupPage() {
         {running ? '예열 중...' : '🔥 전체 시/도 한번에 예열'}
       </button>
       <button
-        disabled={running}
+        disabled={running || !token}
         onClick={runMigrate}
         title="예전에 저장된 좌표를, 단지 이름 표기가 조금 달라도(띄어쓰기·아파트 유무) 찾아지는 형식으로 복사해요. 한 번만 하면 되고, 여러 번 눌러도 안전해요."
         style={{
@@ -146,7 +155,7 @@ export default function WarmupPage() {
         {REGION_GROUPS.map((g) => (
           <button
             key={g.sido}
-            disabled={running}
+            disabled={running || !token}
             onClick={() => runSido(g)}
             style={{
               padding: '10px 8px', borderRadius: 8, border: '1px solid #ddd',
