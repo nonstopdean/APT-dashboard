@@ -32,6 +32,7 @@ import FavoritesTab from '../components/FavoritesTab';
 import {
   LINE_COLORS, PALETTE, fmtPct, fmtArea, fmtManwon, calcAcquisitionTax, calcLoanEstimate, slopeClass, labelFor,
   fmtWon, monthLabel, SIDO_SHORT_NAMES, LISTING_STATUSES, VISIT_CHECK_ITEMS, VISIT_RATINGS, HEADER_HEIGHT,
+  fmtYm, TD_WRAP,
 } from '../lib/ui-helpers';
 
 const RONE_ONLY_EXTRA = SIDO_REGIONS.filter((r) => ['90001', '90002', '90003'].includes(r.code));
@@ -3744,16 +3745,16 @@ export default function Page() {
                 <tbody>
                   {subscriptions.map((s, i) => (
                     <tr key={i}>
-                      <td style={styles.td}>
+                      <td style={{ ...styles.td, ...TD_WRAP }}>
                         {s.url ? (
                           <a href={s.url} target="_blank" rel="noreferrer" style={{ color: PALETTE.accent }}>{s.houseName}</a>
                         ) : s.houseName}
                       </td>
-                      <td style={styles.td}>{s.address}</td>
+                      <td style={{ ...styles.td, ...TD_WRAP, maxWidth: 280 }}>{s.address}</td>
                       <td style={styles.td}>{s.totalUnits}세대</td>
                       <td style={styles.td}>{s.announceDate}</td>
                       <td style={styles.td}>{s.receiptStart} ~ {s.receiptEnd}</td>
-                      <td style={styles.td}>{s.moveInMonth}</td>
+                      <td style={styles.td}>{fmtYm(s.moveInMonth)}</td>
                       <td style={styles.td}>
                         {(s.isSpeculationOverheated || s.isAdjustmentTarget) && (
                           <span style={{ ...styles.chip, padding: '2px 8px', fontSize: 11 }}>규제</span>
