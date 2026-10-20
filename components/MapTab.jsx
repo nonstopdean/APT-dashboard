@@ -4,6 +4,7 @@ import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
 import PinnedCompareDrawer from './PinnedCompareDrawer';
 import RecentTradesFeed from './RecentTradesFeed';
+import MapFloatPanel, { useContainerBox, useDragPos, clampPos } from './MapFloatPanel';
 import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, fmtPct, monthLabel, APP_BUILD } from '../lib/ui-helpers';
@@ -45,6 +46,16 @@ export default function MapTab({
   setSchoolWanted, setHhWanted, setPanelCover,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  // v221: "목록만" 단지(단지 목록에는 있지만 조회 기간 거래가 없는 단지) 핀을 끌 수 있게 — 가격 없는 핀이 많아 지도가 복잡했다.
+  // 기본은 예전처럼 보임. 고른 값은 기억한다. 비교함(★) 단지는 끄더라도 남긴다.
+  const [showListOnly, setShowListOnly] = useState(true);
+  useEffect(() => {
+    try { if (window.localStorage.getItem('apt-dashboard-listonly-pins') === '0') setShowListOnly(false); } catch (e) { /* 무시 */ }
+  }, []);
+  const toggleListOnly = () => setShowListOnly((v) => {
+    try { window.localStorage.setItem('apt-dashboard-listonly-pins', v ? '0' : '1'); } catch (e) { /* 무시 */ }
+    return !v;
+  });
   const [listOnlyOpen, setListOnlyOpen] = useState(false);
   const [panelView, setPanelView] = useState('complexes'); // 오른쪽 패널: 'complexes'(단지) | 'trades'(최근 거래·신고가) | 'gap'(34평 갭 순위, v200)
   // v201: 갭 순위 조건 — 준공 연식(년 이내, 'all'이면 전체)·34평 매매 최소 건수.
@@ -179,10 +190,11 @@ export default function MapTab({
   // 조건이 없으면 원래 배열을 그대로 넘긴다(참조가 바뀌면 지도가 마커를 다시 그린다, 규칙 3).
   // 정확한 좌표를 새로 받으면(listGeoTick) 다시 거른다.
   const pinComplexes = useMemo(() => {
-    if (!kwNorm && !locOn) return pinBase;
-    return pinBase.filter((c) => (!kwNorm || matchKw(c)) && (pinnedKeys.has(c.key) || nearStation(c)));
+    if (!kwNorm && !locOn && showListOnly) return pinBase;
+    return pinBase.filter((c) => (showListOnly || c.latestPrice != null || pinnedKeys.has(c.key))
+      && (!kwNorm || matchKw(c)) && (pinnedKeys.has(c.key) || nearStation(c)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pinBase, kwNorm, matchKw, listStation, listSchool, elemSchools, listHH, hhData, listGeoTick, pinnedKeys]);
+  }, [pinBase, kwNorm, matchKw, listStation, listSchool, elemSchools, listHH, hhData, listGeoTick, pinnedKeys, showListOnly]);
   // 비교함 → "지도에서 이 단지들만 보기": 기존 "비교 목록만 보는 중" 필터를 쓰고, 좌표를 아는 첫 단지로 지도를 옮긴다.
   const focusPinnedOnMap = (keys) => {
     setMapFocusKeys(new Set(keys));
@@ -232,19 +244,48 @@ export default function MapTab({
   // 렌더마다 재되 값이 같으면 상태를 바꾸지 않는다(소수 둘째 자리까지).
   const mapElRef = useRef(null);
   const panelElRef = useRef(null);
+  // v221: 목록 창을 끌어 옮길 수 있게 됐으므로(넓은 화면) 어느 쪽에 있든 가리지 않은 가장 넓은 쪽(왼·오른·위·아래)을 고른다.
+  // { side, frac }: 지도에서 그 쪽 frac 비율만 "현재 화면"으로 본다(page.jsx mapPanelList).
   useEffect(() => {
     if (!setPanelCover) return;
     let cover = null;
     const m = mapElRef.current && mapElRef.current.getBoundingClientRect();
     const p = panelElRef.current && panelElRef.current.getBoundingClientRect();
-    if (m && p && !mapPanelMinimized && m.width > 0 && m.height > 0) {
-      const r2 = (v) => Math.round(Math.max(0.2, Math.min(1, v)) * 100) / 100;
-      if (p.width < m.width * 0.8 && p.left > m.left + m.width * 0.3) cover = { lng: r2((p.left - m.left) / m.width) };
-      else if (p.top > m.top + m.height * 0.2) cover = { lat: r2((p.top - m.top) / m.height) };
+    if (m && p && !mapPanelMinimized && m.width > 0 && m.height > 0
+      && p.right > m.left && p.left < m.right && p.bottom > m.top && p.top < m.bottom) {
+      const sides = [
+        ['left', (p.left - m.left) / m.width], ['right', (m.right - p.right) / m.width],
+        ['top', (p.top - m.top) / m.height], ['bottom', (m.bottom - p.bottom) / m.height],
+      ].sort((a, b) => b[1] - a[1]);
+      const [side, f] = sides[0];
+      if (f < 0.95) cover = { side, frac: Math.round(Math.max(0.2, Math.min(1, f)) * 100) / 100 };
     }
     setPanelCover((prev) => (JSON.stringify(prev) === JSON.stringify(cover) ? prev : cover));
   });
-  const [statusOpen, setStatusOpen] = useState(false);
+  // v221: 지도 위 창 위치 조절. 지도 영역 크기, 목록 창을 옮긴 위치(넓은 화면만 — 폰은 아래 시트 고정).
+  const mapBox = useContainerBox(mapElRef);
+  const listDrag = useDragPos('apt-dashboard-float:list', mapBox);
+  // 첫 렌더(서버와 같아야 함)에는 mapW가 0이라 false — 잰 뒤에 폰이면 true(하이드레이션 불일치 방지).
+  const phoneWide = mapW > 0 && typeof window !== 'undefined' && window.innerWidth <= 720;
+  const listW = compact ? 260 : 292;
+  const listPos = !phoneWide && listDrag.pos && mapBox.w > 0 ? clampPos(listDrag.pos, mapBox, listW) : null;
+  const startListDrag = (e) => {
+    const m = mapElRef.current && mapElRef.current.getBoundingClientRect();
+    const p = panelElRef.current && panelElRef.current.getBoundingClientRect();
+    if (!m || !p) return;
+    listDrag.startDrag(e, listPos || { x: p.left - m.left, y: p.top - m.top }, listW);
+  };
+  // 상태 카드: 접기(요약만)·닫기. 닫으면 도구줄에 작은 "ℹ️ 상태" 버튼으로 다시 연다(기억함).
+  const [statusHidden, setStatusHidden] = useState(false);
+  useEffect(() => {
+    try { if (window.localStorage.getItem('apt-dashboard-status-hidden') === '1') setStatusHidden(true); } catch (e) { /* 무시 */ }
+  }, []);
+  const hideStatus = (v) => {
+    setStatusHidden(v);
+    try { window.localStorage.setItem('apt-dashboard-status-hidden', v ? '1' : '0'); } catch (e) { /* 무시 */ }
+  };
+  const [statusOpen, setStatusOpen] = useState(null); // null = 기본(넓으면 펼침·좁으면 접힘), true/false = 사용자가 고름
+  const statusDetail = statusOpen == null ? !compact : statusOpen;
   // 좁아지는 순간 한 번만 목록을 접는다(사용자가 다시 펼치면 그대로 둔다). v186부터 폰도 접힌 채 시작해
   // 지도를 넓게 보여주고, 아래쪽 "단지 탐색 N개 · 목록 열기" 막대로 연다.
   const autoMinimizedRef = useRef(false);
@@ -500,97 +541,21 @@ export default function MapTab({
             >
               🗂️ 레이어
             </button>
-            {layerPanelOpen && (
-              <div style={{
-                position: 'absolute', top: '110%', left: 0, width: 230, zIndex: 25,
-                background: 'rgba(255,255,255,0.98)', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.14)', padding: 10, backdropFilter: 'blur(10px)',
-              }}
-              >
-                {!isRone && !isRatio && (
-                  <div style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>색칠 기준</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동'], ...(dealType === 'trade' ? [['gap', '34평 갭']] : [])].map(([key, label]) => (
-                        <button key={key} onClick={() => setMapColorMode(key)} style={{
-                          flex: '1 1 calc(50% - 4px)', whiteSpace: 'nowrap', border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
-                          background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
-                          color: mapColorMode === key ? '#fff' : PALETTE.textSecondary,
-                          fontSize: 11.5, fontWeight: mapColorMode === key ? 700 : 500, cursor: 'pointer',
-                        }}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {(mapColorMode === 'change' || mapColorMode === 'volchange') && (
-                      <div data-change-help="1" style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                          <span style={{ width: 34, height: 7, borderRadius: 4, background: `linear-gradient(90deg, ${changeColor(-100, 1)}, ${changeColor(0, 1)}, ${changeColor(100, 1)})` }} />
-                          <span>하락 ← → 상승</span>
-                        </div>
-                        {mapColorMode === 'volchange'
-                          ? '조회 기간의 앞 절반 → 뒤 절반 거래 건수 변화예요. 앞 기간이 5건 미만인 곳은 %가 크게 부풀려져서 회색으로 두었어요. 거래가 사라지면 -100%예요.'
-                          : '조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화예요. 거래된 단지 구성에 따라 실제 시세와 다를 수 있고, 표본이 적은 곳(각 기간 3건 미만)은 회색이에요.'}
-                        {' '}마우스를 올리면 근거가 되는 건수가 나와요.
-                      </div>
-                    )}
-                    {mapColorMode === 'gap' && (
-                      <div style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
-                        조회 기간 34평(전용 약 84㎡) 매매 중간값 − 전세 중간값이에요. 진할수록 전세를 끼고 살 때 필요한 돈(갭)이 커요.
-                        34평 매매·전세가 각각 2건 미만인 곳은 회색. 마우스를 올리면 매매·전세 값과 건수가 나와요.
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div
-                  onClick={() => setDongLayerOn((v) => !v)}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
-                  title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
-                >
-                  <span style={{ fontSize: 12 }}>🗺️ 동 경계·색칠</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: dongLayerOn ? PALETTE.up : PALETTE.textMuted }}>{dongLayerOn ? '켜짐' : '꺼짐'}</span>
-                </div>
-                <div
-                  onClick={() => setSubwayLayerOn((v) => !v)}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
-                  title="화면에 보이는 범위의 지하철역을 지도에 표시해요"
-                >
-                  <span style={{ fontSize: 12 }}>🚇 지하철역</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: subwayLayerOn ? PALETTE.up : PALETTE.textMuted }}>{subwayLayerOn ? '켜짐' : '꺼짐'}</span>
-                </div>
-                <div
-                  onClick={() => setSchoolLayerOn((v) => !v)}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
-                  title="화면에 보이는 범위의 초·중학교를 지도에 표시해요"
-                >
-                  <span style={{ fontSize: 12 }}>🏫 학교{schoolLocationsLoading ? ' (불러오는 중)' : ''}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: schoolLayerOn ? PALETTE.up : PALETTE.textMuted }}>{schoolLayerOn ? '켜짐' : '꺼짐'}</span>
-                </div>
-                {!isRent && !isRatio && !isRone && (
-                  <div style={{ marginTop: 6, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
-                    <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>단지 필터</div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[['all', '전체'], ['high', '📈 신고가'], ['drop', '📉 하락']].map(([k, l]) => (
-                        <button
-                          key={k}
-                          onClick={() => setPriceMoveFilter(k)}
-                          style={{
-                            flex: 1, border: `1px solid ${priceMoveFilter === k ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
-                            background: priceMoveFilter === k ? PALETTE.textPrimary : 'transparent',
-                            color: priceMoveFilter === k ? '#fff' : PALETTE.textSecondary,
-                            fontSize: 11, fontWeight: priceMoveFilter === k ? 700 : 500, cursor: 'pointer',
-                          }}
-                        >
-                          {l}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
+          {statusHidden ? (
+            <button
+              className="portal-pill map-status-reopen"
+              onClick={() => hideStatus(false)}
+              title="지역·거래 건수와 위치 찾기 상태 카드를 다시 열어요"
+              style={{
+                marginLeft: 'auto', pointerEvents: 'auto', border: `1px solid ${PALETTE.border}`, borderRadius: 12,
+                padding: '9px 12px', background: 'rgba(255,255,255,0.96)', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
+                fontSize: 12, fontWeight: 700, color: PALETTE.textPrimary, whiteSpace: 'nowrap', cursor: 'pointer',
+              }}
+            >
+              ℹ️ 상태
+            </button>
+          ) : (
           <div className="map-status-card" style={{
             marginLeft: 'auto', pointerEvents: 'auto', background: 'rgba(255,255,255,0.96)',
             border: `1px solid ${PALETTE.border}`, borderRadius: 12, padding: '9px 12px',
@@ -598,6 +563,14 @@ export default function MapTab({
             // 긴 진단 줄이 잘리거나 가려지지 않게 줄바꿈을 허용하고, 컨테이너 폭을 넘지 않게 한다.
             whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: '100%', boxSizing: 'border-box',
           }}>
+            {/* v221: 상태 카드 닫기(도구줄의 "ℹ️ 상태"로 다시 열기) */}
+            <span
+              onClick={() => hideStatus(true)}
+              title="상태 카드 닫기"
+              style={{ float: 'right', marginLeft: 8, cursor: 'pointer', color: PALETTE.textMuted, fontSize: 12, lineHeight: 1 }}
+            >
+              ✕
+            </span>
             {mapFocusMatches ? (
               <>
                 <b>{mapFocusMatches.length.toLocaleString()}</b>개 단지 · 비교 목록만 보는 중{' '}
@@ -615,18 +588,19 @@ export default function MapTab({
                     {' '}· 주변 <b>{browseRegionCount}</b>곳 자동 표시
                   </span>
                 )}
-                {compact && mapComplexes.length > 0 && (
+                {/* v221: 넓은 화면에서도 자세한 줄을 접을 수 있게(예전엔 좁은 화면만). 처음엔 넓으면 펼침, 좁으면 접힘. */}
+                {mapComplexes.length > 0 && (
                   <span
                     style={{ marginLeft: 6, cursor: 'pointer', color: PALETTE.accent, fontSize: 10.5 }}
-                    onClick={() => setStatusOpen((v) => !v)}
+                    onClick={() => setStatusOpen(!statusDetail)}
                   >
-                    {statusOpen ? '접기 ▴' : '자세히 ▾'}
+                    {statusDetail ? '접기 ▴' : '자세히 ▾'}
                   </span>
                 )}
-                {compact && !statusOpen && mapZoomTier !== 'near' && mapComplexes.length > 0 && (
+                {!statusDetail && mapZoomTier !== 'near' && mapComplexes.length > 0 && (
                   <div style={{ fontSize: 10, color: PALETTE.accent, marginTop: 2 }}>단지 마커는 지도를 더 확대하면 보여요</div>
                 )}
-                {(!compact || statusOpen) && mapComplexes.length > 0 && (() => {
+                {statusDetail && mapComplexes.length > 0 && (() => {
                   const withTrade = mapComplexes.filter((c) => c.latestPrice != null).length;
                   // 지역을 바꾼 직후에는 이전 지역의 통계가 남아 있을 수 있어서, 단지 수가 맞을 때만 보여준다.
                   const gs = geocodeStats && geocodeStats.total === mapComplexes.length ? geocodeStats : null;
@@ -696,6 +670,7 @@ export default function MapTab({
               </>
             )}
           </div>
+          )}
           {/* 지도 위 검색·필터(v184): 단지명·동 검색 + 평형·연식. 평형·연식은 왼쪽 조건 패널과 같은 값을 바꾼다.
               넓은 화면에서는 오른쪽 단지 목록 창과 안 겹치게 폭을 줄이고, 폰은 page.jsx CSS에서 전체 폭. */}
           {mapComplexes.length > 0 && (
@@ -742,13 +717,113 @@ export default function MapTab({
             </div>
           )}
         </div>
+        {/* v221: 레이어 창은 도구줄 아래로 펼치던 드롭다운이라 지도가 낮으면 아래가 잘렸다 → 지도 위 작은 창으로 띄워
+            끌어 옮기고·접고·닫을 수 있게 하고, 본문은 지도 높이 안에서 스크롤한다(components/MapFloatPanel.jsx). */}
+        {layerPanelOpen && (
+          <MapFloatPanel
+            id="layer" title="🗂️ 레이어" containerRef={mapElRef} width={240}
+            defaultPos={{ x: 14, y: 14 + topRowH + 8 }}
+            onClose={() => setLayerPanelOpen(false)}
+          >
+            {!isRone && !isRatio && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>색칠 기준</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동'], ...(dealType === 'trade' ? [['gap', '34평 갭']] : [])].map(([key, label]) => (
+                    <button key={key} onClick={() => setMapColorMode(key)} style={{
+                      flex: '1 1 calc(50% - 4px)', whiteSpace: 'nowrap', border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
+                      background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
+                      color: mapColorMode === key ? '#fff' : PALETTE.textSecondary,
+                      fontSize: 11.5, fontWeight: mapColorMode === key ? 700 : 500, cursor: 'pointer',
+                    }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {(mapColorMode === 'change' || mapColorMode === 'volchange') && (
+                  <div data-change-help="1" style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                      <span style={{ width: 34, height: 7, borderRadius: 4, background: `linear-gradient(90deg, ${changeColor(-100, 1)}, ${changeColor(0, 1)}, ${changeColor(100, 1)})` }} />
+                      <span>하락 ← → 상승</span>
+                    </div>
+                    {mapColorMode === 'volchange'
+                      ? '조회 기간의 앞 절반 → 뒤 절반 거래 건수 변화예요. 앞 기간이 5건 미만인 곳은 %가 크게 부풀려져서 회색으로 두었어요. 거래가 사라지면 -100%예요.'
+                      : '조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화예요. 거래된 단지 구성에 따라 실제 시세와 다를 수 있고, 표본이 적은 곳(각 기간 3건 미만)은 회색이에요.'}
+                    {' '}마우스를 올리면 근거가 되는 건수가 나와요.
+                  </div>
+                )}
+                {mapColorMode === 'gap' && (
+                  <div style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
+                    조회 기간 34평(전용 약 84㎡) 매매 중간값 − 전세 중간값이에요. 진할수록 전세를 끼고 살 때 필요한 돈(갭)이 커요.
+                    34평 매매·전세가 각각 2건 미만인 곳은 회색. 마우스를 올리면 매매·전세 값과 건수가 나와요.
+                  </div>
+                )}
+              </div>
+            )}
+            <div
+              onClick={() => setDongLayerOn((v) => !v)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+              title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
+            >
+              <span style={{ fontSize: 12 }}>🗺️ 동 경계·색칠</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: dongLayerOn ? PALETTE.up : PALETTE.textMuted }}>{dongLayerOn ? '켜짐' : '꺼짐'}</span>
+            </div>
+            <div
+              onClick={() => setSubwayLayerOn((v) => !v)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+              title="화면에 보이는 범위의 지하철역을 지도에 표시해요"
+            >
+              <span style={{ fontSize: 12 }}>🚇 지하철역</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: subwayLayerOn ? PALETTE.up : PALETTE.textMuted }}>{subwayLayerOn ? '켜짐' : '꺼짐'}</span>
+            </div>
+            <div
+              onClick={() => setSchoolLayerOn((v) => !v)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+              title="화면에 보이는 범위의 초·중학교를 지도에 표시해요"
+            >
+              <span style={{ fontSize: 12 }}>🏫 학교{schoolLocationsLoading ? ' (불러오는 중)' : ''}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: schoolLayerOn ? PALETTE.up : PALETTE.textMuted }}>{schoolLayerOn ? '켜짐' : '꺼짐'}</span>
+            </div>
+            <div
+              onClick={toggleListOnly}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 2px', cursor: 'pointer' }}
+              title="단지 목록에는 있지만 조회 기간에 거래가 없는 단지(가격 없는 핀)를 지도에 보일지 골라요. 비교함 단지는 항상 보여요."
+            >
+              <span style={{ fontSize: 12 }}>🏢 거래 없는 단지</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: showListOnly ? PALETTE.up : PALETTE.textMuted }}>{showListOnly ? '켜짐' : '꺼짐'}</span>
+            </div>
+            {!isRent && !isRatio && !isRone && (
+              <div style={{ marginTop: 6, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
+                <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>단지 필터</div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[['all', '전체'], ['high', '📈 신고가'], ['drop', '📉 하락']].map(([k, l]) => (
+                    <button
+                      key={k}
+                      onClick={() => setPriceMoveFilter(k)}
+                      style={{
+                        flex: 1, border: `1px solid ${priceMoveFilter === k ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
+                        background: priceMoveFilter === k ? PALETTE.textPrimary : 'transparent',
+                        color: priceMoveFilter === k ? '#fff' : PALETTE.textSecondary,
+                        fontSize: 11, fontWeight: priceMoveFilter === k ? 700 : 500, cursor: 'pointer',
+                      }}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </MapFloatPanel>
+        )}
 
         {/* 부동산 타임머신: 조회 기간 안에서 특정 월로 되돌려서 그 시점의 가격 색칠을 본다 */}
         {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
           <div className="map-timeline" style={{
             // 펼친 단지 목록(오른쪽, 바닥까지)과 겹치지 않게 그 폭만큼 비켜선다(v187). 폰은 page.jsx CSS가 위치를 정한다.
             position: 'absolute', bottom: 14, left: 14, zIndex: 20,
-            right: 14 + (selectedApt ? detailInset : (allTx.length > 0 && !mapPanelMinimized ? (compact ? 260 : 292) + 10 : 0)),
+            // v221: 목록 창을 다른 곳으로 옮겼으면 비켜서지 않는다.
+            right: 14 + (selectedApt ? detailInset : (allTx.length > 0 && !mapPanelMinimized && !listPos ? listW + 10 : 0)),
             display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
             background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
@@ -805,8 +880,16 @@ export default function MapTab({
         {allTx.length > 0 && !selectedApt && (
           <div ref={panelElRef} className={`map-complex-panel${mapPanelMinimized ? ' is-min' : ''}`} style={{
             // 도구줄(카드 포함) 바로 아래. 아직 못 쟀거나 한 줄뿐이면 예전 값(72)을 유지한다.
-            position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: compact ? 260 : 292, zIndex: 19,
-            bottom: mapPanelMinimized ? 'auto' : 18,
+            // v221: 머리글의 손잡이로 끌어 옮기면(넓은 화면만) 그 자리에 놓고, 높이는 지도 바닥까지.
+            ...(listPos
+              ? {
+                position: 'absolute', left: listPos.x, top: listPos.y, width: listW, zIndex: 19,
+                height: mapPanelMinimized ? 'auto' : Math.max(160, mapBox.h - listPos.y - 18),
+              }
+              : {
+                position: 'absolute', top: Math.max(72, 14 + topRowH + 8), right: 14, width: listW, zIndex: 19,
+                bottom: mapPanelMinimized ? 'auto' : 18,
+              }),
             background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 14, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', overflow: 'hidden',
             backdropFilter: 'blur(10px)',
@@ -835,8 +918,31 @@ export default function MapTab({
                 )}
               </div>
               {/* 화살표만으로는 누르는 곳인지 알기 어려워서 글자로 보여준다(v186). */}
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: PALETTE.accent, flexShrink: 0, marginLeft: 8, whiteSpace: 'nowrap' }}>
-                {mapPanelMinimized ? '목록 열기' : '접기'}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 8 }}>
+                {/* v221: 넓은 화면에서는 손잡이(⠿)를 끌어 목록 창을 옮기고, ↺로 원래 자리(오른쪽)로 */}
+                {!phoneWide && (
+                  <span
+                    className="list-drag-grip"
+                    onPointerDown={startListDrag}
+                    onClick={(e) => e.stopPropagation()}
+                    title="끌어서 목록 창 옮기기"
+                    style={{ cursor: 'grab', touchAction: 'none', userSelect: 'none', color: PALETTE.textMuted, fontSize: 14, lineHeight: 1, padding: '0 2px' }}
+                  >
+                    ⠿
+                  </span>
+                )}
+                {listPos && (
+                  <span
+                    onClick={(e) => { e.stopPropagation(); listDrag.setPos(null); }}
+                    title="목록 창을 원래 자리(오른쪽)로"
+                    style={{ cursor: 'pointer', color: PALETTE.textMuted, fontSize: 13, lineHeight: 1 }}
+                  >
+                    ↺
+                  </span>
+                )}
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: PALETTE.accent, whiteSpace: 'nowrap' }}>
+                  {mapPanelMinimized ? '목록 열기' : '접기'}
+                </span>
               </span>
             </div>
             {!mapPanelMinimized && (
