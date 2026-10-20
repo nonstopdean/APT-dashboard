@@ -60,7 +60,8 @@ export default function AnalyticsTab({
           <p style={{ fontSize: 11.5, color: PALETTE.textMuted, marginTop: 8 }}>불러오는 중...</p>
         )}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
+      {/* v221: 폰에서 4칸이 한 줄에 들어가 숫자가 카드 밖으로 넘쳤다 → 칸이 140px보다 좁아지면 다음 줄로 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 }}>
         <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>분석 대상</div><div style={styles.kpiValue}>{analyticsKpis.count.toLocaleString()}개</div></div>
         <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>최근 평균 {unitLabel}</div><div style={styles.kpiValue}>{analyticsKpis.avg != null ? fmtWon(analyticsKpis.avg) : '-'}</div></div>
         <div style={styles.card} className="ui-card"><div style={styles.kpiLabel}>조회 거래량</div><div style={styles.kpiValue}>{analyticsKpis.volume.toLocaleString()}건</div></div>
