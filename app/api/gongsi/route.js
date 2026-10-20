@@ -5,6 +5,9 @@ import { regionLabel } from '../../../lib/regions';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 20;
+// v221: 브이월드가 해외(미국) 서버의 요청에 HTTP 502를 돌려줘서 공시가격이 전부 실패했다(한국에서 같은 요청은 정상).
+// 이 함수만 서울 지역에서 실행한다.
+export const preferredRegion = 'icn1';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
