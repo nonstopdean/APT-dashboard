@@ -1,26 +1,31 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import AdminTokenBox, { useAdminToken } from '../../../components/AdminTokenBox';
 
 // 배포가 제대로 됐는지, 키가 설정됐는지, 저장소/좌표가 어떤 상태인지 한 화면에서 본다.
 // (값은 절대 보여주지 않고 "설정됨/안 됨"만 보여준다.)
+// v220: 빌드 번호는 누구나, 나머지는 관리자 비밀 값을 넣은 경우에만 서버가 돌려준다.
 export default function HealthPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { token, setToken } = useAdminToken();
 
-  const load = async () => {
+  const load = async (tk = token) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/health');
-      setData(await res.json());
+      const res = await fetch('/api/health', { headers: tk ? { 'x-admin-token': tk } : {} });
+      const json = await res.json();
+      if (json.locked && tk) setToken(''); // 틀린 값이면 지워서 다시 입력하게 한다
+      setData(json);
     } catch (e) {
       setError(`점검 요청에 실패했어요 (${e.message})`);
     }
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mark = (ok) => (ok ? '✅' : '❌');
   const box = { border: '1px solid #E6E5E1', borderRadius: 10, padding: '12px 14px', marginBottom: 12, background: '#fff' };
@@ -31,7 +36,8 @@ export default function HealthPage() {
       <p style={{ color: '#7A756C', margin: '0 0 16px' }}>
         키 값은 보여주지 않고 설정 여부만 보여줘요. <a href="/admin/warmup">좌표 예열 페이지</a>
       </p>
-      <button onClick={load} disabled={loading} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #ccc', background: '#fff', cursor: 'pointer', marginBottom: 14 }}>
+      <AdminTokenBox token={token} setToken={setToken} />
+      <button onClick={() => load()} disabled={loading} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #ccc', background: '#fff', cursor: 'pointer', marginBottom: 14 }}>
         {loading ? '확인 중...' : '다시 점검'}
       </button>
       {error && <div style={{ ...box, color: '#B23A2E' }}>{error}</div>}
@@ -42,6 +48,11 @@ export default function HealthPage() {
             <div style={{ color: '#7A756C', fontSize: 12 }}>지도 카드 맨 아래의 "빌드 vNNN"과 같으면 같은 버전이에요. 점검 시각 {data.checkedAt}</div>
           </div>
 
+          {data.locked && (
+            <div style={{ ...box, color: '#7A756C' }} data-section="locked">🔒 {data.lockReason || '관리자 비밀 값을 넣으면 환경변수·저장소 상태가 보여요.'}</div>
+          )}
+
+          {data.env && (
           <div style={box} data-section="env">
             <b>환경변수</b>
             {data.env.map((e) => (
@@ -53,13 +64,16 @@ export default function HealthPage() {
               </div>
             ))}
           </div>
+          )}
 
+          {data.kv && (
           <div style={box} data-section="kv">
             <b>저장소(Upstash)</b>
             {!data.kv.configured && <div style={{ color: '#B23A2E' }}>❌ 설정되지 않았어요. 좌표 예열과 서버 저장이 동작하지 않아요.</div>}
             {data.kv.configured && data.kv.ok && <div>✅ 연결됨 ({data.kv.latencyMs}ms)</div>}
             {data.kv.configured && data.kv.ok === false && <div style={{ color: '#B23A2E' }}>❌ 연결 실패: {data.kv.error}</div>}
           </div>
+          )}
 
           {data.geocode && (
             <div style={box} data-section="geocode">
