@@ -86,8 +86,10 @@ export default function MapFloatPanel({
   const { pos, setPos, startDrag } = useDragPos(`apt-dashboard-float:${id}`, box);
   const [min, setMin] = useState(false);
   const w = box.w > 0 ? Math.min(width, Math.max(160, box.w - 8)) : width;
-  const p = clampPos(pos || defaultPos, box, w);
-  const bodyMaxH = box.h > 0 ? Math.max(80, box.h - p.y - HEAD_H - 10) : undefined;
+  const p0 = clampPos(pos || defaultPos, box, w);
+  // 펼친 상태면 본문이 최소 60px은 지도 안에 들어오게 창을 위로 올린다(아래로 끌어 놓아도 창이 지도 밖으로 잘리지 않게).
+  const p = !min && box.h > 0 ? { x: p0.x, y: Math.max(4, Math.min(p0.y, box.h - HEAD_H - 70)) } : p0;
+  const bodyMaxH = box.h > 0 ? Math.max(60, box.h - p.y - HEAD_H - 10) : undefined;
   return (
     <div
       data-float={id}
