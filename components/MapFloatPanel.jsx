@@ -34,37 +34,45 @@ export function useContainerBox(containerRef) {
   return box;
 }
 
-// 끌어서 옮긴 위치({x,y} | null=기본 자리)와 끌기 시작 함수. 저장 effect의 첫 실행은 건너뛴다(빈 값이 저장값을 덮지 않게).
+// 끌어서 옮긴 위치({x,y} | null=기본 자리)와 끌기 시작 함수. 위치는 어떤 저장 키에서 읽었는지와 함께 두고
+// (키가 바뀌면 — 예: 폰↔넓은 화면 — 그 키의 값만 쓴다), 저장은 사용자가 옮기기를 끝내거나 되돌릴 때만 한다.
 export function useDragPos(storageKey, box) {
-  const [pos, setPos] = useState(null);
+  const [state, setState] = useState({ key: null, pos: null });
   const boxRef = useRef(box);
   boxRef.current = box;
   useEffect(() => {
+    let p = null;
     try {
       const s = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
-      if (s && Number.isFinite(s.x) && Number.isFinite(s.y)) setPos({ x: s.x, y: s.y });
+      if (s && Number.isFinite(s.x) && Number.isFinite(s.y)) p = { x: s.x, y: s.y };
     } catch (e) { /* 저장소를 못 쓰면 기본 자리 */ }
+    setState({ key: storageKey, pos: p });
   }, [storageKey]);
-  const skipFirstSave = useRef(true);
-  useEffect(() => {
-    if (skipFirstSave.current) { skipFirstSave.current = false; return; }
+  const persist = (p) => {
     try {
-      if (pos) window.localStorage.setItem(storageKey, JSON.stringify(pos));
+      if (p) window.localStorage.setItem(storageKey, JSON.stringify(p));
       else window.localStorage.removeItem(storageKey);
     } catch (e) { /* 무시 */ }
-  }, [storageKey, pos]);
+  };
+  const pos = state.key === storageKey ? state.pos : null;
+  const setPos = (p) => { setState({ key: storageKey, pos: p }); persist(p); };
   const startDrag = (e, cur, w, h) => {
     if (e.button != null && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     const sx = e.clientX;
     const sy = e.clientY;
-    const move = (ev) => setPos(clampPos({ x: cur.x + ev.clientX - sx, y: cur.y + ev.clientY - sy }, boxRef.current, w, h));
+    let last = null;
+    const move = (ev) => {
+      last = clampPos({ x: cur.x + ev.clientX - sx, y: cur.y + ev.clientY - sy }, boxRef.current, w, h);
+      setState({ key: storageKey, pos: last });
+    };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       try { document.body.style.userSelect = ''; } catch (err) { /* noop */ }
+      if (last) persist(last);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -83,7 +91,9 @@ export default function MapFloatPanel({
   id, title, containerRef, defaultPos, width = 240, onClose, children,
 }) {
   const box = useContainerBox(containerRef);
-  const { pos, setPos, startDrag } = useDragPos(`apt-dashboard-float:${id}`, box);
+  // 폰(720px 이하)과 넓은 화면은 위치를 따로 기억한다(넓은 화면에서 옮긴 자리가 폰에서 엉뚱하게 쓰이지 않게).
+  const narrow = box.w > 0 && typeof window !== 'undefined' && window.innerWidth <= 720;
+  const { pos, setPos, startDrag } = useDragPos(`apt-dashboard-float:${id}${narrow ? ':m' : ''}`, box);
   const [min, setMin] = useState(false);
   const w = box.w > 0 ? Math.min(width, Math.max(160, box.w - 8)) : width;
   const p0 = clampPos(pos || defaultPos, box, w);
