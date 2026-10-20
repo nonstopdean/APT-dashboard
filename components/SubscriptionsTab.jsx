@@ -2,7 +2,7 @@ import React from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { PALETTE, SIDO_SHORT_NAMES } from '../lib/ui-helpers';
+import { PALETTE, SIDO_SHORT_NAMES, fmtYm, TD_WRAP } from '../lib/ui-helpers';
 
 // 분양(청약) 정보 탭. app/page.jsx 안에 있던 viewMode === 'subscriptions' 블록을 그대로 옮긴 것.
 export default function SubscriptionsTab({
@@ -76,17 +76,17 @@ export default function SubscriptionsTab({
               <tbody>
                 {subsTabRows.map((s, i) => (
                   <tr key={i}>
-                    <td style={styles.td}>
+                    <td style={{ ...styles.td, ...TD_WRAP }}>
                       {s.url ? (
                         <a href={s.url} target="_blank" rel="noreferrer" style={{ color: PALETTE.accent }}>{s.houseName}</a>
                       ) : s.houseName}
                     </td>
-                    <td style={styles.td}>{s.address}</td>
+                    <td style={{ ...styles.td, ...TD_WRAP, maxWidth: 280 }}>{s.address}</td>
                     <td style={styles.td}>{s.totalUnits}세대</td>
                     <td style={styles.td}>{s.announceDate}</td>
                     <td style={styles.td}>{s.receiptStart} ~ {s.receiptEnd}</td>
-                    <td style={styles.td}>{s.moveInMonth}</td>
-                    <td style={styles.td}>{s.builder}</td>
+                    <td style={styles.td}>{fmtYm(s.moveInMonth)}</td>
+                    <td style={{ ...styles.td, ...TD_WRAP }}>{s.builder}</td>
                     <td style={styles.td}>
                       {(s.isSpeculationOverheated || s.isAdjustmentTarget) && (
                         <span style={{ ...styles.chip, padding: '2px 8px', fontSize: 11 }}>규제</span>
