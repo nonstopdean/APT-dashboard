@@ -7,9 +7,35 @@ import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave 
 // 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
 // 색상만 자주 바뀔 수 있음. 이렇게 나눠서, 클릭할 때마다 도형을 전부 새로 그리지 않고 색만 바꾼다.
 // dongFeatures/dongValues: 같은 모양이지만 "동" 단위 — 중간 확대 단계에서 구 대신 보여준다.
+// v222: 네이버 지도와 기능 맞추기 — 지도 범위 알림(현재 화면 목록·역/학교 표시에 필요), 지하철역·학교 표시,
+// 단지 핀에 이름·가격(핀 가격 기준)·비교함 ★. (네이버 키가 있으면 이 지도는 안 쓰인다. 확인은 주소 끝에 ?map=kakao)
+const EMPTY_KEYS = new Set();
+const escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+function fmtPinPrice(v) {
+  if (!Number.isFinite(v)) return '';
+  return v >= 10000 ? `${(v / 10000).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(v).toLocaleString()}만`;
+}
+function pinPriceTextOf(c, mode) {
+  if (mode === 'unit') return Number.isFinite(c.latestPyeong) ? `${Math.round(c.latestPyeong).toLocaleString()}만/평` : '';
+  if (mode === 'p34') return fmtPinPrice(c.latest34Price);
+  return fmtPinPrice(c.latestPrice);
+}
+function pinHtml(c, mode, pinned) {
+  const price = pinPriceTextOf(c, mode);
+  const border = pinned ? '2px solid #b23a2e' : '1px solid rgba(40,35,30,0.18)';
+  const bg = pinned ? '#fff4ef' : 'rgba(255,255,255,0.96)';
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;">`
+    + `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">`
+    + `${pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : ''}${escHtml(c.apt)}${price ? `<span style="margin-left:5px;color:#b23a2e;">${escHtml(price)}</span>` : ''}</div>`
+    + '<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>';
+}
+const layerHtml = (icon, text, color) => `<div style="display:flex;align-items:center;gap:3px;background:#fff;border:1.5px solid ${color};border-radius:12px;padding:2px 7px;box-shadow:0 1px 4px rgba(0,0,0,0.2);white-space:nowrap;">`
+  + `<span style="font-size:11px;">${icon}</span><span style="font-size:10.5px;font-weight:700;color:${color};">${escHtml(text)}</span></div>`;
+
 export default function KakaoChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
   dongFeatures, dongValues, onZoomTierChange,
+  onViewportChange, onVisibleMarkerCount, stations, schools, pinnedKeys = EMPTY_KEYS, pinPriceMode = 'deal',
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -35,6 +61,43 @@ export default function KakaoChoropleth({
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { onComplexSelectRef.current = onComplexSelect; }, [onComplexSelect]);
   useEffect(() => { complexesRef.current = complexes; }, [complexes]);
+  // v222: 지도 범위·화면 안 핀 수 알림, 핀 모양(가격 기준·★), 역·학교 표시
+  const onViewportChangeRef = useRef(onViewportChange);
+  const onVisibleMarkerCountRef = useRef(onVisibleMarkerCount);
+  const pinPriceModeRef = useRef(pinPriceMode);
+  const pinnedKeysRef = useRef(pinnedKeys);
+  const stationOverlaysRef = useRef([]);
+  const schoolOverlaysRef = useRef([]);
+  const [mapReady, setMapReady] = useState(0);
+  useEffect(() => { onViewportChangeRef.current = onViewportChange; }, [onViewportChange]);
+  useEffect(() => { onVisibleMarkerCountRef.current = onVisibleMarkerCount; }, [onVisibleMarkerCount]);
+  const reportViewport = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const b = map.getBounds();
+    const sw = b.getSouthWest();
+    const ne = b.getNorthEast();
+    if (onViewportChangeRef.current) onViewportChangeRef.current({ swLat: sw.getLat(), swLng: sw.getLng(), neLat: ne.getLat(), neLng: ne.getLng() });
+    if (onVisibleMarkerCountRef.current) {
+      const near = map.getLevel() <= NEAR_ZOOM_LEVEL;
+      const n = near ? markersRef.current.filter(({ marker }) => b.contain(marker.getPosition())).length : 0;
+      onVisibleMarkerCountRef.current(n);
+    }
+  };
+  const reportViewportRef = useRef(reportViewport);
+  reportViewportRef.current = reportViewport;
+  // 핀 글자만 다시 쓴다(가격 기준·비교함이 바뀔 때). 마커를 새로 만들지 않는다.
+  const refreshPinTexts = () => {
+    markersRef.current.forEach((m) => {
+      if (m.el && m.c) m.el.innerHTML = pinHtml(m.c, pinPriceModeRef.current, pinnedKeysRef.current.has(m.key));
+    });
+  };
+  useEffect(() => {
+    pinPriceModeRef.current = pinPriceMode;
+    pinnedKeysRef.current = pinnedKeys || EMPTY_KEYS;
+    refreshPinTexts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinPriceMode, pinnedKeys]);
 
   const zoomTierRef = useRef('far'); // 'far'(구) | 'mid'(동) | 'near'(동, 연하게 + 마커)
 
@@ -181,6 +244,9 @@ export default function KakaoChoropleth({
         });
         if (window.kakao.maps.services) placesRef.current = new window.kakao.maps.services.Places();
         window.kakao.maps.event.addListener(mapRef.current, 'zoom_changed', handleZoomChanged);
+        // 지도가 멈출 때마다 범위를 알린다(ref 경유 — 지도 이벤트에 렌더 때의 함수를 직접 넘기지 않는다, v169 교훈).
+        window.kakao.maps.event.addListener(mapRef.current, 'idle', () => reportViewportRef.current());
+        setMapReady((v) => v + 1);
       }
 
       polygonsRef.current.forEach(({ polygon }) => polygon.setMap(null));
@@ -319,6 +385,16 @@ export default function KakaoChoropleth({
         return false;
       });
 
+      // 남은 핀은 새 값(기간이 바뀌면 가격도 바뀐다)으로 글자만 다시 쓴다.
+      const byKey = new Map(complexes.map((c) => [c.key, c]));
+      markersRef.current.forEach((m) => {
+        const nc = byKey.get(m.key);
+        if (nc && nc !== m.c) {
+          m.c = nc;
+          if (m.el) m.el.innerHTML = pinHtml(nc, pinPriceModeRef.current, pinnedKeysRef.current.has(m.key));
+        }
+      });
+
       const todo = complexes.filter((c) => !existingKeys.has(c.key));
 
       // 아직 메모리 캐시에 없는 것들은 서버(Vercel KV)에 이미 저장된 좌표가 있는지 먼저 물어본다 —
@@ -342,24 +418,52 @@ export default function KakaoChoropleth({
           if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
         }
         if (cancelled || !coord) return;
-        const marker = new window.kakao.maps.Marker({
-          position: new window.kakao.maps.LatLng(coord.lat, coord.lng),
-        });
-        window.kakao.maps.event.addListener(marker, 'click', () => {
+        // v222: 기본 마커 대신 이름·가격이 적힌 핀(네이버 지도와 같은 모양, 비교함은 ★). 클러스터러는 커스텀 오버레이도 묶는다.
+        const el = document.createElement('div');
+        el.innerHTML = pinHtml(c, pinPriceModeRef.current, pinnedKeysRef.current.has(c.key));
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
           onComplexSelectRef.current?.({ ...c, lat: coord.lat, lng: coord.lng });
+        });
+        const marker = new window.kakao.maps.CustomOverlay({
+          position: new window.kakao.maps.LatLng(coord.lat, coord.lng), content: el, yAnchor: 1, clickable: true,
         });
         // 지도에 직접 붙이지 않고 클러스터러가 보여주도록 둔다 — 줌 레벨에 따라
         // 클러스터(묶음) <-> 개별 마커 전환은 클러스터러가 알아서 한다.
-        markersRef.current.push({ marker, key: c.key });
+        markersRef.current.push({ marker, key: c.key, el, c });
       }, 6);
       queueServerGeocodeSave(newlyFound);
 
-      if (!cancelled) syncClusterer();
+      if (!cancelled) { syncClusterer(); reportViewport(); }
     }
     run();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexes]);
+  }, [complexes, mapReady]);
+
+  // v222: 지하철역·학교 표시 — 화면 범위 안의 것만 부모가 넘겨주므로 그대로 그린다(네이버 지도와 같은 방식).
+  const drawLayer = (ref, items, toHtml, zIndex) => {
+    ref.current.forEach((o) => o.setMap(null));
+    ref.current = [];
+    if (!mapRef.current || !window.kakao?.maps || !items || items.length === 0) return;
+    items.forEach((s) => {
+      const o = new window.kakao.maps.CustomOverlay({
+        position: new window.kakao.maps.LatLng(s.lat, s.lng), content: toHtml(s), xAnchor: 0.15, yAnchor: 0.5, zIndex,
+      });
+      o.setMap(mapRef.current);
+      ref.current.push(o);
+    });
+  };
+  useEffect(() => {
+    drawLayer(stationOverlaysRef, stations, (s) => layerHtml('🚇', s.n, '#2F6FE0'), 5);
+    return () => { stationOverlaysRef.current.forEach((o) => o.setMap(null)); stationOverlaysRef.current = []; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stations, mapReady]);
+  useEffect(() => {
+    drawLayer(schoolOverlaysRef, schools, (s) => layerHtml('🏫', s.kind ? `${s.name} (${s.kind})` : s.name, '#2E9E5B'), 4);
+    return () => { schoolOverlaysRef.current.forEach((o) => o.setMap(null)); schoolOverlaysRef.current = []; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schools, mapReady]);
 
   if (!process.env.NEXT_PUBLIC_KAKAO_MAP_KEY) return null;
   if (loadFailed) {
