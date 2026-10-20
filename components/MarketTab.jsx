@@ -69,7 +69,8 @@ export default function MarketTab({
         ))}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: PALETTE.textMuted }}>조회 {advancedAnalytics.tx.length.toLocaleString()}건 · {advancedAnalytics.rows.length.toLocaleString()}개 단지</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 10, marginBottom: 12 }}>
+      {/* v221: 폰에서 5칸이 한 줄이라 숫자가 카드 밖으로 넘쳤다 → 칸이 130px보다 좁아지면 다음 줄로 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 12 }}>
         {[
           ['평균 최근가', advancedAnalytics.rows.length ? fmtWon(advancedAnalytics.rows.reduce((s, r) => s + r.latest, 0) / advancedAnalytics.rows.length) : '-'],
           ['거래량', `${advancedAnalytics.tx.length.toLocaleString()}건`],
