@@ -821,9 +821,16 @@ export default function MapTab({
         {!isRone && !isRatio && !budgetMatches && months.length > 1 && (
           <div className="map-timeline" style={{
             // 펼친 단지 목록(오른쪽, 바닥까지)과 겹치지 않게 그 폭만큼 비켜선다(v187). 폰은 page.jsx CSS가 위치를 정한다.
-            position: 'absolute', bottom: 14, left: 14, zIndex: 20,
-            // v221: 목록 창을 다른 곳으로 옮겼으면 비켜서지 않는다.
-            right: 14 + (selectedApt ? detailInset : (allTx.length > 0 && !mapPanelMinimized && !listPos ? listW + 10 : 0)),
+            position: 'absolute', bottom: 14, zIndex: 20,
+            // v221: 목록 창을 옮겼으면 그 창이 있는 쪽(지도 왼쪽 절반이면 왼쪽)만큼 비켜선다.
+            ...(() => {
+              if (selectedApt) return { left: 14, right: 14 + detailInset };
+              if (!(allTx.length > 0) || mapPanelMinimized) return { left: 14, right: 14 };
+              if (!listPos) return { left: 14, right: 14 + listW + 10 };
+              return listPos.x + listW / 2 < mapBox.w / 2
+                ? { left: listPos.x + listW + 10, right: 14 }
+                : { left: 14, right: Math.max(14, mapBox.w - listPos.x + 10) };
+            })(),
             display: 'flex', alignItems: 'center', gap: 10, pointerEvents: 'auto',
             background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
             borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
