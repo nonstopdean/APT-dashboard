@@ -48,8 +48,10 @@ export default function ComplexDetail({
         </p>
   );
 
+  // v224: 지도 탭 상세 창(폭 약 380px, 폰은 더 좁음)에서 5칸 고정이면 칸이 65px 남짓이라 글자가 칸 밖으로 넘쳤다.
+  // 창(panel)에서는 칸이 110px보다 좁아지면 다음 줄로 넘긴다. 다른 탭 모달은 예전 5칸 그대로(규칙 5).
   const bSummaryCards = aptSummary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPanel ? 'repeat(auto-fit, minmax(110px, 1fr))' : 'repeat(5, 1fr)', gap: 8, marginBottom: 14, overflowWrap: 'anywhere' }}>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
               <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
               <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
