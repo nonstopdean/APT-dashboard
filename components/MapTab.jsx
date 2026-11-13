@@ -5,6 +5,7 @@ import KakaoChoropleth from './KakaoChoropleth';
 import PinnedCompareDrawer from './PinnedCompareDrawer';
 import RecentTradesFeed from './RecentTradesFeed';
 import MapFloatPanel, { useContainerBox, useDragPos, clampPos } from './MapFloatPanel';
+import { ymdShort } from '../lib/peak-drop';
 import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, fmtPct, monthLabel, APP_BUILD } from '../lib/ui-helpers';
@@ -40,6 +41,7 @@ export default function MapTab({
   mapComplexCoordByKey, codeToLatLng, setFocusLatLng,
   unitSizeFilter, setUnitSizeFilter, buildYearFilter, setBuildYearFilter,
   complexGapList, setGapListOn, browseRegionCount = 0,
+  peakDropList = null, peakProgress = null, setPeakListOn,
   stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
@@ -120,10 +122,25 @@ export default function MapTab({
   }, [panelView, gapSchool, gapHH]);
   // 갭 순위 탭을 열었을 때만 page.jsx가 전월세를 받아 계산한다. 매매가 아니면 탭이 없으므로 단지 탭으로 돌린다.
   useEffect(() => {
-    if (panelView === 'gap' && dealType !== 'trade') { setPanelView('complexes'); return; }
+    if ((panelView === 'gap' || panelView === 'peak') && dealType !== 'trade') { setPanelView('complexes'); return; }
     if (setGapListOn) setGapListOn(panelView === 'gap');
+    if (setPeakListOn) setPeakListOn(panelView === 'peak'); // v225: 전고점 탭을 열 때만 8년치 매매를 받는다
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelView, dealType]);
+  // v225: 전고점 대비 조건 — 평형(공급 평 기준), 최근 거래 시점, 받은 기간 전체 거래 수, 정렬(많이 내린 순 / 전고점에 가까운 순).
+  const [peakSize, setPeakSize] = useState('all'); // 'all' | 'u20' | '20s' | '30s' | '40p'
+  const [peakRecent, setPeakRecent] = useState('12'); // '12' | '6' (개월 안에 거래가 있는 평형만)
+  const [peakMinN, setPeakMinN] = useState(3);
+  const [peakSort, setPeakSort] = useState('drop'); // 'drop' | 'near'
+  const peakRows = useMemo(() => {
+    if (!peakDropList) return null;
+    const d = new Date();
+    const cut = new Date(d.getFullYear(), d.getMonth() - (Number(peakRecent) - 1), 1);
+    const cutYmd = cut.getFullYear() * 10000 + (cut.getMonth() + 1) * 100 + 1;
+    const sizeOk = (p) => (peakSize === 'all' ? true : peakSize === 'u20' ? p < 20 : peakSize === '20s' ? p >= 20 && p < 30 : peakSize === '30s' ? p >= 30 && p < 40 : p >= 40);
+    const rows = peakDropList.filter((r) => r.latestDate >= cutYmd && r.n >= peakMinN && sizeOk(r.pyeong));
+    return peakSort === 'near' ? [...rows].sort((a, b) => b.dropPct - a.dropPct) : rows;
+  }, [peakDropList, peakSize, peakRecent, peakMinN, peakSort]);
   // 숫자 원을 누르면 그 안의 단지 목록을 오른쪽 패널에 보여준다(갈라질 수 있으면 지도도 확대된다).
   const [clusterKeys, setClusterKeys] = useState(null); // Set<string> | null
   const clusterRows = useMemo(() => {
@@ -964,9 +981,10 @@ export default function MapTab({
             </div>
             {!mapPanelMinimized && (
               <div style={{ display: 'flex', borderBottom: `1px solid ${PALETTE.border}` }}>
-                {[['complexes', '단지'], ['trades', '최근 거래·신고가'], ...(dealType === 'trade' ? [['gap', '34평 갭 순위']] : [])].map(([k, l]) => (
-                  <button key={k} onClick={() => setPanelView(k)} style={{
-                    flex: 1, border: 'none', background: 'transparent', padding: '8px 0', fontSize: 12.5, cursor: 'pointer',
+                {/* v225: 탭이 4개가 되어 이름을 줄였다(마우스를 올리면 원래 이름) */}
+                {[['complexes', '단지', '단지'], ['trades', '최근거래', '최근 거래·신고가'], ...(dealType === 'trade' ? [['gap', '갭 순위', '34평 갭 순위'], ['peak', '전고점', '전고점 대비 (최고가 대비 지금 가격)']] : [])].map(([k, l, full]) => (
+                  <button key={k} title={full} onClick={() => setPanelView(k)} style={{
+                    flex: 1, border: 'none', background: 'transparent', padding: '8px 0', fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap',
                     fontWeight: panelView === k ? 800 : 500, color: panelView === k ? PALETTE.accent : PALETTE.textMuted,
                     borderBottom: panelView === k ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
                   }}>{l}</button>
@@ -985,6 +1003,63 @@ export default function MapTab({
                     if (coord) setFocusLatLng(coord);
                   }}
                 />
+              ) : panelView === 'peak' ? (
+                <>
+                  {/* v225: 전고점 대비 — 단지·평형별 받은 기간(최근 8년) 최고가와 가장 최근 거래가 비교 */}
+                  <div style={{ padding: '8px 14px', borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {[
+                      ['평형', peakSize, setPeakSize, [['all', '전체'], ['u20', '~20평'], ['20s', '20평대'], ['30s', '30평대'], ['40p', '40평+']]],
+                      ['최근 거래', peakRecent, setPeakRecent, [['12', '1년 안'], ['6', '6개월 안']]],
+                      ['거래 수', peakMinN, setPeakMinN, [[3, '3건+'], [5, '5건+'], [10, '10건+']]],
+                      ['정렬', peakSort, setPeakSort, [['drop', '많이 내린 순'], ['near', '전고점 가까운 순']]],
+                    ].map(([label, val, set, opts]) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10.5, color: PALETTE.textMuted, width: 52, flexShrink: 0 }}>{label}</span>
+                        {opts.map(([k, l]) => (
+                          <button key={k} onClick={() => set(k)} style={{ ...chipStyle(val === k), padding: '3px 8px', fontSize: 10.5 }}>{l}</button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ padding: '8px 14px', fontSize: 10.5, color: PALETTE.textMuted, borderBottom: `1px solid ${PALETTE.border}`, lineHeight: 1.5 }}>
+                    {!peakProgress
+                      ? '구 단위로 지역을 고르면 볼 수 있어요(시·도 전체는 제외, 최대 3곳).'
+                      : !peakProgress.ready
+                        ? `최근 ${peakProgress.years}년 매매를 불러오는 중… (${peakProgress.done}/${peakProgress.total}) — 처음엔 구마다 수십 초 걸려요.`
+                        : `최근 ${peakProgress.years}년 안 최고가 대비 가장 최근 거래가예요. 단지·평형(전용 ㎡)별 ${peakRows.length.toLocaleString()}개${peakRows.length > 80 ? ' · 80개까지 표시' : ''}. 층·향에 따라 한 건 가격이 튈 수 있어요.${peakProgress.failed ? ` (일부 기간 ${peakProgress.failed}곳을 못 받아 빠졌을 수 있어요)` : ''}`}
+                  </div>
+                  {peakRows && peakRows.length === 0 && (
+                    <div style={{ padding: '14px', fontSize: 11.5, color: PALETTE.textMuted }}>조건에 맞는 단지가 없어요. 조건을 넓혀 보세요.</div>
+                  )}
+                  {(peakRows || []).slice(0, 80).map((r, i) => {
+                    const coord = mapComplexCoordByKey.get(r.key) || codeToLatLng[r.regionCode];
+                    const pct = Math.round(r.dropPct * 10) / 10;
+                    return (
+                      <button
+                        key={`${r.key}|${r.area}`}
+                        data-peak-row="1"
+                        onClick={() => {
+                          setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode, lat: coord?.lat, lng: coord?.lng });
+                          if (coord) setFocusLatLng(coord);
+                        }}
+                        style={{ width: '100%', textAlign: 'left', border: 'none', borderBottom: `1px solid ${PALETTE.border}`, background: 'transparent', padding: '10px 14px', cursor: 'pointer' }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i + 1}. {r.apt}</div>
+                            <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{r.pyeong}평({r.area}㎡) · {r.dong}{r.buildYear ? ` · ${r.buildYear}년` : ''} · {r.n}건</div>
+                            <div style={{ fontSize: 10.5, color: PALETTE.textSecondary, marginTop: 2 }}>
+                              최고 {fmtWon(r.peak)}({ymdShort(r.peakDate)}) → 최근 {fmtWon(r.latest)}({ymdShort(r.latestDate)})
+                            </div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: pct < 0 ? PALETTE.down : PALETTE.up }}>{pct === 0 ? '전고점' : `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`}</div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
               ) : panelView === 'gap' ? (
                 <>
                   <div style={{ padding: '8px 14px', borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
