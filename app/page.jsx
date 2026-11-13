@@ -22,6 +22,7 @@ import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import { supplyPyeong } from '../lib/pyeong';
 import { peerPriceCompare, gapIndex, gapSeries } from '../lib/peer-compare';
+import { peakDropRows } from '../lib/peak-drop';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -2630,6 +2631,67 @@ export default function Page() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complexGapList, mapComplexCoordByKey, geoTick, geocodeStats, dongCentroids]);
+
+  // v225: 전고점 대비(아실의 "최고가 대비"). 오른쪽 패널 "전고점 대비" 탭을 열면(MapTab이 setPeakListOn) 선택 지역
+  // (시·도 전체 제외, 최대 3곳)의 최근 8년 아파트 매매를 12개월씩 나눠 받는다 — 한 번에 받으면 응답이 너무 커진다.
+  // 국토부 응답은 서버가 저장해 두므로 처음만 느리고(구당 수십 초) 다음부터는 빠르다. 계산은 lib/peak-drop.js.
+  const PEAK_YEARS = 8;
+  const [peakListOn, setPeakListOn] = useState(false);
+  const [peakRaw, setPeakRaw] = useState(null); // { key, rows(null=받는 중), done, total, failed }
+  const peakCodes = useMemo(() => selected.filter((c) => !isSidoAggregate(c)).slice(0, 3), [selected]);
+  const peakKey = peakListOn && dealType === 'trade' && propertyType !== 'offi' && peakCodes.length
+    ? `${peakCodes.join(',')}|${ymNow()}` : null;
+  useEffect(() => {
+    if (!peakKey || peakRaw?.key === peakKey) return undefined;
+    let cancelled = false;
+    const end = ymNow();
+    const tasks = [];
+    peakCodes.forEach((code) => {
+      for (let i = 0; i < PEAK_YEARS; i += 1) tasks.push({ code, s: ymShift(end, -(i * 12 + 11)), e: ymShift(end, -(i * 12)) });
+    });
+    const rows = [];
+    let done = 0;
+    let failed = 0;
+    setPeakRaw({ key: peakKey, rows: null, done: 0, total: tasks.length, failed: 0 });
+    const runOne = async (t) => {
+      try {
+        const json = await (await fetch(`/api/trades?codes=${t.code}&start=${t.s}&end=${t.e}`)).json();
+        (json?.months || []).forEach((ym) => (json?.data?.[`${t.code}_${ym}`] || []).forEach((r) => rows.push({ ...r, regionCode: t.code })));
+        if (json?.error) failed += 1;
+      } catch (e) {
+        failed += 1;
+      }
+      done += 1;
+      if (!cancelled) setPeakRaw((p) => (p && p.key === peakKey ? { ...p, done, failed } : p));
+    };
+    (async () => {
+      const queue = [...tasks];
+      await Promise.all([0, 1, 2].map(async () => {
+        while (queue.length && !cancelled) {
+          // eslint-disable-next-line no-await-in-loop
+          await runOne(queue.shift());
+        }
+      }));
+      if (!cancelled) setPeakRaw({ key: peakKey, rows, done, total: tasks.length, failed });
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peakKey]);
+  // 최근 12개월 안에 거래가 있는 단지·평형만(그보다 오래된 거래만 있으면 "지금"과 비교할 수 없다). 6개월은 패널에서 거른다.
+  const peakDropList = useMemo(() => {
+    if (!peakKey || !peakRaw || peakRaw.key !== peakKey || !peakRaw.rows) return null;
+    const builtByKey = new Map();
+    peakRaw.rows.forEach((t) => {
+      const k = `${t.regionCode}|${t.dong}|${t.apt}`;
+      const y = Number(t.buildYear);
+      if (y > 0 && !builtByKey.has(k)) builtByKey.set(k, y);
+    });
+    return peakDropRows(peakRaw.rows, { recentFromYm: Number(ymShift(ymNow(), -11)) })
+      .map((r) => ({ ...r, buildYear: builtByKey.get(r.key) || null }));
+  }, [peakKey, peakRaw]);
+  const peakProgress = peakKey && peakRaw && peakRaw.key === peakKey
+    ? { done: peakRaw.done, total: peakRaw.total, failed: peakRaw.failed, ready: !!peakRaw.rows, years: PEAK_YEARS, regions: peakCodes.length }
+    : null;
   const dongGapIndex = useMemo(
     () => (gapMode && gapRentRows && dongLayerOn
       ? gapIndex(allTx, gapRentRows, (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null))
@@ -3448,6 +3510,7 @@ export default function Page() {
           dealType={dealType} setDealTypeSafe={setDealTypeSafe} isRone={isRone} isRatio={isRatio} isRent={isRent}
           unitSizeFilter={unitSizeFilter} setUnitSizeFilter={setUnitSizeFilter} buildYearFilter={buildYearFilter} setBuildYearFilter={setBuildYearFilter}
           complexGapList={complexGapRows} setGapListOn={setGapListOn} browseRegionCount={browseRegionCount}
+          peakDropList={peakDropList} peakProgress={peakProgress} setPeakListOn={setPeakListOn}
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
