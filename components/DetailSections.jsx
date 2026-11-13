@@ -55,7 +55,8 @@ export default function DetailSections({ summaryLine, sections }) {
         }}
       >
         {summaryLine && <div style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 6 }}>{summaryLine}</div>}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
+        {/* v224: 옆으로 밀어야 보이던 섹션 버튼("주변·비교", "계산기")이 잘려 보였다 → 자리가 모자라면 다음 줄로 */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 2 }}>
           {visible.map((s) => (
             <button
               key={s.id} type="button" data-ds="chip" className="ds-chip" onClick={() => jump(s)}
