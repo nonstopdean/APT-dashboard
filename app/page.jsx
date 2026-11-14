@@ -16,7 +16,7 @@ import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
 import { normalizeComplexName } from '../lib/complex-match';
-import { buildChangeIndex, changeNote } from '../lib/market-change';
+import { buildChangeIndex, changeNote, lastCompleteYm } from '../lib/market-change';
 import { combineSignals, signalNote } from '../lib/market-signal';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
@@ -2620,12 +2620,14 @@ export default function Page() {
   // v236: 지도 색칠(가격변동·거래량변동·시장 신호·동 가격)은 고른 지역 + 지도가 자동으로 불러온 주변 구 거래를 함께 쓴다.
   // 예전엔 고른 지역(allTx)만 써서, 지역을 고르지 않은 첫 화면에서는 색칠이 모두 회색이었다. 두 목록은 겹치지 않는다(browseTx가 고른 구를 뺀다).
   const mapTx = useMemo(() => (browseTx.length ? [...allTx, ...browseTx] : allTx), [allTx, browseTx]);
+  // v237: 거래 건수를 비교할 때(거래량변동·시장 신호)는 신고 기한(30일)이 안 지난 최근 달을 뺀다 — 덜 잡힌 달 때문에 거래량이 일괄 감소로 보였다.
+  const completeYm = lastCompleteYm();
   const regionChangeIndex = useMemo(() => {
     if (!changeMode) return null;
     // 거래량은 분모가 되는 앞 기간이 5건 이상일 때만 계산한다(적은 건수의 %는 크게 부풀려진다).
     return buildChangeIndex(mapTx, {
       keyOf: (t) => t.regionCode || null, valueOf: changeValueOf, ymOf: changeYmOf,
-      minPerHalf: changeMode === 'count' ? 5 : 3, mode: changeMode,
+      minPerHalf: changeMode === 'count' ? 5 : 3, mode: changeMode, maxYm: changeMode === 'count' ? completeYm : null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapTx, isRent, changeMode]);
@@ -2633,7 +2635,7 @@ export default function Page() {
     if (!changeMode || !dongLayerOn) return null;
     return buildChangeIndex(mapTx, {
       keyOf: (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null),
-      valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: changeMode,
+      valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: changeMode, maxYm: changeMode === 'count' ? completeYm : null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapTx, isRent, changeMode, dongLayerOn]);
@@ -2643,16 +2645,16 @@ export default function Page() {
   const regionSignalIndex = useMemo(() => {
     if (!signalMode) return null;
     const keyOf = (t) => t.regionCode || null;
-    const p = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
-    const v = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 5, mode: 'count' });
+    const p = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg', maxYm: completeYm });
+    const v = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 5, mode: 'count', maxYm: completeYm });
     return combineSignals(p, v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapTx, isRent, signalMode]);
   const dongSignalIndex = useMemo(() => {
     if (!signalMode || !dongLayerOn) return null;
     const keyOf = (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null);
-    const p = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
-    const v = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'count' });
+    const p = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg', maxYm: completeYm });
+    const v = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'count', maxYm: completeYm });
     return combineSignals(p, v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapTx, isRent, signalMode, dongLayerOn]);
