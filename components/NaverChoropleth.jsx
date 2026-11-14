@@ -159,6 +159,8 @@ export default function NaverChoropleth({
   };
   const reportViewportRef = useRef(null);
   reportViewportRef.current = reportViewport;
+  const focusLatLngRef = useRef(focusLatLng); // v233: 지도를 만들 때 쓰는 최신 첫 위치
+  focusLatLngRef.current = focusLatLng;
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 색칠), mid는 13(동 색칠), near는 14 이상(단지 핀·묶음).
   // v232: 아실처럼 단계별 말풍선 — 9 이하 시·도, 10~12 시·군·구, 13 동(말풍선), 14 이상 단지 핀. (v228~v231은 13부터 핀이었다.)
@@ -677,9 +679,12 @@ export default function NaverChoropleth({
 
       if (!mapRef.current) {
         // 다른 탭(순위표 등)에서 지역을 눌러 넘어오면 focusLatLng가 이미 정해져 있다 — 그곳에서 시작한다(v188).
+        // v233: 이 함수는 경계 자료가 생긴 때의 렌더에서 만들어져 그때의 focusLatLng(대개 null)를 기억한다. 지도 스크립트가 늦게
+        // 받아지면 그 사이 정해진 첫 화면 위치(기억한 지역, 줌 13)를 놓치고 서울 줌 11로 만들어졌다 → 늘 최신 값(ref)을 쓴다.
+        const fl = focusLatLngRef.current;
         mapRef.current = new window.naver.maps.Map(containerRef.current, {
-          center: new window.naver.maps.LatLng(focusLatLng?.lat ?? 37.5665, focusLatLng?.lng ?? 126.978),
-          zoom: focusLatLng ? (focusLatLng.zoom || 13) : 11,
+          center: new window.naver.maps.LatLng(fl?.lat ?? 37.5665, fl?.lng ?? 126.978),
+          zoom: fl ? (fl.zoom || 13) : 11,
         });
         window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', () => zoomChangedRef.current?.());
         // v230: 처음부터 줌 13 이상으로 만들면 zoom_changed가 안 와서 단계가 'far'로 남았다(핀·주변 구 불러오기가 안 됨) — 한 번 맞춘다.
