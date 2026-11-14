@@ -623,7 +623,7 @@ export default function NaverChoropleth({
         // 다른 탭(순위표 등)에서 지역을 눌러 넘어오면 focusLatLng가 이미 정해져 있다 — 그곳에서 시작한다(v188).
         mapRef.current = new window.naver.maps.Map(containerRef.current, {
           center: new window.naver.maps.LatLng(focusLatLng?.lat ?? 37.5665, focusLatLng?.lng ?? 126.978),
-          zoom: focusLatLng ? 13 : 11,
+          zoom: focusLatLng ? (focusLatLng.zoom || 13) : 11,
         });
         window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', () => zoomChangedRef.current?.());
         // v228: 지도를 끌거나 빈 곳을 누르면 묶음 팝업을 닫는다(묶음을 누른 직후 따라오는 지도 클릭은 무시).
@@ -823,7 +823,8 @@ export default function NaverChoropleth({
 
   useEffect(() => {
     if (!focusLatLng || !mapRef.current || !window.naver?.maps) return;
-    mapRef.current.morph(new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng), 13);
+    // v229: 단지 검색으로 오면 zoom 16(단지가 보이게), 그 밖에는 구가 보이는 13.
+    mapRef.current.morph(new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng), focusLatLng.zoom || 13);
   }, [focusLatLng]);
 
   // 현재 화면(+여유 25%) 안에 보이는 단지만 좌표를 찾아 마커로 만든다. 큰 지역을 선택해도
