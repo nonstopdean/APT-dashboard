@@ -883,7 +883,14 @@ export default function NaverChoropleth({
   useEffect(() => {
     if (!focusLatLng || !mapRef.current || !window.naver?.maps) return;
     // v229: 단지 검색으로 오면 zoom 16(단지가 보이게), 그 밖에는 구가 보이는 13.
-    mapRef.current.morph(new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng), focusLatLng.zoom || 13);
+    // v232: 첫 화면 이동(instant)은 애니메이션 없이 바로 — morph 도중 창 크기가 바뀌면 중간 줌에서 멈출 수 있었다.
+    const target = new window.naver.maps.LatLng(focusLatLng.lat, focusLatLng.lng);
+    if (focusLatLng.instant) {
+      mapRef.current.setCenter(target);
+      mapRef.current.setZoom(focusLatLng.zoom || 13, false);
+    } else {
+      mapRef.current.morph(target, focusLatLng.zoom || 13);
+    }
   }, [focusLatLng]);
 
   // 현재 화면(+여유 25%) 안에 보이는 단지만 좌표를 찾아 마커로 만든다. 큰 지역을 선택해도
