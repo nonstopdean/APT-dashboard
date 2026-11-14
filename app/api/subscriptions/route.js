@@ -1,5 +1,5 @@
 import { publicError } from '../../../lib/safe-error';
-import { fetchAptSubscriptions } from '../../../lib/applyhome';
+import { fetchAptSubscriptions, fetchAptSubscriptionsAll } from '../../../lib/applyhome';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +19,11 @@ export async function GET(request) {
   }
 
   try {
+    // v231: all=1이면 from 이후 공고를 전부(입주 물량 그래프용). 아니면 예전처럼 최근 50건.
+    if (searchParams.get('all') === '1') {
+      const { rows, total, truncated } = await fetchAptSubscriptionsAll(serviceKey, sido, from);
+      return Response.json({ rows, total, truncated });
+    }
     const rows = await fetchAptSubscriptions(serviceKey, sido, from);
     return Response.json({ rows });
   } catch (e) {
