@@ -47,7 +47,7 @@ export default function MapTab({
   stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
-  setSchoolWanted, setHhWanted, setPanelCover, onPickComplex,
+  setSchoolWanted, setHhWanted, setPanelCover, onPickComplex, areaBubbles,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   // v222: 주소 끝에 ?map=kakao를 붙이면 네이버 키가 있어도 카카오 대체 지도로 본다(대체 지도 확인용).
@@ -459,6 +459,7 @@ export default function MapTab({
             pinPriceMode={pinPriceMode}
             stations={visibleStations}
             schools={visibleSchoolLocations}
+            areaBubbles={areaBubbles}
             height="100%"
           />
         ) : process.env.NEXT_PUBLIC_KAKAO_MAP_KEY ? (
@@ -1005,7 +1006,7 @@ export default function MapTab({
             background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`, borderRadius: 14,
             boxShadow: '0 8px 28px rgba(0,0,0,0.14)', padding: '16px 16px 14px', textAlign: 'center',
           }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{mapZoomTier === 'near' ? '주변 단지를 불러오는 중…' : '어디 단지를 볼까요?'}</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{mapZoomTier !== 'far' ? '주변 단지를 불러오는 중…' : '어디 단지를 볼까요?'}</div>
             <div style={{ fontSize: 12, color: PALETTE.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
               지도를 확대하면 화면 안 단지가 바로 나와요. 위 검색창에 단지 이름(예: 헬리오시티)을 적어도 돼요.
             </div>
