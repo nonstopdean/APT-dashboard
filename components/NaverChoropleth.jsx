@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave, serverGeocodeStats } from '../lib/geocodeCache';
-import { placeContextOf, pickPlace, resolveMarkerCoord, summarizeCoordSources } from '../lib/geocode-pick';
+import { placeContextOf, pickPlace, resolveMarkerCoord, summarizeCoordSources, jibunAddressOf } from '../lib/geocode-pick';
 
 // features: [{ feature, name, code }] - 안정적으로 유지되는 배열. values: features와 같은 순서의
 // [number|null] 배열로 색상만 자주 바뀔 수 있다. 클릭할 때마다 도형을 다시 그리지 않기 위해 나눴다.
@@ -52,7 +52,7 @@ export default function NaverChoropleth({
   // 위치 다듬기 진단 카운터: 화면 카드에 보여서 "어디서 막혔는지"를 바로 알 수 있게 한다.
   //   kakao: 카카오 검색 호출 결과 종류별 횟수 / refine: 단지 단위 결과
   const diagRef = useRef({
-    kakao: { calls: 0, picked: 0, zero: 0, rejected: 0, error: 0, lastError: '' },
+    kakao: { calls: 0, picked: 0, zero: 0, rejected: 0, error: 0, lastError: '', addr: 0 }, // addr: 지번 주소 검색으로 찾은 수(v228)
     refine: { attempted: 0, moved: 0, far: 0, sdkFail: 0 },
   });
   const onClusterOpenRef = useRef(onClusterOpen);
@@ -82,6 +82,10 @@ export default function NaverChoropleth({
   const [loadFailed, setLoadFailed] = useState(false);
   const markerSyncTimerRef = useRef(null);
   const markerSyncSeqRef = useRef(0);
+  const kakaoGeocoderRef = useRef(null);
+  // v228: 숫자 묶음을 누르면 그 자리에 단지 목록 팝업을 띄운다 — 확대하지 않아도 바로 고를 수 있게.
+  const [clusterPop, setClusterPop] = useState(null);
+  const popOpenedAtRef = useRef(0);
 
   useEffect(() => { valuesRef.current = values; }, [values]);
   useEffect(() => { dongValuesRef.current = dongValues; }, [dongValues]);
@@ -154,10 +158,10 @@ export default function NaverChoropleth({
     onViewportChangeRef.current({ swLat: sw.lat(), swLng: sw.lng(), neLat: ne.lat(), neLng: ne.lng() });
   };
 
-  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 여러 개), mid는 13(구 하나 남짓, 동 색칠),
-  // near는 14 이상(단지 핀·묶음). v180까지 near가 16이라 건물이 보일 만큼 확대해야 단지가 나왔다.
+  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 여러 개, 구 색칠), near는 13 이상(단지 핀·묶음).
+  // v180까지 near가 16, v227까지 14라서 꽤 확대해야 단지가 나왔다. v228부터 구 하나가 보이는 13에서 핀이 뜬다(mid 단계는 이제 없음).
   const FAR_ZOOM_LEVEL = 12;
-  const NEAR_ZOOM_LEVEL = 14;
+  const NEAR_ZOOM_LEVEL = 13;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
   // zoom_changed 리스너는 지도를 만들 때 한 번만 붙는다. 함수를 직접 넘기면 첫 렌더(단지 목록이 비어 있던 때)의
   // 함수가 계속 불려서, 확대 직후 "그릴 단지 없음"으로 끝나며 idle이 예약한 최신 마커 갱신까지 취소했다
@@ -227,6 +231,37 @@ export default function NaverChoropleth({
     });
   });
 
+  // v228: 지번 주소로 좌표 찾기(카카오 주소 검색). 시·도/시군구가 맞는 결과만 쓴다(pickPlace가 address_name으로 확인).
+  const geocodeAddress = (address, ctx) => new Promise((resolve) => {
+    if (!address || !window.kakao?.maps?.services?.Geocoder) return resolve(null);
+    if (!kakaoGeocoderRef.current) kakaoGeocoderRef.current = new window.kakao.maps.services.Geocoder();
+    const kd = diagRef.current.kakao;
+    kd.calls += 1;
+    kakaoGeocoderRef.current.addressSearch(address, (result, status) => {
+      if (status === window.kakao.maps.services.Status.OK && result?.length) {
+        const picked = pickPlace(result, ctx);
+        if (picked) { kd.picked += 1; kd.addr += 1; } else kd.rejected += 1;
+        resolve(picked);
+      } else if (status === 'ZERO_RESULT' || status === window.kakao.maps.services.Status.OK) {
+        kd.zero += 1;
+        resolve(null);
+      } else {
+        kd.error += 1; kd.lastError = String(status);
+        resolve(null);
+      }
+    });
+  });
+
+  // 단지 하나의 정확한 위치: 지번 주소 검색을 먼저, 안 되면 예전처럼 이름 검색(지역·동 + 이름 → 동 + 이름 → 이름).
+  const locateComplex = async (c) => {
+    const ctx = { place: placeContextOf(c.regionCode), dong: c.dong, aptName: c.apt };
+    const addr = jibunAddressOf(c.regionCode, c.dong, c.jibun);
+    return (addr && await geocodeAddress(addr, ctx))
+      || await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`, ctx)
+      || await geocodeComplex(`${c.dong} ${c.apt}`, ctx)
+      || await geocodeComplex(c.apt, ctx);
+  };
+
   // 지금 단지들의 좌표가 어디서 왔는지(정확/동 중심/못 찾음/대기)를 세서 화면 카드로 알려준다.
   // 값이 바뀔 때만 부모에 알린다.
   const reportGeocodeStats = () => {
@@ -234,7 +269,7 @@ export default function NaverChoropleth({
     if (!cb || !complexesRef.current?.length) return;
     const stats = summarizeCoordSources(complexesRef.current, geocodeCache);
     const d = diagRef.current;
-    const sig = `${stats.total}|${stats.exact}|${stats.approx}|${stats.failed}|${stats.pending}|${d.kakao.calls}|${d.kakao.picked}|${d.kakao.zero}|${d.kakao.rejected}|${d.kakao.error}|${d.refine.attempted}|${d.refine.moved}|${d.refine.far}|${d.refine.sdkFail}|${serverGeocodeStats.calls}|${serverGeocodeStats.asked}|${serverGeocodeStats.hit}`;
+    const sig = `${stats.total}|${stats.exact}|${stats.approx}|${stats.failed}|${stats.pending}|${d.kakao.calls}|${d.kakao.picked}|${d.kakao.zero}|${d.kakao.rejected}|${d.kakao.error}|${d.kakao.addr}|${d.refine.attempted}|${d.refine.moved}|${d.refine.far}|${d.refine.sdkFail}|${serverGeocodeStats.calls}|${serverGeocodeStats.asked}|${serverGeocodeStats.hit}`;
     if (sig === lastGeocodeStatsRef.current) return;
     lastGeocodeStatsRef.current = sig;
     cb({ ...stats, kakao: { ...d.kakao }, refine: { ...d.refine }, server: { ...serverGeocodeStats } });
@@ -242,12 +277,12 @@ export default function NaverChoropleth({
 
   // 마커는 일단 동 중심점에 띄워 화면을 빨리 보여주고, 정확한 위치를 찾는 대로 옮긴다.
   // 같은 동 단지가 전부 한 점에 겹치면 클러스터러가 어떤 줌에서도 숫자 원 하나로만 묶어서, 확대해도 안 풀렸다.
-  //  - 한 번에 REFINE_BATCH개, 동시에 3개씩, 화면 중심에서 가까운 순서로 처리한다.
+  //  - 한 번에 REFINE_BATCH개, 동시에 5개씩(v228: 지번 주소 검색이 가벼워서 3→5), 화면 중심에서 가까운 순서로 처리한다.
   //  - 지도를 움직여도 중단하지 않고, 남은 단지는 이어서 처리한다(이전 단계의 seq 중단과 별개).
   //  - 옮긴 뒤에는 클러스터러 서명을 지워 다시 그리게 한다(위치만 바뀌면 서명이 같아 화면이 안 바뀐다).
   //  - 못 찾으면 geocodeCache에 null을 남겨 이번 접속에서는 다시 시도하지 않는다(동 중심점에 그대로 둔다).
   const REFINE_BATCH = 40;
-  const REFINE_SESSION_CAP = 800;
+  const REFINE_SESSION_CAP = 3000;
   const refineApproxMarkers = async () => {
     if (refineRunningRef.current || unmountedRef.current) return;
     refineRunningRef.current = true;
@@ -300,10 +335,7 @@ export default function NaverChoropleth({
         const found = [];
         // eslint-disable-next-line no-await-in-loop
         await runPool(batch, async (c) => {
-          const ctx = { place: placeContextOf(c.regionCode), dong: c.dong, aptName: c.apt };
-          const coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`, ctx)
-            || await geocodeComplex(`${c.dong} ${c.apt}`, ctx)
-            || await geocodeComplex(c.apt, ctx);
+          const coord = await locateComplex(c);
           geocodeCache[c.key] = coord; // null이면 못 찾음 — 이번 접속에서는 재시도하지 않는다
           if (!coord) return;
           const { coord: picked, source } = resolveMarkerCoord({ lat: c.lat, lng: c.lng }, coord);
@@ -313,7 +345,7 @@ export default function NaverChoropleth({
           entry.marker.setPosition(new window.naver.maps.LatLng(picked.lat, picked.lng));
           found.push({ key: c.key, lat: picked.lat, lng: picked.lng });
           diagRef.current.refine.moved += 1;
-        }, 3);
+        }, 5);
         if (found.length) {
           queueServerGeocodeSave(found);
           clusterSignatureRef.current = ''; // 위치가 바뀌었으니 클러스터를 다시 만든다
@@ -321,7 +353,7 @@ export default function NaverChoropleth({
         }
         reportGeocodeStats();
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 250)); // 호출이 몰리지 않게 잠깐 쉰다
+        await new Promise((r) => setTimeout(r, 150)); // 호출이 몰리지 않게 잠깐 쉰다
       }
     } catch (e) {
       // 위치 다듬기는 부가 기능이라, 실패해도 동 중심점 마커로 계속 동작해야 한다.
@@ -444,6 +476,29 @@ export default function NaverChoropleth({
   // 네이버용 클러스터링 — 공식 클러스터러 라이브러리 없이, 지도를 격자로 나눠 겹치는 단지를
   // 하나의 숫자 배지로 묶어 보여준다 (호갱노노/아실처럼). 확대하면 묶음이 풀리면서 개별 마커가 나타난다.
   // handleZoomChangedImmediate가 이 함수를 호출하므로, 반드시 그보다 먼저 선언해야 한다.
+  // v228: 묶음을 누르면 그 자리에 단지 목록 팝업. 화면 위치는 지도 범위 비율로 계산한다(작은 범위라 직선 근사로 충분).
+  const openClusterPopup = (keys, lat, lng, canSeparate) => {
+    const map = mapRef.current;
+    const el = containerRef.current;
+    if (!map || !el) return;
+    const b = map.getBounds();
+    if (!b) return;
+    const sw = b.getSW(); const ne = b.getNE();
+    const W = el.clientWidth; const H = el.clientHeight;
+    const x = ((lng - sw.lng()) / (ne.lng() - sw.lng())) * W;
+    const y = ((ne.lat() - lat) / (ne.lat() - sw.lat())) * H;
+    const byKey = new Map((complexesRef.current || []).map((c) => [c.key, c]));
+    const posByKey = new Map(markersRef.current.map((m) => [m.key, m.marker.getPosition()]));
+    const items = keys.map((k) => {
+      const c = byKey.get(k);
+      if (!c) return null;
+      const p = posByKey.get(k);
+      return { ...c, lat: p ? p.lat() : c.lat, lng: p ? p.lng() : c.lng };
+    }).filter(Boolean).sort((a, b2) => ((b2.leader ? 1 : 0) - (a.leader ? 1 : 0)) || ((b2.latestPrice ?? -1) - (a.latestPrice ?? -1)));
+    popOpenedAtRef.current = Date.now();
+    setClusterPop({ x, y, W, H, keys, items, lat, lng, canSeparate });
+  };
+
   const syncNaverClusterer = () => {
     const map = mapRef.current;
     if (!map || !window.naver?.maps) return;
@@ -466,12 +521,12 @@ export default function NaverChoropleth({
     clustererRef.current = [];
     clusterSignatureRef.current = signature;
 
-    // 묶는 칸은 화면 약 120px. 예전 값(0.0008 * 2^(20-zoom))은 어느 줌에서나 화면 약 750px라서 확대해도
+    // 묶는 칸은 화면 약 100px(v228: 120→100). 예전 값(0.0008 * 2^(20-zoom))은 어느 줌에서나 화면 약 750px라서 확대해도
     // 핀이 거의 다 숫자 원으로 묶였고, 낱개로 세는 목록 수와 맞지 않았다(v178까지).
     const vb = map.getBounds();
     const vsize = map.getSize();
     const degPerPx = vb && vsize?.height ? (vb.getNE().lat() - vb.getSW().lat()) / vsize.height : NaN;
-    const cellDeg = Number.isFinite(degPerPx) && degPerPx > 0 ? degPerPx * 120 : 0.0008 * Math.pow(2, 20 - zoom);
+    const cellDeg = Number.isFinite(degPerPx) && degPerPx > 0 ? degPerPx * 100 : 0.0008 * Math.pow(2, 20 - zoom);
     const buckets = new Map();
     const pinnedMarkers = [];
     markersRef.current.forEach(({ marker, key }) => {
@@ -513,12 +568,10 @@ export default function NaverChoropleth({
         Math.max(...group.map((g) => g.lng)) - Math.min(...group.map((g) => g.lng)),
       );
       window.naver.maps.Event.addListener(overlay, 'click', () => {
-        // 누르면 항상 그 묶음의 단지 목록을 연다(v180까지는 확대만 해서, 다시 묶이거나 목록이 접혀 있으면
-        // "눌러도 반응 없음"으로 보였다). 갈라질 수 있으면 확대도 한다. 이미 최대 줌이거나 마커가 사실상 같은
-        // 위치(약 5m 이내)면 확대해도 안 풀리므로 목록만 연다.
+        // v228: 누르면 그 자리에 묶음 속 단지 목록 팝업을 띄운다 — 확대하지 않아도 바로 고를 수 있다(v227까지는
+        // 확대 + 옆 목록 열기). 갈라질 수 있으면 팝업에 "확대" 버튼을 보여준다(마커가 약 5m 이내로 겹치거나 최대 줌이면 없음).
         const canSeparate = spread > 0.00005 && map.getZoom() < 19;
-        onClusterOpenRef.current?.(memberKeys);
-        if (canSeparate) map.morph(new window.naver.maps.LatLng(lat, lng), Math.min(map.getZoom() + 2, 19));
+        openClusterPopup(memberKeys, lat, lng, canSeparate);
       });
       clustererRef.current.push({ overlay });
     });
@@ -551,6 +604,7 @@ export default function NaverChoropleth({
   };
 
   const handleZoomChanged = () => {
+    setClusterPop(null); // 확대·축소하면 묶음이 바뀌므로 팝업을 닫는다
     if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
     zoomDebounceRef.current = setTimeout(handleZoomChangedImmediate, 150);
   };
@@ -572,6 +626,11 @@ export default function NaverChoropleth({
           zoom: focusLatLng ? 13 : 11,
         });
         window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', () => zoomChangedRef.current?.());
+        // v228: 지도를 끌거나 빈 곳을 누르면 묶음 팝업을 닫는다(묶음을 누른 직후 따라오는 지도 클릭은 무시).
+        window.naver.maps.Event.addListener(mapRef.current, 'dragstart', () => setClusterPop(null));
+        window.naver.maps.Event.addListener(mapRef.current, 'click', () => {
+          if (Date.now() - popOpenedAtRef.current > 400) setClusterPop(null);
+        });
       }
       if (!infoWindowRef.current) {
         infoWindowRef.current = new window.naver.maps.InfoWindow({
@@ -784,7 +843,8 @@ export default function NaverChoropleth({
     });
     // 확대도가 높을수록 화면에 실제로 보이는 단지를 더 많이 표시한다.
     const zoom = mapRef.current.getZoom();
-    const maxMarkers = Math.min(600, Math.max(250, 250 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 40)));
+    // v228: 250개 → 400개부터(줌 13에서 구 하나가 다 보이므로). 확대할수록 조금씩 더(최대 700).
+    const maxMarkers = Math.min(700, Math.max(400, 400 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 100)));
     visibleComplexes.sort((a, b) => {
       const da = a.lat == null || a.lng == null ? Number.POSITIVE_INFINITY : (a.lat - centerLat) ** 2 + (a.lng - centerLng) ** 2;
       const db = b.lat == null || b.lng == null ? Number.POSITIVE_INFINITY : (b.lat - centerLat) ** 2 + (b.lng - centerLng) ** 2;
@@ -828,10 +888,7 @@ export default function NaverChoropleth({
       let { coord } = resolveMarkerCoord(approx, geocodeCache[c.key]);
       if (coord === undefined) {
         if (!ready) return;
-        const ctx = { place: placeContextOf(c.regionCode), dong: c.dong, aptName: c.apt };
-        coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`, ctx)
-          || await geocodeComplex(`${c.dong} ${c.apt}`, ctx)
-          || await geocodeComplex(c.apt, ctx);
+        coord = await locateComplex(c);
         geocodeCache[c.key] = coord;
         if (coord) newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng });
       }
@@ -861,6 +918,7 @@ export default function NaverChoropleth({
 
   useEffect(() => {
     // complexes가 처음 들어오거나 지역을 바꿨을 때만 준비한다. 실제 Marker 생성은 near + idle에서 한다.
+    setClusterPop(null); // 단지 목록이 바뀌면(지역·기간·필터) 열려 있던 묶음 팝업은 맞지 않는다
     if (!mapRef.current || !complexes?.length) return undefined;
     if (zoomTierRef.current === 'near') syncVisibleMarkers();
     else reportGeocodeStats();
@@ -941,9 +999,81 @@ export default function NaverChoropleth({
     );
   }
 
+  // v228: 묶음 팝업 — 묶음 바로 위(화면 아래쪽이면) 또는 아래(위쪽이면)에 띄우고, 지도 밖으로 나가지 않게 좌우를 맞춘다.
+  let popupEl = null;
+  if (clusterPop) {
+    const PW = Math.min(260, Math.max(180, clusterPop.W - 16));
+    const left = Math.max(8, Math.min(clusterPop.x - PW / 2, clusterPop.W - PW - 8));
+    const below = clusterPop.y < clusterPop.H / 2;
+    const vpos = below ? { top: Math.max(8, clusterPop.y + 30) } : { bottom: Math.max(8, clusterPop.H - clusterPop.y + 30) };
+    const maxH = Math.max(140, Math.min(300, below ? clusterPop.H - clusterPop.y - 46 : clusterPop.y - 46));
+    popupEl = (
+      <div
+        style={{
+          position: 'absolute', left, ...vpos, width: PW, zIndex: 30, background: '#fff', borderRadius: 10,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.22)', border: '1px solid rgba(40,35,30,0.14)', fontSize: 12, color: '#2b2722',
+          display: 'flex', flexDirection: 'column', maxHeight: maxH,
+        }}
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderBottom: '1px solid #eee' }}>
+          <b style={{ flex: 1 }}>이 근처 단지 {clusterPop.items.length}곳</b>
+          <span style={{ cursor: 'pointer', color: '#9C9B96', fontSize: 14, lineHeight: 1 }} onClick={() => setClusterPop(null)} title="닫기">✕</span>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          {clusterPop.items.map((c) => {
+            const price = pinPriceTextOf(c, pinPriceModeRef.current);
+            return (
+              <div
+                key={c.key}
+                onClick={() => { setClusterPop(null); onComplexSelectRef.current?.(c); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #f3f3f1' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f7f5f2'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {pinnedKeysRef.current.has(c.key) ? '★ ' : ''}{c.leader ? '👑 ' : ''}{c.apt}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: '#9C9B96' }}>{c.dong}{c.latestPrice == null ? ' · 이 기간 거래 없음' : ''}</div>
+                </div>
+                {price && <span style={{ color: '#b23a2e', fontWeight: 700, whiteSpace: 'nowrap' }}>{price}</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 6, padding: '7px 10px', borderTop: '1px solid #eee' }}>
+          {clusterPop.canSeparate && (
+            <button
+              type="button"
+              onClick={() => {
+                const map = mapRef.current;
+                setClusterPop(null);
+                if (map && window.naver?.maps) map.morph(new window.naver.maps.LatLng(clusterPop.lat, clusterPop.lng), Math.min(map.getZoom() + 2, 19));
+              }}
+              style={{ flex: 1, padding: '5px 0', fontSize: 11.5, borderRadius: 6, border: '1px solid #D2D0CA', background: '#fff', cursor: 'pointer' }}
+            >
+              🔍 확대해서 보기
+            </button>
+          )}
+          {onClusterOpenRef.current && (
+            <button
+              type="button"
+              onClick={() => { const keys = clusterPop.keys; setClusterPop(null); onClusterOpenRef.current?.(keys); }}
+              style={{ flex: 1, padding: '5px 0', fontSize: 11.5, borderRadius: 6, border: '1px solid #D2D0CA', background: '#fff', cursor: 'pointer' }}
+            >
+              📋 목록에서 보기
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', flex: 1, minHeight: 0, borderRadius: 8, overflow: 'hidden', touchAction: 'none' }} />
+      {popupEl}
     </div>
   );
 }
