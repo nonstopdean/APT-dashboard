@@ -26,7 +26,7 @@ function pinHtml(c, mode, pinned) {
   const bg = pinned ? '#fff4ef' : 'rgba(255,255,255,0.96)';
   return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;">`
     + `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">`
-    + `${pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : ''}${escHtml(c.apt)}${price ? `<span style="margin-left:5px;color:#b23a2e;">${escHtml(price)}</span>` : ''}</div>`
+    + `${pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : ''}${c.leader ? '👑 ' : ''}${escHtml(c.apt)}${price ? `<span style="margin-left:5px;color:#b23a2e;">${escHtml(price)}</span>` : ''}</div>`
     + '<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>';
 }
 const layerHtml = (icon, text, color) => `<div style="display:flex;align-items:center;gap:3px;background:#fff;border:1.5px solid ${color};border-radius:12px;padding:2px 7px;box-shadow:0 1px 4px rgba(0,0,0,0.2);white-space:nowrap;">`
