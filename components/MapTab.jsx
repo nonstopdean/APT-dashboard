@@ -232,7 +232,8 @@ export default function MapTab({
     if (id === 'price') setBudgetDraft(budgetSearchOpen ? String(budgetAmount || '') : '');
     setOpenFilter({ id, left: Math.max(8, Math.min(r.left, window.innerWidth - 228)), top: r.bottom + 6 });
   };
-  const SIZE_OPTS = [['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상']];
+  const SIZE_OPTS = [['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상'],
+    ['sqm59', '전용 59㎡ (±2)'], ['sqm74', '전용 74㎡ (±2)'], ['sqm84', '전용 84㎡ (±2)'], ['sqm101', '전용 101㎡ (±2)']]; // v230: 왼쪽 패널에만 있던 정확 면적
   const AGE_OPTS = [['all', '전체'], ['5', '5년 이내'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내'], ['20p', '20년 초과']];
   const HH_OPTS = [['all', '전체'], ['300', '300세대 이상'], ['500', '500세대 이상'], ['1000', '1,000세대 이상']];
   const STATION_OPTS = [['all', '전체'], ['500', '역 500m 이내'], ['1000', '역 1km 이내']];
@@ -996,16 +997,17 @@ export default function MapTab({
         )}
 
         {/* 처음 온 사람(지역 0개)에게 무엇을 해야 하는지 알려준다. 예전엔 빈 지도만 보여서, 구를 누르면 된다는 걸 알 수 없었다. */}
-        {selected.length === 0 && allTx.length === 0 && !mapError && (
+        {/* v230: 지도를 움직이면 화면 안 단지를 자동으로 불러오므로, 단지가 하나도 없을 때(멀리 보고 있거나 불러오는 중)만 보인다. */}
+        {selected.length === 0 && allTx.length === 0 && mapComplexes.length === 0 && !mapError && (
           <div className="map-empty-guide" style={{
             position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 21,
             width: 'min(340px, calc(100% - 32px))', boxSizing: 'border-box',
             background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`, borderRadius: 14,
             boxShadow: '0 8px 28px rgba(0,0,0,0.14)', padding: '16px 16px 14px', textAlign: 'center',
           }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>어디 시세를 볼까요?</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{mapZoomTier === 'near' ? '주변 단지를 불러오는 중…' : '어디 단지를 볼까요?'}</div>
             <div style={{ fontSize: 12, color: PALETTE.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
-              지도에서 구를 누르거나, 위 검색창에 "해운대 84 8억 이하"처럼 적어보세요.
+              지도를 확대하면 화면 안 단지가 바로 나와요. 위 검색창에 단지 이름(예: 헬리오시티)을 적어도 돼요.
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
               {[['11680', '강남구'], ['11650', '서초구'], ['11710', '송파구'], ['11440', '마포구'],
@@ -1023,7 +1025,8 @@ export default function MapTab({
 
         {/* 지도 위 단지 탐색 패널: 실거래가가 있는 단지를 바로 선택 */}
         {/* 단지 상세 패널이 오른쪽에 떠 있을 때는 겹치지 않게 숨긴다. */}
-        {allTx.length > 0 && !selectedApt && (
+        {/* v230: 지역을 고르지 않아도 지도를 움직여 불러온 주변 단지가 있으면 목록을 보여준다(단지 중심). */}
+        {(allTx.length > 0 || mapPanelList.length > 0) && !selectedApt && (
           <div ref={panelElRef} className={`map-complex-panel${mapPanelMinimized ? ' is-min' : ''}`} style={{
             // 도구줄(카드 포함) 바로 아래. 아직 못 쟀거나 한 줄뿐이면 예전 값(72)을 유지한다.
             // v221: 머리글의 손잡이로 끌어 옮기면(넓은 화면만) 그 자리에 놓고, 높이는 지도 바닥까지.
