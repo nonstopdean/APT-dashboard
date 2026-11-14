@@ -17,6 +17,7 @@ import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
 import { normalizeComplexName } from '../lib/complex-match';
 import { buildChangeIndex, changeNote, lastCompleteYm } from '../lib/market-change';
+import MapSearchPanel from '../components/MapSearchPanel';
 import { combineSignals, signalNote } from '../lib/market-signal';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
@@ -2828,6 +2829,50 @@ export default function Page() {
     });
     return map;
   }, [mapFeatures]);
+
+  // v238: 지도 탭 검색에서 고른 지역 — 지도를 그곳으로 옮기고, 왼쪽에 그 지역 요약(불러온 거래 기준)을 보여준다.
+  const [searchRegion, setSearchRegion] = useState(null); // { code, label, kind }
+  const regionLatLngOf = (code) => {
+    const members = expandRegionCode(code).map((c) => codeToLatLng[c]).filter(Boolean);
+    if (codeToLatLng[code]) return codeToLatLng[code];
+    if (members.length) return { lat: members.reduce((s, p) => s + p.lat, 0) / members.length, lng: members.reduce((s, p) => s + p.lng, 0) / members.length };
+    // 새로 생긴 구(예: 화성시 동탄구 41597)는 경계 자료에 없을 수 있어 같은 시(앞 4자리)로 대신한다.
+    const sib = Object.keys(codeToLatLng).find((c) => c.slice(0, 4) === String(code).slice(0, 4));
+    return sib ? codeToLatLng[sib] : null;
+  };
+  const pickSearchRegion = (r) => {
+    setSearchRegion(r);
+    setSelectedApt(null);
+    const ll = regionLatLngOf(r.code);
+    if (ll) setFocusLatLng({ lat: ll.lat, lng: ll.lng, zoom: r.kind === 'sido' ? 10 : 13 });
+  };
+  const pickSearchDong = (d) => {
+    setSelectedApt(null);
+    setSearchRegion({ code: d.regionCode, label: `${labelFor(d.regionCode)} ${d.dong}`, kind: 'dong', dong: d.dong });
+    const c = findDongCentroid(d.regionCode, d.dong) || regionLatLngOf(d.regionCode);
+    if (c) setFocusLatLng({ lat: c.lat, lng: c.lng, zoom: 15 });
+  };
+  const searchRegionSummary = useMemo(() => {
+    if (!searchRegion) return null;
+    const codes = new Set(expandRegionCode(searchRegion.code));
+    const inArea = (x) => codes.has(x.regionCode) && (!searchRegion.dong || normalizeDongName(x.dong) === normalizeDongName(searchRegion.dong));
+    const rows = mapTx.filter(inArea);
+    const valueOf = (t) => (isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong);
+    const vals = rows.map(valueOf).filter((v) => Number.isFinite(v) && v > 0);
+    const ch = rows.length ? buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' }).get('all') : null;
+    return {
+      label: searchRegion.label,
+      count: rows.length,
+      complexes: mapComplexes.filter(inArea).length,
+      avgPyeong: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null,
+      changeText: ch ? `${ch.pct > 0 ? '+' : ''}${ch.pct.toFixed(1)}%` : null,
+      periodLabel: `최근 ${months.length}개월`,
+      note: rows.length
+        ? `${isRent ? '전세 보증금' : '매매'} 기준 · 가격 흐름은 기간 앞 절반 → 뒤 절반 평균 평당가 비교(거래된 단지 구성에 따라 달라질 수 있어요).`
+        : '',
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchRegion, mapTx, mapComplexes, isRent, months]);
   useEffect(() => {
     const code = restoreFocusRef.current;
     if (!code || !codeToLatLng[code]) return;
@@ -3177,11 +3222,21 @@ export default function Page() {
 
         {/* v230: 지도 탭에서는 거래 유형(지도 위 버튼)·평형·입주년차(지도 위 필터 바)·단지 검색(지도 위 검색창)이 지도 위에 있어서
             왼쪽 패널에서는 뺀다. 다른 탭에서는 예전 그대로. */}
+        {/* v238: 지도 탭 왼쪽은 "단지·지역 검색" 하나(조회 기간·지역 고르기·즐겨찾기는 대시보드 탭에서). */}
         {viewMode === 'map' && (
-          <p style={{ fontSize: 11, color: PALETTE.textMuted, lineHeight: 1.5, margin: 0, padding: '8px 10px', background: PALETTE.panelAlt, borderRadius: 8 }}>
-            지도를 움직이면 화면 안 단지가 바로 보여요. 평형·연식·가격 같은 조건은 지도 위 필터 바에서, 단지는 이름으로 검색해요.
-            여기서는 조회 기간과 대시보드에 쓸 지역을 골라요.
-          </p>
+          <MapSearchPanel
+            complexes={mapComplexes}
+            regionGroups={REGION_GROUPS}
+            sidoAggregates={SIDO_AGGREGATES}
+            regionLabel={labelFor}
+            palette={PALETTE}
+            onPickComplex={goToComplex}
+            onPickRegion={pickSearchRegion}
+            onPickDong={pickSearchDong}
+            summary={searchRegionSummary}
+            onCloseSummary={() => setSearchRegion(null)}
+            onOpenDashboard={searchRegion ? () => { addRegionAndFetch(searchRegion.code); setViewMode('normal'); } : null}
+          />
         )}
 
         {viewMode !== 'map' && (
@@ -3240,6 +3295,7 @@ export default function Page() {
         </div>
         )}
 
+        {viewMode !== 'map' && (
         <div>
           <label style={styles.label}>조회 기간</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 10 }}>
@@ -3290,8 +3346,9 @@ export default function Page() {
             </div>
           </div>
         </div>
+        )}
 
-        {dongFilterOptions.length > 0 && (
+        {viewMode !== 'map' && dongFilterOptions.length > 0 && (
         <div>
           <label style={styles.label}>동 필터</label>
           <select
@@ -3308,6 +3365,7 @@ export default function Page() {
         </div>
         )}
 
+        {viewMode !== 'map' && (
         <div>
           <label style={styles.label}>지역 선택</label>
           <input
@@ -3399,6 +3457,7 @@ export default function Page() {
             </p>
           )}
         </div>
+        )}
 
         {viewMode !== 'map' && (
         <div>
@@ -3440,6 +3499,7 @@ export default function Page() {
         </div>
         )}
 
+        {viewMode !== 'map' && (
         <div>
           <label style={styles.label}>즐겨찾기</label>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
@@ -3475,7 +3535,9 @@ export default function Page() {
             </div>
           )}
         </div>
+        )}
 
+        {viewMode !== 'map' && (
         <button
           className="ui-btn"
           style={{
@@ -3487,6 +3549,7 @@ export default function Page() {
           <RefreshCw size={14} className={status === 'loading' ? 'spin' : ''} />
           {status === 'loading' ? '조회 중...' : '데이터 조회'}
         </button>
+        )}
 
         {errorMsg && (
           <div style={{
