@@ -206,6 +206,72 @@ const currentYear = new Date().getFullYear();
 const YEAR_OPTIONS = Array.from({ length: currentYear - 2005 + 1 }, (_, i) => String(2005 + i)).reverse();
 const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 
+// v230: 평형·연식 조건 — 고른 지역의 거래(allTx)와 지도를 움직일 때 자동으로 불러온 주변 구 거래(browseTx)에 똑같이 쓴다.
+function passesSizeAge(t, unitSizeFilter, buildYearFilter, thisYear) {
+  if (unitSizeFilter !== 'all') {
+    const p = supplyPyeong(t.area); // v193: 평형대는 공급면적 기준(추정) — 84㎡ = 34평 = 30평대
+    const a = t.area;
+    if (unitSizeFilter === 'u20' && !(p < 20)) return false;
+    if (unitSizeFilter === '20s' && !(p >= 20 && p < 30)) return false;
+    if (unitSizeFilter === '30s' && !(p >= 30 && p < 40)) return false;
+    if (unitSizeFilter === '40s' && !(p >= 40 && p < 50)) return false;
+    if (unitSizeFilter === '50p' && !(p >= 50)) return false;
+    // 정확한 전용면적(㎡) 기준 — 같은 평형끼리 비교할 때는 "30평대"보다 이게 더 정확하다.
+    // 실거래가는 84.97㎡처럼 딱 떨어지지 않는 경우가 많아 ±2㎡ 오차를 허용한다.
+    if (unitSizeFilter.startsWith('sqm')) {
+      if (a == null) return false;
+      const target = parseInt(unitSizeFilter.slice(3), 10);
+      if (Math.abs(a - target) > 2) return false;
+    } else if (p == null) return false;
+  }
+  if (buildYearFilter !== 'all') {
+    if (!t.buildYear) return false;
+    const age = thisYear - t.buildYear;
+    if (buildYearFilter === '5' && !(age <= 5)) return false;
+    if (buildYearFilter === '10' && !(age <= 10)) return false;
+    if (buildYearFilter === '15' && !(age <= 15)) return false;
+    if (buildYearFilter === '20' && !(age <= 20)) return false;
+    if (buildYearFilter === '20p' && !(age > 20)) return false;
+  }
+  return true;
+}
+
+const ymdOf = (t) => `${t.year}${String(t.month).padStart(2, '0')}${String(t.day).padStart(2, '0')}`;
+
+// v230: 거래 → 단지별 한 줄(가장 최근 거래 + 건수·평당가·기간 등락률·층 분포). 평당가가 없는 단지는 뺀다. 정렬은 sortComplexRows.
+function groupComplexRows(txs, isRent) {
+  const groups = {};
+  txs.forEach((t) => {
+    const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  });
+  return Object.values(groups).map((rows) => {
+    rows.sort((a, b) => ymdOf(b).localeCompare(ymdOf(a)));
+    const latest = rows[0];
+    const earliest = rows[rows.length - 1];
+    const unitPrice = isRent ? (latest.isJeonse ? latest.depositPerPyeong : null) : latest.pricePerPyeong;
+    const earliestUnitPrice = isRent ? (earliest.isJeonse ? earliest.depositPerPyeong : null) : earliest.pricePerPyeong;
+    const change = unitPrice && earliestUnitPrice ? ((unitPrice - earliestUnitPrice) / earliestUnitPrice) * 100 : null;
+    const floorDist = { low: 0, mid: 0, high: 0 };
+    rows.forEach((r) => {
+      const f = parseInt(r.floor, 10);
+      if (!Number.isFinite(f)) return;
+      if (f <= 10) floorDist.low += 1;
+      else if (f <= 20) floorDist.mid += 1;
+      else floorDist.high += 1;
+    });
+    return { ...latest, count: rows.length, unitPrice, change, floorDist };
+  }).filter((r) => r.unitPrice != null);
+}
+
+// 'price'(평당가 낮은 순) | 'change'(등락률 높은 순) | 'recent'(최근 거래 순). 받은 배열을 그대로 정렬해 돌려준다.
+function sortComplexRows(list, complexSort) {
+  if (complexSort === 'change') return list.sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
+  if (complexSort === 'recent') return list.sort((a, b) => ymdOf(b).localeCompare(ymdOf(a)));
+  return list.sort((a, b) => a.unitPrice - b.unitPrice);
+}
+
 export default function Page() {
   const [dealType, setDealType] = useState('trade');
   const [unitSizeFilter, setUnitSizeFilter] = useState('all');
@@ -850,35 +916,8 @@ export default function Page() {
       const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
       return db.localeCompare(da);
     });
-    const currentYear = new Date().getFullYear();
-    return all.filter((t) => {
-      if (unitSizeFilter !== 'all') {
-        const p = supplyPyeong(t.area); // v193: 평형대는 공급면적 기준(추정) — 84㎡ = 34평 = 30평대
-        const a = t.area;
-        if (unitSizeFilter === 'u20' && !(p < 20)) return false;
-        if (unitSizeFilter === '20s' && !(p >= 20 && p < 30)) return false;
-        if (unitSizeFilter === '30s' && !(p >= 30 && p < 40)) return false;
-        if (unitSizeFilter === '40s' && !(p >= 40 && p < 50)) return false;
-        if (unitSizeFilter === '50p' && !(p >= 50)) return false;
-        // 정확한 전용면적(㎡) 기준 — 같은 평형끼리 비교할 때는 "30평대"보다 이게 더 정확하다.
-        // 실거래가는 84.97㎡처럼 딱 떨어지지 않는 경우가 많아 ±2㎡ 오차를 허용한다.
-        if (unitSizeFilter.startsWith('sqm')) {
-          if (a == null) return false;
-          const target = parseInt(unitSizeFilter.slice(3), 10);
-          if (Math.abs(a - target) > 2) return false;
-        } else if (p == null) return false;
-      }
-      if (buildYearFilter !== 'all') {
-        if (!t.buildYear) return false;
-        const age = currentYear - t.buildYear;
-        if (buildYearFilter === '5' && !(age <= 5)) return false;
-        if (buildYearFilter === '10' && !(age <= 10)) return false;
-        if (buildYearFilter === '15' && !(age <= 15)) return false;
-        if (buildYearFilter === '20' && !(age <= 20)) return false;
-        if (buildYearFilter === '20p' && !(age > 20)) return false;
-      }
-      return true;
-    });
+    const thisYear = new Date().getFullYear();
+    return all.filter((t) => passesSizeAge(t, unitSizeFilter, buildYearFilter, thisYear));
   }, [selected, months, rawByRegionMonth, unitSizeFilter, buildYearFilter]);
 
   // 아실/호갱노노처럼 가격대(매매금액·보증금, 억 단위)로 거래 내역을 좁혀볼 수 있는 필터.
@@ -1280,55 +1319,10 @@ export default function Page() {
   // 평당가(또는 전세는 보증금 평당가) 기준으로 정렬해서, 값이 비슷한 단지끼리 자연스럽게 이웃하게 둔다.
   const [complexSort, setComplexSort] = useState('price'); // 'price' | 'change' | 'recent'
 
-  const complexCompare = useMemo(() => {
-    const groups = {};
-    allTxFiltered.forEach((t) => {
-      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(t);
-    });
-    const list = Object.values(groups).map((rows) => {
-      rows.sort((a, b) => {
-        const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
-        const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
-        return db.localeCompare(da);
-      });
-      const latest = rows[0];
-      const earliest = rows[rows.length - 1];
-      const unitPrice = isRent
-        ? (latest.isJeonse ? latest.depositPerPyeong : null)
-        : latest.pricePerPyeong;
-      const earliestUnitPrice = isRent
-        ? (earliest.isJeonse ? earliest.depositPerPyeong : null)
-        : earliest.pricePerPyeong;
-      const change = unitPrice && earliestUnitPrice
-        ? ((unitPrice - earliestUnitPrice) / earliestUnitPrice) * 100
-        : null;
-      return { ...latest, count: rows.length, unitPrice, change, floorDist: (() => {
-        const d = { low: 0, mid: 0, high: 0 };
-        rows.forEach((r) => {
-          const f = parseInt(r.floor, 10);
-          if (!Number.isFinite(f)) return;
-          if (f <= 10) d.low += 1;
-          else if (f <= 20) d.mid += 1;
-          else d.high += 1;
-        });
-        return d;
-      })() };
-    });
-    const filtered = list.filter((r) => r.unitPrice != null);
-    if (complexSort === 'change') {
-      return filtered.sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity));
-    }
-    if (complexSort === 'recent') {
-      return filtered.sort((a, b) => {
-        const da = `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`;
-        const db = `${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`;
-        return db.localeCompare(da);
-      });
-    }
-    return filtered.sort((a, b) => a.unitPrice - b.unitPrice);
-  }, [allTxFiltered, isRent, complexSort]);
+  const complexCompare = useMemo(
+    () => sortComplexRows(groupComplexRows(allTxFiltered, isRent), complexSort),
+    [allTxFiltered, isRent, complexSort],
+  );
 
   // z-score 기반 저평가/고평가 참고 점수 — 같은 시/도 + 비슷한 평형(10평 단위)끼리 묶어서
   // 그 안에서 이 단지 평당가가 평균보다 얼마나 낮은지/높은지를 계산한다. 공식 시세 평가가
@@ -1591,13 +1585,21 @@ export default function Page() {
   const browseDataKey = `${dealType}|${browseStart}|${browseEnd}`;
   const browseTx = useMemo(() => {
     const sel = new Set(selected.flatMap((c) => expandRegionCode(c)));
+    const thisYear = new Date().getFullYear();
     const out = [];
     Object.entries(browseData).forEach(([code, b]) => {
       if (b.key !== browseDataKey || sel.has(code)) return;
-      b.trades.forEach((t) => out.push({ ...t, regionCode: code }));
+      // v230: 평형·연식 조건도 고른 지역과 똑같이 건다(예전엔 주변 구 핀은 조건과 상관없이 다 보였다).
+      b.trades.forEach((t) => { if (passesSizeAge(t, unitSizeFilter, buildYearFilter, thisYear)) out.push({ ...t, regionCode: code }); });
     });
     return out;
-  }, [browseData, browseDataKey, selected]);
+  }, [browseData, browseDataKey, selected, unitSizeFilter, buildYearFilter]);
+  // v230: 단지 중심 — "현재 화면" 목록에 고른 지역 단지와 주변 구 자동 불러오기 단지를 함께 넣는다(지역을 고르지 않아도 지도만 움직이면 목록이 찬다).
+  const browseCompare = useMemo(() => groupComplexRows(browseTx, isRent), [browseTx, isRent]);
+  const viewCompare = useMemo(
+    () => (browseCompare.length ? sortComplexRows([...complexCompare, ...browseCompare], complexSort) : complexCompare),
+    [complexCompare, browseCompare, complexSort],
+  );
 
   useEffect(() => {
     if (selected.length === 0) { setFullComplexList([]); return undefined; }
@@ -2144,7 +2146,7 @@ export default function Page() {
       }
       return true;
     };
-    if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? complexCompare : complexCompare.filter(nearStation)).slice(0, 40);
+    if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? viewCompare : viewCompare.filter(nearStation)).slice(0, 40);
     // v219: 목록 창(넓은 화면은 오른쪽, 폰은 아래 시트)이 가린 부분은 "현재 화면"에서 뺀다. 화면 비율로 경도/위도를 자른다
     // (작은 범위라 메르카토르 왜곡은 무시). 지도 범위 자체(mapViewportBounds)는 역·학교 표시와 주변 구 불러오기에 그대로 쓴다.
     // v221: 목록 창을 옮길 수 있어서 { side: 'left'|'right'|'top'|'bottom', frac } — 가리지 않은 쪽의 비율만 남긴다.
@@ -2159,7 +2161,7 @@ export default function Page() {
       if (panelCover.side === 'bottom') return { ...b, neLat: b.swLat + dLat };
       return b;
     })();
-    const filtered = complexCompare.filter((c) => {
+    const filtered = viewCompare.filter((c) => {
       const key = `${c.regionCode}|${c.dong}|${c.apt}`;
       const m = mapComplexCoordByKey.get(key);
       const approx = m && m.lat != null && m.lng != null ? { lat: m.lat, lng: m.lng } : null;
@@ -2173,7 +2175,7 @@ export default function Page() {
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complexCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex, panelCover]);
+  }, [viewCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex, panelCover]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
@@ -2238,13 +2240,22 @@ export default function Page() {
   // 기본 지역을 정해 자동으로 부르지는 않는다.
   const LAST_REGIONS_KEY = 'apt-dashboard-last-regions';
   const restoredRegionsRef = useRef(false);
+  const restoreFocusRef = useRef(null); // v230: 기억한 첫 지역 코드 — 구 중심 좌표가 생기면 그곳(줌 13)으로 지도를 옮긴다
   useEffect(() => {
     if (restoredRegionsRef.current) return;
     restoredRegionsRef.current = true;
     try {
       const saved = JSON.parse(window.localStorage.getItem(LAST_REGIONS_KEY) || '[]');
       const codes = Array.isArray(saved) ? saved.filter((c) => typeof c === 'string' && /^\d{5}$/.test(c)).slice(0, 10) : [];
-      if (codes.length && selected.length === 0) { setSelected(codes); setPendingSearchFetch(codes); }
+      if (codes.length && selected.length === 0) {
+        setSelected(codes); setPendingSearchFetch(codes);
+        // v230: 기억한 지역도 단지가 보이는 줌으로 연다(예전엔 멀리 본 지도라 구 색칠만 보였다). 구 중심 좌표(codeToLatLng)는
+        // 지도 경계 파일을 받은 뒤에 생기므로, 그때 한 번 옮긴다(아래 restoreFocusRef effect).
+        restoreFocusRef.current = codes[0];
+      }
+      // v230: 단지 중심 — 처음 온 사람은 지역을 고르지 않아도 서울 강남·서초 일대를 단지가 보이는 줌(13)으로 연다.
+      // 그러면 화면에 걸친 구(최대 4곳)를 자동으로 불러와 핀과 "현재 화면" 목록이 바로 찬다(v203 주변 구 자동 불러오기).
+      else if (!codes.length && selected.length === 0) setFocusLatLng({ lat: 37.4979, lng: 127.0276, zoom: 13 });
     } catch (e) { /* 저장값이 깨졌거나 저장소를 못 쓰면 무시한다 */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2787,7 +2798,13 @@ export default function Page() {
     });
     return map;
   }, [mapFeatures]);
-
+  useEffect(() => {
+    const code = restoreFocusRef.current;
+    if (!code || !codeToLatLng[code]) return;
+    restoreFocusRef.current = null;
+    setFocusLatLng({ ...codeToLatLng[code], zoom: 13 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codeToLatLng]);
 
   const mapDisplayFeatures = useMemo(() => {
     if (!mapFeatures) return null;
@@ -3102,6 +3119,16 @@ export default function Page() {
           </p>
         </div>
 
+        {/* v230: 지도 탭에서는 거래 유형(지도 위 버튼)·평형·입주년차(지도 위 필터 바)·단지 검색(지도 위 검색창)이 지도 위에 있어서
+            왼쪽 패널에서는 뺀다. 다른 탭에서는 예전 그대로. */}
+        {viewMode === 'map' && (
+          <p style={{ fontSize: 11, color: PALETTE.textMuted, lineHeight: 1.5, margin: 0, padding: '8px 10px', background: PALETTE.panelAlt, borderRadius: 8 }}>
+            지도를 움직이면 화면 안 단지가 바로 보여요. 평형·연식·가격 같은 조건은 지도 위 필터 바에서, 단지는 이름으로 검색해요.
+            여기서는 조회 기간과 대시보드에 쓸 지역을 골라요.
+          </p>
+        )}
+
+        {viewMode !== 'map' && (
         <div>
           <label style={styles.label}>거래 유형</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
@@ -3117,6 +3144,7 @@ export default function Page() {
             </p>
           )}
         </div>
+        )}
 
         {!isRone && !isSilv && (
         <div>
@@ -3128,7 +3156,7 @@ export default function Page() {
         </div>
         )}
 
-        {!isRone && !isRatio && (
+        {viewMode !== 'map' && !isRone && !isRatio && (
         <div>
           <label style={styles.label}>평형 (공급면적 기준, 추정)</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6 }}>
@@ -3145,7 +3173,7 @@ export default function Page() {
         </div>
         )}
 
-        {(dealType === 'trade' || isSilv) && (
+        {viewMode !== 'map' && (dealType === 'trade' || isSilv) && (
         <div>
           <label style={styles.label}>입주년차 (준공연도 기준)</label>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', gap: 6 }}>
@@ -3316,6 +3344,7 @@ export default function Page() {
           )}
         </div>
 
+        {viewMode !== 'map' && (
         <div>
           <label style={styles.label}>단지 검색 (현재 조회 내역)</label>
           <input
@@ -3353,6 +3382,7 @@ export default function Page() {
             </div>
           )}
         </div>
+        )}
 
         <div>
           <label style={styles.label}>즐겨찾기</label>
