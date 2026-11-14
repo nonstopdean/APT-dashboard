@@ -36,7 +36,7 @@ function pinPriceTextOf(c, mode) {
 export default function NaverChoropleth({
   features, values, colorFor, borderColor, onSelect, height, focusLatLng, complexes, onComplexSelect,
   dongFeatures, dongValues, onZoomTierChange, onViewportChange, onVisibleMarkerCount, onGeocodeStats, onClusterOpen, pinnedKeys, valueFormat, valueNotes, dongValueNotes, stations, schools,
-  pinPriceMode = 'deal',
+  pinPriceMode = 'deal', areaBubbles = null,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -160,10 +160,10 @@ export default function NaverChoropleth({
   const reportViewportRef = useRef(null);
   reportViewportRef.current = reportViewport;
 
-  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 여러 개, 구 색칠), near는 13 이상(단지 핀·묶음).
-  // v180까지 near가 16, v227까지 14라서 꽤 확대해야 단지가 나왔다. v228부터 구 하나가 보이는 13에서 핀이 뜬다(mid 단계는 이제 없음).
+  // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 색칠), mid는 13(동 색칠), near는 14 이상(단지 핀·묶음).
+  // v232: 아실처럼 단계별 말풍선 — 9 이하 시·도, 10~12 시·군·구, 13 동(말풍선), 14 이상 단지 핀. (v228~v231은 13부터 핀이었다.)
   const FAR_ZOOM_LEVEL = 12;
-  const NEAR_ZOOM_LEVEL = 13;
+  const NEAR_ZOOM_LEVEL = 14;
   const zoomTierRef = useRef('far'); // 'far' | 'mid' | 'near'
   // zoom_changed 리스너는 지도를 만들 때 한 번만 붙는다. 함수를 직접 넘기면 첫 렌더(단지 목록이 비어 있던 때)의
   // 함수가 계속 불려서, 확대 직후 "그릴 단지 없음"으로 끝나며 idle이 예약한 최신 마커 갱신까지 취소했다
@@ -478,6 +478,58 @@ export default function NaverChoropleth({
   // 네이버용 클러스터링 — 공식 클러스터러 라이브러리 없이, 지도를 격자로 나눠 겹치는 단지를
   // 하나의 숫자 배지로 묶어 보여준다 (호갱노노/아실처럼). 확대하면 묶음이 풀리면서 개별 마커가 나타난다.
   // handleZoomChangedImmediate가 이 함수를 호출하므로, 반드시 그보다 먼저 선언해야 한다.
+  // v232: 단계별 말풍선 — 줌에 맞는 단계(시·도/시·군·구/동)의 말풍선만 지도에 붙인다. 단계나 자료가 바뀔 때만 다시 만든다.
+  // 누르면 그 자리로 다음 단계까지 확대한다(시·도 → 11, 시·군·구 → 13, 동 → 14 단지 핀).
+  const bubbleLevelOf = (z) => (z <= 9 ? 'sido' : z <= 12 ? 'sgg' : z === 13 ? 'dong' : null);
+  const BUBBLE_NEXT_ZOOM = { sido: 11, sgg: 13, dong: 14 };
+  const fmtBubbleValue = (b) => {
+    if (b.kind === 'pyeong') return `평당 ${Math.round(b.value).toLocaleString()}만`;
+    return b.value >= 10000 ? `${(b.value / 10000).toFixed(1)}억` : `${Math.round(b.value).toLocaleString()}만`;
+  };
+  const bubbleHtml = (b, level) => {
+    const bg = level === 'dong' ? '#2b2722' : '#b23a2e';
+    const esc = (s) => String(s).replace(/[<>&"']/g, '');
+    const ch = Number.isFinite(b.change) && Math.abs(b.change) >= 0.05
+      ? `<div style="font-size:9.5px;font-weight:600;opacity:.92">${b.change > 0 ? '▲' : '▼'}${Math.abs(b.change).toFixed(1)}%</div>` : '';
+    return `<div style="transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;cursor:pointer;pointer-events:auto;">`
+      + `<div style="background:${bg};color:#fff;border-radius:10px;padding:4px 9px 5px;text-align:center;line-height:1.25;box-shadow:0 2px 8px rgba(0,0,0,0.25);white-space:nowrap;">`
+      + `<div style="font-size:10.5px;font-weight:600;opacity:.9">${esc(b.name)}</div>`
+      + `<div style="font-size:${level === 'sido' ? 14 : 12.5}px;font-weight:800">${fmtBubbleValue(b)}</div>${ch}</div>`
+      + `<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid ${bg};"></div></div>`;
+  };
+  const bubbleMarkersRef = useRef([]);
+  const bubbleSigRef = useRef('');
+  const areaBubblesRef = useRef(areaBubbles);
+  const syncBubbles = () => {
+    const map = mapRef.current;
+    if (!map || !window.naver?.maps) return;
+    const level = bubbleLevelOf(map.getZoom());
+    const data = level ? (areaBubblesRef.current?.[level] || []) : [];
+    const sig = `${level}|${data.length}|${data.map((b) => `${b.key}:${b.value}`).join(',')}`;
+    if (sig === bubbleSigRef.current) return;
+    bubbleSigRef.current = sig;
+    bubbleMarkersRef.current.forEach((m) => m.setMap(null));
+    bubbleMarkersRef.current = [];
+    data.slice(0, 400).forEach((b) => {
+      const marker = new window.naver.maps.Marker({
+        position: new window.naver.maps.LatLng(b.lat, b.lng),
+        map,
+        icon: { content: bubbleHtml(b, level), anchor: new window.naver.maps.Point(0, 0) },
+        zIndex: 30,
+      });
+      window.naver.maps.Event.addListener(marker, 'click', () => {
+        map.morph(new window.naver.maps.LatLng(b.lat, b.lng), BUBBLE_NEXT_ZOOM[level]);
+      });
+      bubbleMarkersRef.current.push(marker);
+    });
+  };
+  useEffect(() => {
+    areaBubblesRef.current = areaBubbles;
+    syncBubbles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [areaBubbles]);
+  useEffect(() => () => { bubbleMarkersRef.current.forEach((m) => m.setMap(null)); bubbleMarkersRef.current = []; }, []);
+
   // v228: 묶음을 누르면 그 자리에 단지 목록 팝업. 화면 위치는 지도 범위 비율로 계산한다(작은 범위라 직선 근사로 충분).
   const openClusterPopup = (keys, lat, lng, canSeparate) => {
     const map = mapRef.current;
@@ -604,6 +656,7 @@ export default function NaverChoropleth({
     }
     scheduleMarkerSync(120);
     schedulePolygonViewportSync(80);
+    syncBubbles(); // v232: 줌마다 말풍선 단계를 맞춘다
   };
 
   const handleZoomChanged = () => {
@@ -678,9 +731,7 @@ export default function NaverChoropleth({
           const note = valueNotesRef.current?.[idx];
           return value != null ? `${f.name}: ${valueFormatRef.current ? valueFormatRef.current(value) : Math.round(value).toLocaleString()}${note ? ` (${note})` : ''}` : f.name;
         };
-        window.naver.maps.Event.addListener(polygon, 'click', () => {
-          if (f.code) onSelectRef.current?.(f.code);
-        });
+        // v232: 구 영역을 눌러 그 지역을 조회하던 동작은 없앴다(사용자 요청 — 단계별 말풍선을 눌러 확대한다).
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
           console.log(`[호버] 구 마우스오버: ${f.name}, 현재 티어=${zoomTierRef.current}, 지도에 붙어있음=${!!polygon.getMap()}`);
           if (zoomTierRef.current !== 'far') return;
@@ -785,9 +836,7 @@ export default function NaverChoropleth({
           const note = dongValueNotesRef.current?.[idx];
           return value != null ? `${f.name}: ${valueFormatRef.current ? valueFormatRef.current(value) : Math.round(value).toLocaleString()}${note ? ` (${note})` : ''}` : f.name;
         };
-        window.naver.maps.Event.addListener(polygon, 'click', () => {
-          if (f.code) onSelectRef.current?.(f.code);
-        });
+        // v232: 동 영역 클릭으로 지역을 조회하던 동작도 없앴다.
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
           const tier = zoomTierRef.current;
           console.log(`[호버] 동 마우스오버: ${f.name}, 현재 티어=${tier}, 지도에 붙어있음=${!!polygon.getMap()}`);
