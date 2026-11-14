@@ -13,9 +13,40 @@ function markerHtmlOf(titleText, priceText, pinned) {
   const border = pinned ? '2px solid #b23a2e' : '1px solid rgba(40,35,30,0.18)';
   const bg = pinned ? '#fff4ef' : 'rgba(255,255,255,0.96)';
   const star = pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : '';
-  return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translateY(-2px);">` +
+  // v236: 아래 빨간 점의 가운데가 단지 좌표에 오게(가로 가운데·세로 아래) 옮긴다 — 겹침 계산(pinLabelBox)과 작은 점 마커가 같은 자리를 쓴다.
+  // 예전(앵커 0,24)엔 이름표 왼쪽 끝이 좌표라 점이 이름표 폭의 절반만큼 오른쪽에 찍혔다.
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translate(-50%,calc(-100% + 6px));">` +
     `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${star}${titleText}${priceText ? `<span style="margin-left:5px;color:#b23a2e;">${priceText}</span>` : ''}</div>` +
     `<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
+}
+
+// v236: 이름표 자리가 없을 때 남기는 작은 점(누르면 그 단지가 바로 열림, 마우스를 올리면 이름). 앵커 (6.5, 6.5) = 점 가운데.
+function dotHtmlOf(titleText, count) {
+  const tip = count > 1 ? `${titleText} 외 ${count - 1}곳` : titleText;
+  return `<div title="${tip}" style="box-sizing:border-box;width:13px;height:13px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`;
+}
+
+// v236: 이름표가 화면에서 차지하는 상자(px, 좌표 기준). markerHtmlOf 글자 크기 10px 기준 어림값 — 한글 10.5px, 그 밖 6.2px.
+export function pinLabelBox(x, y, titleText, priceText) {
+  // 실제 그린 크기와 대조(v236): 헬리오시티 23억 실제 폭 88px·높이 −27~+6 → 어림 96px(양옆 4px 여유)·−29~+6.
+  let w = 14 + (priceText ? 5 : 0);
+  for (const ch of `${titleText}${priceText || ''}`) w += ch.codePointAt(0) > 0x2000 ? 10.5 : ch === ' ' ? 3 : 6.2;
+  return { x1: x - w / 2 - 2, x2: x + w / 2 + 2, y1: y - 29, y2: y + 6 };
+}
+
+// v236: 겹치지 않게 이름표 자리 정하기(순수 함수). items: [{ x, y, title, price, force }] — 이미 중요도 순으로 정렬.
+// force(비교함 ★)는 겹쳐도 항상 이름표. 돌려주는 값: 이름표를 붙일 항목 번호 Set.
+export function placePinLabels(items) {
+  const placed = [];
+  const chosen = new Set();
+  items.forEach((it, i) => {
+    const r = pinLabelBox(it.x, it.y, it.title, it.price);
+    const hit = placed.some((p) => r.x1 < p.x2 && r.x2 > p.x1 && r.y1 < p.y2 && r.y2 > p.y1);
+    if (hit && !it.force) return;
+    placed.push(r);
+    chosen.add(i);
+  });
+  return chosen;
 }
 
 // 핀에 적는 가격(v196). mode: 'deal'(평형 상관없이 가장 최근 거래) | 'p34'(34평 안팎 최근 거래) | 'unit'(최근 거래 평당가)
@@ -45,7 +76,8 @@ export default function NaverChoropleth({
   const markersRef = useRef([]); // [{ marker, key }]
   const stationMarkersRef = useRef([]);
   const schoolMarkersRef = useRef([]);
-  const clustererRef = useRef([]); // [{ overlay }]
+  const clustererRef = useRef([]); // [{ overlay }] — v236부터는 같은 자리 단지 묶음 이름표·점
+  const dotMarkersRef = useRef(new Map()); // v236: 단지 key → 작은 점 마커(다시 쓰기)
   const clusterSignatureRef = useRef('');
   const refineRunningRef = useRef(false); // 동 중심점 마커의 위치 다듬기가 진행 중인지
   const refineAttemptsRef = useRef(0); // 이번 접속에서 다듬기를 시도한 단지 수(과도한 호출 방지)
@@ -114,7 +146,7 @@ export default function NaverChoropleth({
       if (m.pinned === isPinned) return;
       m.pinned = isPinned;
       if (typeof m.marker.setIcon === 'function') {
-        m.marker.setIcon({ content: markerHtmlOf(m.title, m.priceText, isPinned), anchor: new window.naver.maps.Point(0, 24) });
+        m.marker.setIcon({ content: markerHtmlOf(m.title, m.priceText, isPinned), anchor: new window.naver.maps.Point(0, 0) });
       }
       if (typeof m.marker.setZIndex === 'function') m.marker.setZIndex(isPinned ? 40 : 20);
     });
@@ -136,7 +168,7 @@ export default function NaverChoropleth({
       m.priceText = priceText;
       m.title = title;
       if (typeof m.marker.setIcon === 'function') {
-        m.marker.setIcon({ content: markerHtmlOf(title, priceText, m.pinned), anchor: new window.naver.maps.Point(0, 24) });
+        m.marker.setIcon({ content: markerHtmlOf(title, priceText, m.pinned), anchor: new window.naver.maps.Point(0, 0) });
       }
     });
   };
@@ -555,86 +587,127 @@ export default function NaverChoropleth({
     setClusterPop({ x, y, W, H, keys, items, lat, lng, canSeparate });
   };
 
+  // v236: 숫자 원(격자 묶음)을 없애고 호갱노노·아실처럼 단지 이름표를 그대로 보여준다(v235까지 송파 줌 15에서 화면 속 135곳 중
+  // 16곳만 이름표, 나머지는 숫자 원 속에 숨어 있었다). 이름표끼리 겹치면 중요한 단지(★ 비교함 → 👑 대장 → 가격 있는 단지 → 비싼 순)가
+  // 자리를 차지하고, 자리를 못 잡은 단지는 작은 빨간 점으로 남긴다(점을 눌러도 그 단지가 바로 열린다). 확대할수록 이름표가 늘어난다.
+  // 같은 자리(약 1m 이내, 같은 지번의 1·2단지 등)에 여러 단지가 있으면 이름표 하나에 "외 N"을 붙이고, 누르면 그 단지들 목록 팝업.
   const syncNaverClusterer = () => {
     const map = mapRef.current;
     if (!map || !window.naver?.maps) return;
-    const show = map.getZoom() >= NEAR_ZOOM_LEVEL;
-    if (!show) {
+    const N = window.naver.maps;
+    const clearGroupOverlays = () => {
       clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
       clustererRef.current = [];
+    };
+    const show = map.getZoom() >= NEAR_ZOOM_LEVEL;
+    if (!show) {
+      clearGroupOverlays();
       clusterSignatureRef.current = '';
       markersRef.current.forEach(({ marker }) => marker.setMap(null));
+      dotMarkersRef.current.forEach((d) => d.setMap(null));
       onVisibleMarkerCountRef.current?.(0);
       return;
     }
     const zoom = map.getZoom();
-    const markerSig = markersRef.current.map(({ key }) => key).sort().join(',');
-    const signature = `${zoom}|${markerSig}`;
-    // 동일한 marker 집합/줌이면 기존 overlay를 그대로 유지한다.
-    if (signature === clusterSignatureRef.current) return;
-
-    clustererRef.current.forEach(({ overlay }) => overlay.setMap(null));
-    clustererRef.current = [];
-    clusterSignatureRef.current = signature;
-
-    // 묶는 칸은 화면 약 100px(v228: 120→100). 예전 값(0.0008 * 2^(20-zoom))은 어느 줌에서나 화면 약 750px라서 확대해도
-    // 핀이 거의 다 숫자 원으로 묶였고, 낱개로 세는 목록 수와 맞지 않았다(v178까지).
     const vb = map.getBounds();
     const vsize = map.getSize();
-    const degPerPx = vb && vsize?.height ? (vb.getNE().lat() - vb.getSW().lat()) / vsize.height : NaN;
-    const cellDeg = Number.isFinite(degPerPx) && degPerPx > 0 ? degPerPx * 100 : 0.0008 * Math.pow(2, 20 - zoom);
-    const buckets = new Map();
-    const pinnedMarkers = [];
-    markersRef.current.forEach(({ marker, key }) => {
-      // 비교함에 담은 단지는 묶지 않고 항상 낱개로 보여준다(밀집 지역에서도 어디 있는지 바로 보이게).
-      if (pinnedKeysRef.current.has(key)) { pinnedMarkers.push(marker); return; }
-      const pos = marker.getPosition();
-      const lat = pos.lat();
-      const lng = pos.lng();
-      const cellKey = `${Math.round(lat / cellDeg)}|${Math.round(lng / cellDeg)}`;
-      if (!buckets.has(cellKey)) buckets.set(cellKey, []);
-      buckets.get(cellKey).push({ marker, key, lat, lng });
+    if (!vb || !vsize?.width || !vsize?.height) return;
+    const markerSig = markersRef.current.map(({ key, priceText, title }) => `${key}:${title}:${priceText}`).sort().join(',');
+    const signature = `${zoom}|${markerSig}`;
+    // 같은 줌·같은 마커(이름·가격 포함)면 자리 배치가 같으므로 그대로 둔다(이동만 하면 상대 위치가 안 바뀐다).
+    if (signature === clusterSignatureRef.current) return;
+    clearGroupOverlays();
+    clusterSignatureRef.current = signature;
+
+    // 화면 px 좌표(메르카토르). 줌이 같으면 지도를 옮겨도 단지끼리의 상대 위치는 같다.
+    const sw = vb.getSW(); const ne = vb.getNE();
+    const mercY = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+    const pxPerLng = vsize.width / Math.max(1e-9, ne.lng() - sw.lng());
+    const pxPerY = vsize.height / Math.max(1e-12, mercY(ne.lat()) - mercY(sw.lat()));
+    const topY = mercY(ne.lat());
+    const toPx = (lat, lng) => ({ x: (lng - sw.lng()) * pxPerLng, y: (topY - mercY(lat)) * pxPerY });
+
+    const complexByKey = new Map((complexesRef.current || []).map((c) => [c.key, c]));
+    const pinnedSet = pinnedKeysRef.current;
+    const rank = (m) => (pinnedSet.has(m.key) ? 8 : 0) + (complexByKey.get(m.key)?.leader ? 4 : 0) + (m.priceText ? 2 : 0);
+    const priceOf = (m) => complexByKey.get(m.key)?.latestPrice ?? 0;
+    const cmp = (a, b) => rank(b) - rank(a) || priceOf(b) - priceOf(a) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+    const groupMap = new Map();
+    markersRef.current.forEach((m) => {
+      const pos = m.marker.getPosition();
+      const gk = `${pos.lat().toFixed(5)}|${pos.lng().toFixed(5)}`;
+      if (!groupMap.has(gk)) groupMap.set(gk, { lat: pos.lat(), lng: pos.lng(), items: [] });
+      groupMap.get(gk).items.push(m);
     });
-    buckets.forEach((group) => {
-      if (group.length === 1) {
-        group[0].marker.setMap(map);
+    const groups = [...groupMap.values()];
+    groups.forEach((g) => { g.items.sort(cmp); g.lead = g.items[0]; g.extra = g.items.length > 1 ? ` 외 ${g.items.length - 1}` : ''; });
+    groups.sort((a, b) => cmp(a.lead, b.lead));
+    const chosen = placePinLabels(groups.map((g) => {
+      const { x, y } = toPx(g.lat, g.lng);
+      return { x, y, title: g.lead.title + g.extra, price: g.lead.priceText, force: g.items.some((m) => pinnedSet.has(m.key)) };
+    }));
+
+    const attach = (mk, on) => { const want = on ? map : null; if (mk.getMap() !== want) mk.setMap(want); };
+    const shownDots = new Set();
+    const selectByKey = (key) => {
+      const c = (complexesRef.current || []).find((x) => x.key === key);
+      const m = markersRef.current.find((x) => x.key === key);
+      const p = m?.marker.getPosition();
+      if (c) onComplexSelectRef.current?.({ ...c, lat: p ? p.lat() : c.lat, lng: p ? p.lng() : c.lng });
+    };
+    groups.forEach((g, i) => {
+      const labeled = chosen.has(i);
+      const single = g.items.length === 1;
+      g.items.forEach((m) => attach(m.marker, labeled && single));
+      if (labeled && single) return;
+      const keys = g.items.map((m) => m.key);
+      if (labeled) {
+        // 같은 자리 여러 단지: 대표 단지 이름표 + "외 N" → 누르면 목록 팝업.
+        const isPinned = g.items.some((m) => pinnedSet.has(m.key));
+        const overlay = new N.Marker({
+          position: new N.LatLng(g.lat, g.lng),
+          icon: { content: markerHtmlOf(g.lead.title + g.extra, g.lead.priceText, isPinned), anchor: new N.Point(0, 0) },
+          zIndex: isPinned ? 40 : 30,
+        });
+        overlay.setMap(map);
+        N.Event.addListener(overlay, 'click', () => openClusterPopup(keys, g.lat, g.lng, false));
+        clustererRef.current.push({ overlay });
         return;
       }
-      // 묶인 마커는 지도에서 뗀다. 줌 인 상태에서 낱개로 붙어 있던 마커가 줌 아웃으로 묶일 때,
-      // 떼지 않으면 숫자 원 아래에 핀이 그대로 남아 겹쳐 보인다. (같은 점의 마커는 한 번도 낱개가
-      // 된 적이 없어서 드러나지 않던 문제인데, 위치를 정확히 옮기면서 나타나게 된다.)
-      group.forEach((g) => g.marker.setMap(null));
-      const lat = group.reduce((sum, g) => sum + g.lat, 0) / group.length;
-      const lng = group.reduce((sum, g) => sum + g.lng, 0) / group.length;
-      const size = group.length;
-      const bg = size < 10 ? 'rgba(178,58,46,0.88)' : size < 50 ? 'rgba(178,58,46,0.92)' : 'rgba(122,34,26,0.94)';
-      const wh = size < 10 ? 38 : size < 50 ? 48 : 60;
-      const overlay = new window.naver.maps.Marker({
-        position: new window.naver.maps.LatLng(lat, lng),
-        icon: {
-          content: `<div style="width:${wh}px;height:${wh}px;border-radius:${wh / 2}px;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,0.25);cursor:pointer;">${size}</div>`,
-          size: new window.naver.maps.Size(wh, wh),
-          anchor: new window.naver.maps.Point(wh / 2, wh / 2),
-        },
+      if (single) {
+        // 자리 없는 단지 하나: 작은 점(다시 쓰기). 누르면 그 단지 상세.
+        const key = g.lead.key;
+        let dot = dotMarkersRef.current.get(key);
+        if (!dot) {
+          dot = new N.Marker({
+            position: new N.LatLng(g.lat, g.lng),
+            icon: { content: dotHtmlOf(g.lead.title, 1), anchor: new N.Point(6.5, 6.5) },
+            zIndex: 10,
+          });
+          N.Event.addListener(dot, 'click', () => selectByKey(key));
+          dotMarkersRef.current.set(key, dot);
+        } else {
+          const p = dot.getPosition();
+          if (p.lat() !== g.lat || p.lng() !== g.lng) dot.setPosition(new N.LatLng(g.lat, g.lng));
+        }
+        attach(dot, true);
+        shownDots.add(key);
+        return;
+      }
+      // 자리 없는 같은 자리 묶음: 점 하나 → 누르면 목록 팝업.
+      const overlay = new N.Marker({
+        position: new N.LatLng(g.lat, g.lng),
+        icon: { content: dotHtmlOf(g.lead.title, g.items.length), anchor: new N.Point(6.5, 6.5) },
+        zIndex: 10,
       });
       overlay.setMap(map);
-      const memberKeys = group.map((g) => g.key);
-      const spread = Math.max(
-        Math.max(...group.map((g) => g.lat)) - Math.min(...group.map((g) => g.lat)),
-        Math.max(...group.map((g) => g.lng)) - Math.min(...group.map((g) => g.lng)),
-      );
-      window.naver.maps.Event.addListener(overlay, 'click', () => {
-        // v228: 누르면 그 자리에 묶음 속 단지 목록 팝업을 띄운다 — 확대하지 않아도 바로 고를 수 있다(v227까지는
-        // 확대 + 옆 목록 열기). 갈라질 수 있으면 팝업에 "확대" 버튼을 보여준다(마커가 약 5m 이내로 겹치거나 최대 줌이면 없음).
-        const canSeparate = spread > 0.00005 && map.getZoom() < 19;
-        openClusterPopup(memberKeys, lat, lng, canSeparate);
-      });
+      N.Event.addListener(overlay, 'click', () => openClusterPopup(keys, g.lat, g.lng, false));
       clustererRef.current.push({ overlay });
     });
-    pinnedMarkers.forEach((m) => m.setMap(map));
+    dotMarkersRef.current.forEach((dot, key) => { if (!shownDots.has(key)) attach(dot, false); });
     onVisibleMarkerCountRef.current?.(markersRef.current.length);
   };
-
   // 줌 중에는 클러스터를 매 프레임 다시 만들지 않고, 잠깐 멈춘 뒤 한 번만 반영한다.
   const scheduleMarkerSync = (delay = 80) => {
     if (markerSyncTimerRef.current) clearTimeout(markerSyncTimerRef.current);
@@ -793,6 +866,8 @@ export default function NaverChoropleth({
       markersRef.current.forEach(({ marker }) => marker.setMap(null));
       markersRef.current = [];
       clustererRef.current = [];
+      dotMarkersRef.current.forEach((d) => d.setMap(null));
+      dotMarkersRef.current = new Map();
       clusterSignatureRef.current = '';
       if (markerSyncTimerRef.current) clearTimeout(markerSyncTimerRef.current);
       if (polygonSyncTimerRef.current) clearTimeout(polygonSyncTimerRef.current);
@@ -973,7 +1048,7 @@ export default function NaverChoropleth({
         position: new window.naver.maps.LatLng(coord.lat, coord.lng),
         icon: {
           content: markerHtml,
-          anchor: new window.naver.maps.Point(0, 24),
+          anchor: new window.naver.maps.Point(0, 0),
         },
         zIndex: pinned ? 40 : 20,
       });
