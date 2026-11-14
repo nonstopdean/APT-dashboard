@@ -13,6 +13,7 @@ import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, fmtPct, monthLabel, APP_BUILD } from '../lib/ui-helpers';
 import { pinnedKeyOf } from '../lib/compare-grid';
 import { changeCap, changeColor, formatChange } from '../lib/market-change';
+import { SIGNALS, signalColor, signalLabel } from '../lib/market-signal';
 
 const PIN_PRICE_KEY = 'apt-dashboard-pin-price';
 const GAP_FILTER_KEY = 'apt-dashboard-gap-filters'; // v215
@@ -425,6 +426,7 @@ export default function MapTab({
     const colorFor = (value) => {
       if (value == null) return PALETTE.panelAlt;
       if (isChangeMode) return changeColor(value, changeCapValue) || PALETTE.panelAlt;
+      if (mapColorMode === 'signal') return signalColor(value) || PALETTE.panelAlt; // v235: 신호마다 정해진 색
       const { min, max } = seoulMapData;
       const t = max > min ? (value - min) / (max - min) : 0.5;
       const from = [245, 244, 239];
@@ -440,7 +442,7 @@ export default function MapTab({
             features={seoulMapData.features}
             values={seoulMapData.values}
             colorFor={colorFor}
-            valueFormat={mapColorMode === 'change' || mapColorMode === 'volchange' ? formatChange : mapColorMode === 'gap' ? fmtWon : undefined}
+            valueFormat={mapColorMode === 'change' || mapColorMode === 'volchange' ? formatChange : mapColorMode === 'gap' ? fmtWon : mapColorMode === 'signal' ? signalLabel : undefined}
             valueNotes={seoulMapData.notes}
             dongValueNotes={dongMapData?.notes}
             borderColor={PALETTE.border}
@@ -870,7 +872,7 @@ export default function MapTab({
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginBottom: 4 }}>색칠 기준</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동'], ...(dealType === 'trade' ? [['gap', '34평 갭']] : [])].map(([key, label]) => (
+                  {[['price', '가격'], ['volume', '거래량'], ['change', '가격변동'], ['volchange', '거래량변동'], ['signal', '시장 신호'], ...(dealType === 'trade' ? [['gap', '34평 갭']] : [])].map(([key, label]) => (
                     <button key={key} onClick={() => setMapColorMode(key)} style={{
                       flex: '1 1 calc(50% - 4px)', whiteSpace: 'nowrap', border: `1px solid ${mapColorMode === key ? PALETTE.textPrimary : PALETTE.border}`, borderRadius: 8, padding: '6px 0',
                       background: mapColorMode === key ? PALETTE.textPrimary : 'transparent',
@@ -898,6 +900,21 @@ export default function MapTab({
                   <div style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
                     조회 기간 34평(전용 약 84㎡) 매매 중간값 − 전세 중간값이에요. 진할수록 전세를 끼고 살 때 필요한 돈(갭)이 커요.
                     34평 매매·전세가 각각 2건 미만인 곳은 회색. 마우스를 올리면 매매·전세 값과 건수가 나와요.
+                  </div>
+                )}
+                {mapColorMode === 'signal' && (
+                  <div data-signal-help="1" style={{ marginTop: 6, fontSize: 10, lineHeight: 1.5, color: PALETTE.textMuted }}>
+                    {SIGNALS.map((s) => (
+                      <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ width: 12, height: 9, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                        <b style={{ color: PALETTE.textSecondary }}>{s.label}</b>
+                        <span>{s.desc}</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 4 }}>
+                      조회 기간 앞 절반 → 뒤 절반 비교(가격 ±1%, 거래량 ±10% 기준). 표본이 적은 곳은 회색. 마우스를 올리면 가격·거래 변화와 건수가 나와요.
+                      투자 판단 근거가 아니라 흐름을 보는 참고용이에요.
+                    </div>
                   </div>
                 )}
               </div>
