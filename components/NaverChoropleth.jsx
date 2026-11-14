@@ -984,19 +984,33 @@ export default function NaverChoropleth({
     const centerLng = center?.lng?.() ?? 0;
     // 좌표가 이미 있는 단지는 즉시 사용하고, 좌표가 없는 단지는 geocode 후보로 남긴다.
     // 이전 버전처럼 좌표 없는 단지를 여기서 제외하면 카카오/서버 geocode fallback이 사실상 작동하지 않는다.
+    // v238: 화면 안인지는 "실제 핀이 찍힐 좌표"(정확한 좌표가 있으면 그것, 없으면 동 중심점)로 판단한다. 예전엔 동 중심점(c.lat)만 봐서,
+    // 많이 확대해 동 중심점이 화면 밖으로 나가면 그 동 단지 핀이 통째로 사라졌다(송파 줌 17 → 5개, 18 → 2개, 19 → 0개).
+    // 정확한 좌표를 아직 모르는 단지는 동 중심점이 화면 주변(약 3km) 안이면 서버 저장 좌표를 먼저 물어본다.
+    const approxOf = (c) => (c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null);
+    const posOf = (c) => resolveMarkerCoord(approxOf(c), geocodeCache[c.key]).coord || approxOf(c);
+    {
+      const b0 = mapRef.current.getBounds();
+      const PAD = 0.03; // 위도·경도 약 3km
+      const nearUnknown = b0 ? complexes.filter((c) => geocodeCache[c.key] === undefined && c.lat != null
+        && c.lat > b0.getSW().lat() - PAD && c.lat < b0.getNE().lat() + PAD && c.lng > b0.getSW().lng() - PAD && c.lng < b0.getNE().lng() + PAD).map((c) => c.key) : [];
+      if (nearUnknown.length) { // fetchServerGeocodeCache가 이미 물어본 key는 알아서 빼므로 같은 단지를 반복해 묻지 않는다
+        const hits = await fetchServerGeocodeCache(nearUnknown.slice(0, 600));
+        if (seq !== markerSyncSeqRef.current) return;
+        Object.entries(hits).forEach(([key, coord]) => { geocodeCache[key] = coord; });
+      }
+    }
     const visibleComplexes = complexes.filter((c) => {
-      if (c.lat == null || c.lng == null) return true;
-      return isInBounds({ lat: c.lat, lng: c.lng }, bounds);
+      const p = posOf(c);
+      if (!p) return true;
+      return isInBounds(p, bounds);
     });
     // 확대도가 높을수록 화면에 실제로 보이는 단지를 더 많이 표시한다.
     const zoom = mapRef.current.getZoom();
     // v228: 250개 → 400개부터(줌 13에서 구 하나가 다 보이므로). 확대할수록 조금씩 더(최대 700).
     const maxMarkers = Math.min(700, Math.max(400, 400 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 100)));
-    visibleComplexes.sort((a, b) => {
-      const da = a.lat == null || a.lng == null ? Number.POSITIVE_INFINITY : (a.lat - centerLat) ** 2 + (a.lng - centerLng) ** 2;
-      const db = b.lat == null || b.lng == null ? Number.POSITIVE_INFINITY : (b.lat - centerLat) ** 2 + (b.lng - centerLng) ** 2;
-      return da - db;
-    });
+    const distOf = (c) => { const p = posOf(c); return p ? (p.lat - centerLat) ** 2 + (p.lng - centerLng) ** 2 : Number.POSITIVE_INFINITY; };
+    visibleComplexes.sort((a, b) => distOf(a) - distOf(b));
     const candidate = visibleComplexes.slice(0, maxMarkers);
     const existingKeys = new Set(markersRef.current.map((m) => m.key));
     const wanted = new Set(candidate.map((c) => c.key));
