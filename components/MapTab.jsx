@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronRight } from 'lucide-react';
+import ComplexSuggest from './ComplexSuggest';
 import NaverChoropleth from './NaverChoropleth';
 import KakaoChoropleth from './KakaoChoropleth';
 import PinnedCompareDrawer from './PinnedCompareDrawer';
@@ -45,7 +47,7 @@ export default function MapTab({
   stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
-  setSchoolWanted, setHhWanted, setPanelCover,
+  setSchoolWanted, setHhWanted, setPanelCover, onPickComplex,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   // v222: 주소 끝에 ?map=kakao를 붙이면 네이버 키가 있어도 카카오 대체 지도로 본다(대체 지도 확인용).
@@ -201,6 +203,72 @@ export default function MapTab({
     flexShrink: 0, border: `1px solid ${on ? PALETTE.accent : PALETTE.border}`, borderRadius: 999, padding: '5px 10px', whiteSpace: 'nowrap',
     background: on ? PALETTE.accent : '#fff', color: on ? '#fff' : PALETTE.textSecondary, fontSize: 11.5, fontWeight: on ? 700 : 500, cursor: 'pointer',
   });
+  // v229: 지도 위 가로 필터 바(아실·네이버부동산처럼) — 버튼마다 지금 값이 적혀 있고, 누르면 아래에 고르는 창이 뜬다.
+  // 고르는 창은 body에 붙여(portal) 가로 스크롤 줄에 잘리지 않게 하고, 바깥을 누르면 닫는다.
+  const [openFilter, setOpenFilter] = useState(null); // { id, left, top } | null
+  const [budgetDraft, setBudgetDraft] = useState('');
+  const filterPopRef = useRef(null);
+  const mapSearchRef = useRef(null);
+  const [mapSearchFocus, setMapSearchFocus] = useState(false);
+  useEffect(() => {
+    if (!openFilter) return undefined;
+    const onDown = (e) => {
+      if (filterPopRef.current?.contains(e.target) || e.target.closest?.('[data-filter-btn]')) return;
+      setOpenFilter(null);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpenFilter(null); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openFilter]);
+  const toggleFilter = (id) => (e) => {
+    if (openFilter?.id === id) { setOpenFilter(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    if (id === 'price') setBudgetDraft(budgetSearchOpen ? String(budgetAmount || '') : '');
+    setOpenFilter({ id, left: Math.max(8, Math.min(r.left, window.innerWidth - 228)), top: r.bottom + 6 });
+  };
+  const SIZE_OPTS = [['all', '전체'], ['u20', '20평 미만'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평 이상']];
+  const AGE_OPTS = [['all', '전체'], ['5', '5년 이내'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내'], ['20p', '20년 초과']];
+  const HH_OPTS = [['all', '전체'], ['300', '300세대 이상'], ['500', '500세대 이상'], ['1000', '1,000세대 이상']];
+  const STATION_OPTS = [['all', '전체'], ['500', '역 500m 이내'], ['1000', '역 1km 이내']];
+  const SCHOOL_OPTS = [['all', '전체'], ['300', '초교 300m 이내'], ['500', '초교 500m 이내']];
+  const PRICE_PRESETS = [3, 5, 7, 10, 15, 20];
+  const optLabel = (opts, v) => opts.find(([k]) => k === v)?.[1];
+  const sizeLabel = unitSizeFilter === 'all' ? null : (optLabel(SIZE_OPTS, unitSizeFilter) || String(unitSizeFilter).replace(/^sqm(\d+)$/, '$1㎡'));
+  const priceOn = budgetSearchOpen && Number(budgetAmount) > 0;
+  const filterButtons = [
+    !isRone && !isRatio && setUnitSizeFilter && { id: 'size', name: '평형', value: sizeLabel, opts: SIZE_OPTS, cur: unitSizeFilter, set: setUnitSizeFilter },
+    (dealType === 'trade' || dealType === 'silv') && setBuildYearFilter && { id: 'age', name: '연식', value: buildYearFilter === 'all' ? null : optLabel(AGE_OPTS, buildYearFilter), opts: AGE_OPTS, cur: buildYearFilter, set: setBuildYearFilter },
+    !isRone && !isRatio && setBudgetSearchOpen && { id: 'price', name: isRent ? '보증금' : '가격', value: priceOn ? `${budgetAmount}억 이하` : null },
+    setListHH && { id: 'hh', name: '세대수', value: listHH === 'all' ? null : optLabel(HH_OPTS, listHH), opts: HH_OPTS, cur: listHH, set: setListHH },
+    setListStation && { id: 'station', name: '역세권', value: listStation === 'all' ? null : optLabel(STATION_OPTS, listStation), opts: STATION_OPTS, cur: listStation, set: setListStation },
+    setListSchool && { id: 'school', name: '초등학교', value: listSchool === 'all' ? null : optLabel(SCHOOL_OPTS, listSchool), opts: SCHOOL_OPTS, cur: listSchool, set: setListSchool },
+    !isRone && !isRatio && { id: 'pin', name: '핀 가격', value: optLabel(PIN_PRICE_MODES, pinPriceMode), opts: PIN_PRICE_MODES, cur: pinPriceMode, set: choosePinPriceMode, display: true },
+  ].filter(Boolean);
+  const anyFilterOn = filterButtons.some((b) => !b.display && b.value);
+  const resetFilters = () => {
+    if (setUnitSizeFilter) setUnitSizeFilter('all');
+    if (setBuildYearFilter) setBuildYearFilter('all');
+    if (setBudgetSearchOpen) setBudgetSearchOpen(false);
+    if (setListHH) setListHH('all');
+    if (setListStation) setListStation('all');
+    if (setListSchool) setListSchool('all');
+    setOpenFilter(null);
+  };
+  const applyBudget = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) { setBudgetSearchOpen(false); setOpenFilter(null); return; }
+    setBudgetAmount(String(n));
+    setBudgetSearchOpen(true);
+    setOpenFilter(null);
+  };
+  const openBtn = openFilter ? filterButtons.find((b) => b.id === openFilter.id) : null;
+
   // "목록만" 진단은 펼쳤을 때만 계산한다 (단지가 수백 개라 평소엔 돌릴 필요가 없다).
   const listOnlyReport = useMemo(
     () => (listOnlyOpen ? classifyListOnly(mapComplexes) : null),
@@ -521,40 +589,6 @@ export default function MapTab({
               </button>
             ))}
           </div>
-          {!isRatio && !isRone && (
-            <div style={{
-              pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6,
-              background: 'rgba(255,255,255,0.96)', border: `1px solid ${budgetSearchOpen ? PALETTE.accent : PALETTE.border}`,
-              borderRadius: 12, padding: '5px 8px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)',
-              backdropFilter: 'blur(8px)',
-            }}
-            >
-              <button
-                className="portal-pill"
-                onClick={() => setBudgetSearchOpen((v) => !v)}
-                style={{
-                  border: 'none', borderRadius: 9, padding: '6px 10px', whiteSpace: 'nowrap',
-                  background: budgetSearchOpen ? PALETTE.accent : 'transparent',
-                  color: budgetSearchOpen ? '#fff' : PALETTE.textSecondary,
-                  fontSize: 12, fontWeight: budgetSearchOpen ? 700 : 500, cursor: 'pointer',
-                }}
-              >
-                💰 예산으로 찾기
-              </button>
-              {budgetSearchOpen && (
-                <>
-                  <input
-                    type="number"
-                    placeholder="예: 6"
-                    value={budgetAmount}
-                    onChange={(e) => setBudgetAmount(e.target.value)}
-                    style={{ width: 60, padding: '5px 6px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                  />
-                  <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>억 이하</span>
-                </>
-              )}
-            </div>
-          )}
           <div style={{ pointerEvents: 'auto', position: 'relative' }}>
             <button
               className="portal-pill"
@@ -700,48 +734,126 @@ export default function MapTab({
           )}
           {/* 지도 위 검색·필터(v184): 단지명·동 검색 + 평형·연식. 평형·연식은 왼쪽 조건 패널과 같은 값을 바꾼다.
               넓은 화면에서는 오른쪽 단지 목록 창과 안 겹치게 폭을 줄이고, 폰은 page.jsx CSS에서 전체 폭. */}
-          {mapComplexes.length > 0 && (
-            <div style={{ flexBasis: '100%', minWidth: 0, maxWidth: '100%', display: 'flex', pointerEvents: 'none' }}>
-              <div className="map-filter-row" style={{
-                pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: 'min(640px, calc(100% - 280px))', scrollbarWidth: 'thin',
-                overflowX: 'auto', background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
-                borderRadius: 12, padding: '5px 8px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)', backdropFilter: 'blur(8px)',
+          {/* v229: 가로 필터 바 — 단지 검색(불러온 단지 + 전국) + 평형·연식·가격·세대수·역세권·초등학교·핀 가격 버튼.
+              버튼을 누르면 아래에 고르는 창(portal). 예전 칩 줄(v184)과 💰 예산 버튼을 대신한다. */}
+          <div style={{ flexBasis: '100%', minWidth: 0, maxWidth: '100%', display: 'flex', pointerEvents: 'none' }}>
+            <div className="map-filter-row" style={{
+              pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: 'min(780px, calc(100% - 280px))', scrollbarWidth: 'thin',
+              overflowX: 'auto', background: 'rgba(255,255,255,0.96)', border: `1px solid ${PALETTE.border}`,
+              borderRadius: 12, padding: '5px 8px', boxShadow: '0 4px 18px rgba(0,0,0,0.10)', backdropFilter: 'blur(8px)',
+            }}>
+              <div ref={mapSearchRef} style={{
+                display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, padding: '0 6px', borderRadius: 8, background: '#fff',
+                border: `1px solid ${mapKeyword ? PALETTE.accent : PALETTE.border}`,
               }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, padding: '0 6px', borderRadius: 8, background: '#fff',
-                  border: `1px solid ${mapKeyword ? PALETTE.accent : PALETTE.border}`,
-                }}>
-                  <span style={{ fontSize: 12 }}>🔍</span>
-                  <input
-                    value={mapKeyword}
-                    onChange={(e) => { setMapKeyword(e.target.value); setPanelView('complexes'); setMapPanelMinimized(false); }}
-                    placeholder="단지명·동 검색"
-                    style={{ width: 120, border: 'none', outline: 'none', padding: '6px 0', fontSize: 12, background: 'transparent' }}
-                  />
-                  {mapKeyword && <span style={{ cursor: 'pointer', color: PALETTE.textMuted, fontSize: 13 }} onClick={() => setMapKeyword('')}>✕</span>}
-                </div>
-                {!isRone && !isRatio && (
-                  <>
-                    <span style={{ fontSize: 11, color: PALETTE.textMuted, flexShrink: 0 }} title="핀에 어떤 가격을 적을지 골라요. 34평은 공급 33~35평(전용 약 84㎡) 거래만 봐요.">핀</span>
-                    {PIN_PRICE_MODES.map(([k, l]) => (
-                      <button key={`p${k}`} onClick={() => choosePinPriceMode(k)} style={chipStyle(pinPriceMode === k)}>{l}</button>
-                    ))}
-                    <span style={{ width: 1, height: 18, background: PALETTE.border, flexShrink: 0 }} />
-                  </>
-                )}
-                {!isRone && !isRatio && setUnitSizeFilter && [['all', '전 평형'], ['u20', '~20평'], ['20s', '20평대'], ['30s', '30평대'], ['40s', '40평대'], ['50p', '50평+']].map(([k, l]) => (
-                  <button key={`u${k}`} onClick={() => setUnitSizeFilter(k)} style={chipStyle(unitSizeFilter === k)}>{l}</button>
-                ))}
-                {(dealType === 'trade' || dealType === 'silv') && setBuildYearFilter && (
-                  <>
-                    <span style={{ width: 1, height: 18, background: PALETTE.border, flexShrink: 0 }} />
-                    {[['all', '전체 연식'], ['5', '5년 이내'], ['10', '10년 이내'], ['15', '15년 이내'], ['20', '20년 이내'], ['20p', '20년 초과']].map(([k, l]) => (
-                      <button key={`y${k}`} onClick={() => setBuildYearFilter(k)} style={chipStyle(buildYearFilter === k)}>{l}</button>
-                    ))}
-                  </>
-                )}
+                <span style={{ fontSize: 12 }}>🔍</span>
+                <input
+                  value={mapKeyword}
+                  onChange={(e) => { setMapKeyword(e.target.value); setPanelView('complexes'); setMapPanelMinimized(false); setMapSearchFocus(true); }}
+                  onFocus={() => setMapSearchFocus(true)}
+                  onBlur={() => setMapSearchFocus(false)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setMapSearchFocus(false); }}
+                  placeholder="단지명 검색"
+                  title="단지 이름을 적으면 불러온 지역과 전국에서 찾아요. 불러온 지역의 핀·목록도 이름으로 좁혀져요."
+                  style={{ width: 130, border: 'none', outline: 'none', padding: '6px 0', fontSize: 12, background: 'transparent' }}
+                />
+                {mapKeyword && <span style={{ cursor: 'pointer', color: PALETTE.textMuted, fontSize: 13 }} onClick={() => setMapKeyword('')}>✕</span>}
               </div>
+              {filterButtons.map((b) => {
+                const on = !b.display && !!b.value;
+                const isOpen = openFilter?.id === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    data-filter-btn={b.id}
+                    onClick={toggleFilter(b.id)}
+                    style={{
+                      flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', cursor: 'pointer',
+                      border: `1px solid ${on || isOpen ? PALETTE.accent : PALETTE.border}`, borderRadius: 8, padding: '6px 10px',
+                      background: on ? '#fff4ef' : '#fff', color: on ? PALETTE.accent : PALETTE.textPrimary, fontSize: 12, fontWeight: on ? 700 : 500,
+                    }}
+                  >
+                    {b.value && !b.display ? b.value : b.display ? `${b.name}: ${b.value}` : b.name}
+                    <span style={{ fontSize: 9, color: PALETTE.textMuted, transform: isOpen ? 'rotate(180deg)' : 'none' }}>▼</span>
+                  </button>
+                );
+              })}
+              {anyFilterOn && (
+                <button type="button" onClick={resetFilters} style={{ flexShrink: 0, border: 'none', background: 'transparent', color: PALETTE.textMuted, fontSize: 11.5, cursor: 'pointer', whiteSpace: 'nowrap', padding: '6px 4px' }}>
+                  ↺ 초기화
+                </button>
+              )}
             </div>
+          </div>
+          <ComplexSuggest
+            anchorRef={mapSearchRef} query={mapKeyword} visible={mapSearchFocus}
+            local={mapComplexes}
+            onPickLocal={(c) => { setMapKeyword(''); setMapSearchFocus(false); if (onPickComplex) onPickComplex(c); else setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode }); }}
+            onPickRemote={(r) => { setMapKeyword(''); setMapSearchFocus(false); if (onPickComplex) onPickComplex(r); }}
+            hint="불러온 지역의 핀·목록은 적은 이름으로 좁혀져요"
+          />
+          {openFilter && openBtn && typeof document !== 'undefined' && createPortal(
+            <div
+              ref={filterPopRef}
+              style={{
+                position: 'fixed', left: openFilter.left, top: openFilter.top, width: 220, zIndex: 400, background: '#fff', borderRadius: 10,
+                border: `1px solid ${PALETTE.border}`, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', padding: 8, fontSize: 12.5, color: PALETTE.textPrimary,
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, color: PALETTE.textMuted, padding: '2px 4px 6px' }}>
+                {openBtn.name}
+                {openBtn.id === 'hh' && <span style={{ fontWeight: 400 }}> · 단지 식별정보 기준</span>}
+                {(openBtn.id === 'station' || openBtn.id === 'school') && <span style={{ fontWeight: 400 }}> · 직선거리</span>}
+              </div>
+              {openBtn.id === 'price' ? (
+                <>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    <button type="button" onClick={() => applyBudget(0)} style={chipStyle(!priceOn)}>전체</button>
+                    {PRICE_PRESETS.map((n) => (
+                      <button key={n} type="button" onClick={() => applyBudget(n)} style={chipStyle(priceOn && Number(budgetAmount) === n)}>{n}억 이하</button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    <input
+                      type="number" min="0" step="0.5" placeholder="직접 입력" value={budgetDraft}
+                      onChange={(e) => setBudgetDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') applyBudget(budgetDraft); }}
+                      style={{ width: 80, padding: '6px 7px', borderRadius: 6, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                    />
+                    <span style={{ fontSize: 11.5, color: PALETTE.textMuted }}>억 이하</span>
+                    <button type="button" onClick={() => applyBudget(budgetDraft)} style={{ marginLeft: 'auto', ...chipStyle(true) }}>적용</button>
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 10.5, color: PALETTE.textMuted, lineHeight: 1.45 }}>
+                    최근 {isRent ? '전세 보증금' : '거래가'}이 이 금액 이하인 단지만 지도와 목록에 남겨요.
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {openBtn.opts.map(([k, l]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => { openBtn.set(k); setOpenFilter(null); }}
+                      style={{
+                        textAlign: 'left', border: 'none', borderRadius: 6, padding: '7px 8px', cursor: 'pointer', fontSize: 12.5,
+                        background: openBtn.cur === k ? '#fff4ef' : 'transparent', color: openBtn.cur === k ? PALETTE.accent : PALETTE.textPrimary,
+                        fontWeight: openBtn.cur === k ? 700 : 400,
+                      }}
+                    >
+                      {openBtn.cur === k ? '✓ ' : ''}{l}
+                    </button>
+                  ))}
+                  {openBtn.id === 'pin' && (
+                    <div style={{ marginTop: 4, fontSize: 10.5, color: PALETTE.textMuted, lineHeight: 1.45 }}>핀에 적을 가격이에요. 34평은 공급 33~35평(전용 약 84㎡) 거래만 봐요.</div>
+                  )}
+                  {openBtn.id === 'size' && (
+                    <div style={{ marginTop: 4, fontSize: 10.5, color: PALETTE.textMuted, lineHeight: 1.45 }}>공급면적 기준 추정 평형이에요(84㎡ ≈ 34평).</div>
+                  )}
+                </div>
+              )}
+            </div>,
+            document.body,
           )}
         </div>
         {/* v221: 레이어 창은 도구줄 아래로 펼치던 드롭다운이라 지도가 낮으면 아래가 잘렸다 → 지도 위 작은 창으로 띄워
