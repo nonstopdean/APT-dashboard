@@ -24,6 +24,7 @@ import { supplyPyeong } from '../lib/pyeong';
 import { peerPriceCompare, gapIndex, gapSeries, dongLeaders } from '../lib/peer-compare';
 import { peakDropRows } from '../lib/peak-drop';
 import { matchSearchedComplex, localComplexMatches } from '../lib/complex-search';
+import { sidoBubbles, sggBubbles, dongBubbles } from '../lib/area-bubbles';
 import ComplexSuggest from '../components/ComplexSuggest';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
@@ -2806,6 +2807,26 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codeToLatLng]);
 
+  // v232: 지도 단계별 말풍선(아실처럼). 시·도·시군구는 한국부동산원 평균매매가격(지도 탭을 처음 열 때 한 번 받음),
+  // 동은 불러온 실거래(고른 지역 + 주변 구)의 평균 평당가. 어떤 단계를 보일지는 지도 컴포넌트가 줌으로 정한다.
+  const [regionPrices, setRegionPrices] = useState(null); // { ym, items }
+  useEffect(() => {
+    if (viewMode !== 'map' || regionPrices) return undefined;
+    let cancelled = false;
+    fetch('/api/region-prices')
+      .then((res) => res.json())
+      .then((json) => { if (!cancelled && json?.items) setRegionPrices({ ym: json.ym, items: json.items }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [viewMode, regionPrices]);
+  const areaBubbles = useMemo(() => ({
+    sido: sidoBubbles(regionPrices?.items, codeToLatLng),
+    sgg: sggBubbles(mapFeatures, regionPrices?.items, codeToLatLng),
+    dong: dongBubbles([...allTx, ...browseTx], findDongCentroid, isRent),
+    ym: regionPrices?.ym || '',
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [regionPrices, codeToLatLng, mapFeatures, allTx, browseTx, dongCentroids, isRent]);
+
   const mapDisplayFeatures = useMemo(() => {
     if (!mapFeatures) return null;
     return mapFeatures.map((f) => ({ feature: f.feature, name: f.name, code: (f.codes && f.codes[0]) || undefined, codes: f.codes || [] }));
@@ -3624,7 +3645,7 @@ export default function Page() {
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
-          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex}
+          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex} areaBubbles={areaBubbles}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
