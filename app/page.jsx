@@ -23,6 +23,8 @@ import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import { supplyPyeong } from '../lib/pyeong';
 import { peerPriceCompare, gapIndex, gapSeries, dongLeaders } from '../lib/peer-compare';
 import { peakDropRows } from '../lib/peak-drop';
+import { matchSearchedComplex, localComplexMatches } from '../lib/complex-search';
+import ComplexSuggest from '../components/ComplexSuggest';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
 import CompareTab from '../components/CompareTab';
@@ -359,7 +361,7 @@ export default function Page() {
   const [aptBasicInfo, setAptBasicInfo] = useState(null);
   const [nearbySchools, setNearbySchools] = useState([]);
   const [schoolsLoading, setSchoolsLoading] = useState(false);
-  const [subscriptions, setSubscriptions] = useState([]);
+  // v229: 분양 정보는 분양정보 탭에서만 받는다(예전엔 지역을 고를 때마다 대시보드용으로 미리 받았다).
   const [subsTabSido, setSubsTabSido] = useState('서울');
   const [subsTabRows, setSubsTabRows] = useState([]);
   const [subsTabLoading, setSubsTabLoading] = useState(false);
@@ -376,8 +378,6 @@ export default function Page() {
     });
     return Object.keys(byMonth).sort().map((ym) => ({ ym, 세대수: byMonth[ym] }));
   }, [subsTabRows]);
-
-  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
 
   const currentSidoShort = useMemo(() => {
     if (selected.length === 0) return null;
@@ -400,20 +400,6 @@ export default function Page() {
     }
     return null;
   }, [selected]);
-
-  useEffect(() => {
-    setSubscriptions([]);
-    if (!currentSidoShort) return undefined;
-    let cancelled = false;
-    setSubscriptionsLoading(true);
-    const fromDate = ymShift(ymNow(), -12).replace(/(\d{4})(\d{2})/, '$1-$2-01');
-    fetch(`/api/subscriptions?sido=${encodeURIComponent(currentSidoShort)}&from=${fromDate}`)
-      .then((res) => res.json())
-      .then((json) => { if (!cancelled) setSubscriptions(json?.rows || []); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setSubscriptionsLoading(false); });
-    return () => { cancelled = true; };
-  }, [currentSidoShort]);
 
   const subsCacheRef = useRef({}); // sido -> rows
 
@@ -2274,6 +2260,65 @@ export default function Page() {
     window.location.assign(window.location.pathname);
   };
 
+  // v229: 단지 이름 검색에서 고른 단지로 가기. 불러온 단지(mapComplexes 항목)면 바로 상세를 열고, 전국 검색 결과
+  // ({name, regionCode, dong, jibun, lat, lng})면 그 지역을 조회 목록에 더해 불러온 뒤 실거래 단지와 맞춰(지번 > 이름) 연다.
+  // 지도는 카카오가 준 정확한 위치로 가까이(줌 16) 옮긴다.
+  const [searchFocus, setSearchFocus] = useState(null); // 'header' | 'mobile' | null — 자동완성 목록을 띄울 입력칸
+  const headerSearchRef = useRef(null);
+  const mobileSearchRef = useRef(null);
+  const suggestHitsRef = useRef({ q: '', rows: [] }); // 마지막 전국 검색 결과(Enter로 첫 단지 가기)
+  const [pendingComplex, setPendingComplex] = useState(null); // { target, needFetch, sawLoading }
+  const goToComplex = (item) => {
+    if (!item) return;
+    setSearchFocus(null);
+    setMapFocusKeys(null);
+    setViewMode('map');
+    showSearchMsg('');
+    if (item.key && item.apt) {
+      const { coord } = complexCoordOf(item.regionCode, item.dong, item.apt);
+      if (coord) setFocusLatLng({ lat: coord.lat, lng: coord.lng, zoom: 16 });
+      setSelectedApt({ apt: item.apt, dong: item.dong, regionCode: item.regionCode, lat: coord?.lat, lng: coord?.lng });
+      return;
+    }
+    if (!item.regionCode || !Number.isFinite(item.lat)) return;
+    setFocusLatLng({ lat: item.lat, lng: item.lng, zoom: 16 });
+    const needFetch = !selected.includes(item.regionCode);
+    if (needFetch) {
+      const codes = [...selected.filter((c) => !RONE_ONLY_EXTRA.some((r) => r.code === c)), item.regionCode].slice(-10);
+      setSelected(codes);
+      setPendingSearchFetch(codes);
+    }
+    setPendingComplex({ target: item, needFetch, sawLoading: false });
+  };
+  useEffect(() => {
+    if (!pendingComplex) return;
+    const { target } = pendingComplex;
+    if (status === 'loading') {
+      if (!pendingComplex.sawLoading) setPendingComplex({ ...pendingComplex, sawLoading: true });
+      return;
+    }
+    const regionRows = allTx.filter((t) => t.regionCode === target.regionCode);
+    if (pendingComplex.needFetch && !pendingComplex.sawLoading && !regionRows.length) return; // 조회가 아직 시작 전
+    // 평형·연식 필터에 걸려 지도 목록에 없는 단지도 찾게, 조회한 거래 전체에서 단지를 모은다.
+    const byKey = new Map();
+    regionRows.forEach((t) => {
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (!byKey.has(key)) byKey.set(key, { key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, jibun: t.jibun });
+    });
+    mapComplexes.forEach((c) => { if (c.regionCode === target.regionCode && !byKey.has(c.key)) byKey.set(c.key, c); });
+    const hit = matchSearchedComplex([...byKey.values()], target);
+    setPendingComplex(null);
+    if (hit) {
+      // 카카오가 준 위치를 이 단지의 정확한 위치로 쓴다(서버 저장분이 없을 때만) — 핀도 그 자리로 간다.
+      if (geocodeCache[hit.key] === undefined) geocodeCache[hit.key] = { lat: target.lat, lng: target.lng };
+      setSelectedApt({ apt: hit.apt, dong: hit.dong, regionCode: hit.regionCode, lat: target.lat, lng: target.lng });
+    } else {
+      setSelectedApt({ apt: target.name, dong: target.dong, regionCode: target.regionCode, lat: target.lat, lng: target.lng });
+      showSearchMsg(`"${target.name}"은(는) 조회 기간의 실거래에서 못 찾았어요.\n기간을 늘리거나, 지도에서 단지 핀을 눌러 보세요.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingComplex, status, allTx, mapComplexes]);
+
   // 헤더 검색창: "해운대 84 8억 이하"처럼 지역·면적·가격·거래유형을 한 번에 알아듣는다.
   // 이름이 겹치는 지역(중구·서구 등)은 임의로 고르지 않고 시·도를 되묻는다.
   const handleGlobalSearch = () => {
@@ -2289,19 +2334,21 @@ export default function Page() {
 
     const hasCondition = p.dealType || p.unitSize || p.maxPriceEok != null;
 
-    // 지역·조건 없이 이름만 적었으면 예전처럼 단지명으로 찾는다.
+    // 지역·조건 없이 이름만 적었으면 단지 이름으로 찾는다(v229): 불러온 단지 → 전국 단지 검색 첫 결과.
     if (!p.region && !hasCondition) {
-      const complexMatch = mapComplexes.find((c) => c.apt.includes(q) || q.includes(c.apt));
-      if (complexMatch) {
-        const coord = codeToLatLng[complexMatch.regionCode];
-        setSelectedApt({
-          apt: complexMatch.apt, dong: complexMatch.dong, regionCode: complexMatch.regionCode,
-          lat: coord?.lat, lng: coord?.lng,
-        });
-        showSearchMsg('');
-        return;
-      }
-      showSearchMsg('찾을 수 없어요. 지도에서 지역을 먼저 선택하거나\n"해운대 84 8억 이하"처럼 지역과 조건을 적어보세요.');
+      const localHit = localComplexMatches(mapComplexes, q, 1)[0];
+      if (localHit) { goToComplex(localHit); return; }
+      const cached = suggestHitsRef.current;
+      if (cached.q === q && cached.rows.length) { goToComplex(cached.rows[0]); return; }
+      showSearchMsg('단지를 찾는 중…');
+      fetch(`/api/complex-search?q=${encodeURIComponent(q)}`)
+        .then((res) => res.json())
+        .then((json) => {
+          const first = Array.isArray(json?.results) ? json.results[0] : null;
+          if (first) goToComplex(first);
+          else showSearchMsg(json?.error || '이름이 맞는 아파트 단지를 못 찾았어요.\n"해운대 84 8억 이하"처럼 지역과 조건으로도 찾을 수 있어요.');
+        })
+        .catch(() => showSearchMsg('단지 검색에 실패했어요. 잠시 뒤 다시 시도해주세요.'));
       return;
     }
 
@@ -3418,16 +3465,25 @@ export default function Page() {
         </button>
         <div className="header-search" style={{ marginLeft: 'auto', position: 'relative', flexShrink: 0 }}>
           <input
+            ref={headerSearchRef}
             type="text"
             value={globalSearch}
-            onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
-            placeholder="예: 해운대 84 8억 이하"
-            title="지역·면적·가격을 한 번에 — 해운대 84 8억 이하 / 부산 강서구 전세 3억 / 수원 30평대"
+            onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); setSearchFocus('header'); }}
+            onFocus={() => setSearchFocus('header')}
+            onBlur={() => setSearchFocus((f) => (f === 'header' ? null : f))}
+            onKeyDown={(e) => { if (e.key === 'Enter') { setSearchFocus(null); handleGlobalSearch(); } else if (e.key === 'Escape') setSearchFocus(null); }}
+            placeholder="단지명 검색 (예: 헬리오시티)"
+            title="단지 이름으로 전국 어디든 찾아가요. 지역·면적·가격 조건도 돼요 — 해운대 84 8억 이하 / 부산 강서구 전세 3억 / 수원 30평대"
             style={{
-              width: 128, padding: '7px 9px', borderRadius: 8, border: 'none', outline: 'none',
+              width: 170, padding: '7px 9px', borderRadius: 8, border: 'none', outline: 'none',
               background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 12.5,
             }}
+          />
+          <ComplexSuggest
+            anchorRef={headerSearchRef} query={globalSearch} visible={searchFocus === 'header'}
+            local={mapComplexes} onPickLocal={goToComplex} onPickRemote={goToComplex}
+            onResults={(q, rows) => { suggestHitsRef.current = { q, rows }; }}
+            hint="Enter: 첫 단지로 가기 · '해운대 84 8억 이하'처럼 지역·조건 검색도 돼요"
           />
           {globalSearchMsg && (
             <div style={{
@@ -3445,11 +3501,21 @@ export default function Page() {
       {mobileSearchOpen && (
         // 좁은 화면(≤720px)에서만 보이는 검색 줄: 헤더의 검색창이 숨겨지는 대신 🔍 버튼으로 펼친다. 같은 상태·같은 검색 함수를 쓴다.
         <div className="mobile-search-row" style={{ display: 'none', position: 'sticky', top: HEADER_HEIGHT, zIndex: 199, background: '#1A1A1A', padding: '0 12px 10px' }}>
+          <ComplexSuggest
+            anchorRef={mobileSearchRef} query={globalSearch} visible={searchFocus === 'mobile'}
+            local={mapComplexes}
+            onPickLocal={(c) => { setMobileSearchOpen(false); goToComplex(c); }}
+            onPickRemote={(r) => { setMobileSearchOpen(false); goToComplex(r); }}
+            onResults={(q, rows) => { suggestHitsRef.current = { q, rows }; }}
+          />
           <input
+            ref={mobileSearchRef}
             type="text" autoFocus value={globalSearch}
-            onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleGlobalSearch(); }}
-            placeholder="예: 해운대 84 8억 이하"
+            onChange={(e) => { setGlobalSearch(e.target.value); setGlobalSearchMsg(''); setSearchFocus('mobile'); }}
+            onFocus={() => setSearchFocus('mobile')}
+            onBlur={() => setSearchFocus((f) => (f === 'mobile' ? null : f))}
+            onKeyDown={(e) => { if (e.key === 'Enter') { setSearchFocus(null); handleGlobalSearch(); } }}
+            placeholder="단지명 또는 '해운대 84 8억 이하'"
             style={{
               width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 8, border: 'none', outline: 'none',
               background: 'rgba(255,255,255,0.14)', color: '#fff', fontSize: 15,
@@ -3528,7 +3594,7 @@ export default function Page() {
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
-          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover}
+          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
@@ -3794,56 +3860,6 @@ export default function Page() {
             </div>
           );
         })()}
-
-        {subscriptionsLoading && subscriptions.length === 0 && (
-          <div style={{ ...styles.card, fontSize: 12, color: PALETTE.textMuted }} className="ui-card">
-            분양(청약) 정보 불러오는 중...
-          </div>
-        )}
-        {subscriptions.length > 0 && (
-          <div style={styles.card} className="ui-card">
-            <h2 style={styles.sectionTitle}>최근 분양(청약) 정보 · {currentSidoShort}</h2>
-            <p style={{ fontSize: 11, color: PALETTE.textMuted, margin: '-6px 0 12px' }}>
-              한국부동산원 청약홈 기준, 최근 1년 내 모집공고. 빨간 배지는 투기과열지구/조정대상지역이에요.
-            </p>
-            <div style={{ maxHeight: 260, overflowY: 'auto', overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={styles.th}>주택명</th>
-                    <th style={styles.th}>위치</th>
-                    <th style={styles.th}>공급규모</th>
-                    <th style={styles.th}>모집공고일</th>
-                    <th style={styles.th}>청약접수</th>
-                    <th style={styles.th}>입주예정</th>
-                    <th style={styles.th}>규제</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {subscriptions.map((s, i) => (
-                    <tr key={i}>
-                      <td style={{ ...styles.td, ...TD_WRAP }}>
-                        {s.url ? (
-                          <a href={s.url} target="_blank" rel="noreferrer" style={{ color: PALETTE.accent }}>{s.houseName}</a>
-                        ) : s.houseName}
-                      </td>
-                      <td style={{ ...styles.td, ...TD_WRAP, maxWidth: 280 }}>{s.address}</td>
-                      <td style={styles.td}>{s.totalUnits}세대</td>
-                      <td style={styles.td}>{s.announceDate}</td>
-                      <td style={styles.td}>{s.receiptStart} ~ {s.receiptEnd}</td>
-                      <td style={styles.td}>{fmtYm(s.moveInMonth)}</td>
-                      <td style={styles.td}>
-                        {(s.isSpeculationOverheated || s.isAdjustmentTarget) && (
-                          <span style={{ ...styles.chip, padding: '2px 8px', fontSize: 11 }}>규제</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
 
         {status === 'done' && isRatio && (
           <>
