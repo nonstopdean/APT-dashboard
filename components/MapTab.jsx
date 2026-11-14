@@ -1225,6 +1225,8 @@ export default function MapTab({
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                           <span style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.apt}</span>
                           {isNew && <span style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: PALETTE.accent, background: '#FDECEC', borderRadius: 4, padding: '1px 4px' }}>신축</span>}
+                          {/* v227: 동별 대장 아파트(같은 동 34평 매매 중간값 1위) */}
+                          {coord && coord.leader && <span title="같은 동에서 조회 기간 34평 매매 중간값이 가장 높은 단지예요" style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 800, color: '#8A6100', background: '#FFF4D6', borderRadius: 4, padding: '1px 4px' }}>👑 대장</span>}
                         </div>
                         <div style={{ fontSize: 10.5, color: PALETTE.textMuted, marginTop: 3 }}>{regionLabel(c.regionCode)} {c.dong}{built > 0 ? ` · ${built}년` : ''}{c.count != null ? ` · ${c.count}건` : ''}{hh ? ` · ${hh.toLocaleString()}세대` : ''}</div>
                         {st && (
