@@ -12,12 +12,14 @@ import { classifyListOnly } from '../lib/complex-match';
 import { regionLabel } from '../lib/regions';
 import { PALETTE, fmtWon, fmtArea, fmtPct, monthLabel, APP_BUILD } from '../lib/ui-helpers';
 import { pinnedKeyOf } from '../lib/compare-grid';
-import { changeCap, changeColor, formatChange } from '../lib/market-change';
+import { changeCap, changeColor, formatChange, lastCompleteYm } from '../lib/market-change';
 import { SIGNALS, signalColor, signalLabel } from '../lib/market-signal';
 
 const PIN_PRICE_KEY = 'apt-dashboard-pin-price';
 const GAP_FILTER_KEY = 'apt-dashboard-gap-filters'; // v215
 const PIN_PRICE_MODES = [['deal', '최근 거래'], ['p34', '34평'], ['unit', '평당가']];
+// v237: 거래 건수 비교에 쓰는 마지막 달(신고 기한이 끝난 달)을 "2026.09"처럼.
+const fmtCompleteYm = () => { const ym = lastCompleteYm(); return `${Math.floor(ym / 100)}.${String(ym % 100).padStart(2, '0')}`; };
 
 // 지도 탭 전체(왼쪽 패널 + 지도 + 툴바 + 단지 탐색 패널). app/page.jsx 안에 있던
 // viewMode === 'map' 블록과 renderSeoulMap()을 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
@@ -891,7 +893,7 @@ export default function MapTab({
                       <span>하락 ← → 상승</span>
                     </div>
                     {mapColorMode === 'volchange'
-                      ? '조회 기간의 앞 절반 → 뒤 절반 거래 건수 변화예요. 앞 기간이 5건 미만인 곳은 %가 크게 부풀려져서 회색으로 두었어요. 거래가 사라지면 -100%예요.'
+                      ? `조회 기간의 앞 절반 → 뒤 절반 거래 건수 변화예요. 신고 기한(계약 후 30일)이 안 지나 거래가 덜 잡힌 최근 달은 빼요(지금은 ${fmtCompleteYm()}까지). 앞 기간이 5건 미만인 곳은 %가 크게 부풀려져서 회색으로 두었어요. 거래가 사라지면 -100%예요.`
                       : '조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화예요. 거래된 단지 구성에 따라 실제 시세와 다를 수 있고, 표본이 적은 곳(각 기간 3건 미만)은 회색이에요.'}
                     {' '}마우스를 올리면 근거가 되는 건수가 나와요.
                   </div>
@@ -912,7 +914,7 @@ export default function MapTab({
                       </div>
                     ))}
                     <div style={{ marginTop: 4 }}>
-                      조회 기간 앞 절반 → 뒤 절반 비교(가격 ±1%, 거래량 ±10% 기준). 표본이 적은 곳은 회색. 마우스를 올리면 가격·거래 변화와 건수가 나와요.
+                      조회 기간 앞 절반 → 뒤 절반 비교(가격 ±1%, 거래량 ±10% 기준). 신고 기한(30일)이 안 지나 거래가 덜 잡힌 최근 달은 빼요(지금은 {fmtCompleteYm()}까지). 표본이 적은 곳은 회색. 마우스를 올리면 가격·거래 변화와 건수가 나와요.
                       투자 판단 근거가 아니라 흐름을 보는 참고용이에요.
                     </div>
                   </div>
