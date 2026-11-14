@@ -2866,7 +2866,7 @@ export default function Page() {
       complexes: mapComplexes.filter(inArea).length,
       avgPyeong: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null,
       changeText: ch ? `${ch.pct > 0 ? '+' : ''}${ch.pct.toFixed(1)}%` : null,
-      periodLabel: `최근 ${months.length}개월`,
+      periodLabel: `최근 ${new Set(rows.map(changeYmOf)).size}개월`, // 지역을 안 고르면 months가 비어 있어 거래가 있는 달 수로
       note: rows.length
         ? `${isRent ? '전세 보증금' : '매매'} 기준 · 가격 흐름은 기간 앞 절반 → 뒤 절반 평균 평당가 비교(거래된 단지 구성에 따라 달라질 수 있어요).`
         : '',
@@ -3230,7 +3230,7 @@ export default function Page() {
             sidoAggregates={SIDO_AGGREGATES}
             regionLabel={labelFor}
             palette={PALETTE}
-            onPickComplex={goToComplex}
+            onPickComplex={(c) => { setSearchRegion(null); goToComplex(c); }}
             onPickRegion={pickSearchRegion}
             onPickDong={pickSearchDong}
             summary={searchRegionSummary}
