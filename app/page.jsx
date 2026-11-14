@@ -637,6 +637,9 @@ export default function Page() {
             const exact = group.items.find((it) => it.name.trim() === featureName);
             if (exact) {
               codes.push(exact.code);
+            } else if (group.items.length === 1) {
+              // v232: 지역이 하나뿐인 시·도(세종)는 지도 이름("세종시")이 목록 이름("세종특별자치시")과 달라도 그 지역이다.
+              codes.push(group.items[0].code);
             } else {
               // 일부 구 지도 데이터는 상위 시 이름 없이 구 이름만 붙어 있다
               // (예: "성남시 분당구"가 아니라 "분당구"). 그런 경우를 대비한 보조 매칭.
@@ -2256,7 +2259,7 @@ export default function Page() {
       }
       // v230: 단지 중심 — 처음 온 사람은 지역을 고르지 않아도 서울 강남·서초 일대를 단지가 보이는 줌(13)으로 연다.
       // 그러면 화면에 걸친 구(최대 4곳)를 자동으로 불러와 핀과 "현재 화면" 목록이 바로 찬다(v203 주변 구 자동 불러오기).
-      else if (!codes.length && selected.length === 0) setFocusLatLng({ lat: 37.4979, lng: 127.0276, zoom: 13 });
+      else if (!codes.length && selected.length === 0) setFocusLatLng({ lat: 37.4979, lng: 127.0276, zoom: 13, instant: true });
     } catch (e) { /* 저장값이 깨졌거나 저장소를 못 쓰면 무시한다 */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2803,7 +2806,8 @@ export default function Page() {
     const code = restoreFocusRef.current;
     if (!code || !codeToLatLng[code]) return;
     restoreFocusRef.current = null;
-    setFocusLatLng({ ...codeToLatLng[code], zoom: 13 });
+    // v232: 첫 화면 이동은 애니메이션 없이(instant) — 부드럽게 확대하는 도중 창 크기가 바뀌면 줌 11에서 멈췄다.
+    setFocusLatLng({ ...codeToLatLng[code], zoom: 13, instant: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codeToLatLng]);
 
