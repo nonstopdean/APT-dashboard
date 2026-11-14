@@ -23,6 +23,10 @@ function fmtPinPrice(v) {
   if (!Number.isFinite(v)) return '';
   return v >= 10000 ? `${(v / 10000).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(v).toLocaleString()}만`;
 }
+// 핀 이름(v227): 동별 대장 아파트(c.leader)는 앞에 👑. HTML에 들어가므로 특수문자는 뺀다.
+function pinTitleOf(c) {
+  return `${c.leader ? '👑 ' : ''}${String(c.apt || '').replace(/[<>&"']/g, '')}`;
+}
 function pinPriceTextOf(c, mode) {
   if (mode === 'unit') return Number.isFinite(c.latestPyeong) ? `${Math.round(c.latestPyeong).toLocaleString()}만/평` : '';
   if (mode === 'p34') return fmtPinPrice(c.latest34Price);
@@ -123,10 +127,12 @@ export default function NaverChoropleth({
       const c = byKey.get(m.key);
       if (!c) return;
       const priceText = pinPriceTextOf(c, pinPriceModeRef.current);
-      if (priceText === m.priceText) return;
+      const title = pinTitleOf(c); // v227: 기간이 바뀌면 대장(👑)도 바뀔 수 있다
+      if (priceText === m.priceText && title === m.title) return;
       m.priceText = priceText;
+      m.title = title;
       if (typeof m.marker.setIcon === 'function') {
-        m.marker.setIcon({ content: markerHtmlOf(m.title, priceText, m.pinned), anchor: new window.naver.maps.Point(0, 24) });
+        m.marker.setIcon({ content: markerHtmlOf(title, priceText, m.pinned), anchor: new window.naver.maps.Point(0, 24) });
       }
     });
   };
@@ -831,7 +837,7 @@ export default function NaverChoropleth({
       }
       if (seq !== markerSyncSeqRef.current || !coord) return;
       const priceText = pinPriceTextOf(c, pinPriceModeRef.current);
-      const titleText = String(c.apt || '').replace(/[<>&"']/g, '');
+      const titleText = pinTitleOf(c);
       const pinned = pinnedKeysRef.current.has(c.key);
       const markerHtml = markerHtmlOf(titleText, priceText, pinned);
       const marker = new window.naver.maps.Marker({
