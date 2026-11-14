@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { geocodeCache, runPool, fetchServerGeocodeCache, queueServerGeocodeSave } from '../lib/geocodeCache';
+import { placeContextOf, pickPlace, resolveMarkerCoord, jibunAddressOf } from '../lib/geocode-pick';
 
 // features: [{ feature, name, code }] - 지오메트리는 안정적으로 유지되는 배열(선택 상태가 바뀌어도
 // 배열 자체가 재생성되지 않아야 함). values: features와 같은 순서/길이의 [number|null] 배열로,
@@ -148,10 +149,12 @@ export default function KakaoChoropleth({
     });
   };
 
-  // 카카오 레벨: 숫자가 작을수록 확대된 상태. far(구)는 5레벨 이상(3km+), mid(동)는 3~4레벨(1km 안팎),
-  // near(동, 연하게+마커)는 2레벨 이하(약 300m 이내)에 대응하도록 잡았다.
-  const FAR_ZOOM_LEVEL = 5;
-  const NEAR_ZOOM_LEVEL = 3;
+  // 카카오 레벨: 숫자가 작을수록 확대된 상태. v228: 네이버 지도와 맞춰 구 하나가 보이는 7레벨부터 near(동 연하게 + 단지 핀),
+  // 8레벨 이상은 far(구 색칠). 예전(far 5, near 3)은 약 50m 축척까지 확대해야 단지가 나왔다(mid 단계는 이제 없음).
+  // 클러스터러는 5레벨 이상에서 겹치는 단지를 숫자로 묶고, 4레벨 이하에서 모두 낱개로 보여준다.
+  const FAR_ZOOM_LEVEL = 8;
+  const NEAR_ZOOM_LEVEL = 7;
+  const CLUSTER_MIN_LEVEL = 5;
 
   const updateLayerVisibility = () => {
     if (!mapRef.current) return;
@@ -182,8 +185,8 @@ export default function KakaoChoropleth({
         markers: [],
         gridSize: 60,
         averageCenter: true,
-        // 이 레벨보다 확대되면(레벨 3 아래) 클러스터가 풀리면서 개별 마커가 나타난다.
-        minLevel: NEAR_ZOOM_LEVEL,
+        // 이 레벨보다 확대되면 클러스터가 풀리면서 개별 마커가 나타난다.
+        minLevel: CLUSTER_MIN_LEVEL,
         calculator: (size) => (size < 10 ? 0 : size < 50 ? 1 : 2),
         styles: [
           { width: 38, height: 38, borderRadius: 19, background: 'rgba(178,58,46,0.88)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 12, lineHeight: '38px' },
@@ -215,6 +218,18 @@ export default function KakaoChoropleth({
     if (zoomDebounceRef.current) clearTimeout(zoomDebounceRef.current);
     zoomDebounceRef.current = setTimeout(handleZoomChangedImmediate, 150);
   };
+
+  // v228: 실거래 지번 주소로 정확한 위치 찾기(시·도/시군구가 맞는 결과만).
+  const geocoderRef = useRef(null);
+  const geocodeAddress = (address, regionCode, dong) => new Promise((resolve) => {
+    if (!address || !window.kakao?.maps?.services?.Geocoder) return resolve(null);
+    if (!geocoderRef.current) geocoderRef.current = new window.kakao.maps.services.Geocoder();
+    geocoderRef.current.addressSearch(address, (result, status) => {
+      if (status === window.kakao.maps.services.Status.OK && result?.length) {
+        resolve(pickPlace(result, { place: placeContextOf(regionCode), dong }));
+      } else resolve(null);
+    });
+  });
 
   const geocodeComplex = (query) => new Promise((resolve) => {
     if (!placesRef.current) return resolve(null);
@@ -408,8 +423,18 @@ export default function KakaoChoropleth({
       const newlyFound = [];
       await runPool(todo, async (c) => {
         if (cancelled) return;
-        // 이미 "동" 중심점 좌표가 있으면(page.jsx에서 넘겨줌) 카카오 검색 자체를 건너뛴다 — 이게 훨씬 빠르다.
-        let coord = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : geocodeCache[c.key];
+        // v228: 정확한 위치(서버·이번 접속 저장분) > 지번 주소 검색 > 동 중심점 순서. v227까지는 동 중심점이 있으면
+        // 저장된 정확한 위치도 버리고 동 중심에 찍어서, 같은 동 단지가 한 점에 겹쳐 하나씩 누를 수 없었다.
+        const approx = c.lat != null && c.lng != null ? { lat: c.lat, lng: c.lng } : null;
+        const resolved = resolveMarkerCoord(approx, geocodeCache[c.key]);
+        let { coord } = resolved;
+        const addr = jibunAddressOf(c.regionCode, c.dong, c.jibun);
+        if (resolved.source === 'approx' && addr && geocodeCache[c.key] === undefined) {
+          const found = await geocodeAddress(addr, c.regionCode, c.dong);
+          geocodeCache[c.key] = found;
+          const r = resolveMarkerCoord(approx, found);
+          if (r.source === 'exact') { coord = r.coord; newlyFound.push({ key: c.key, lat: coord.lat, lng: coord.lng }); }
+        }
         if (coord === undefined) {
           coord = await geocodeComplex(`${c.regionName} ${c.dong} ${c.apt}`)
             || await geocodeComplex(`${c.dong} ${c.apt}`)
