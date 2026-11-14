@@ -600,6 +600,7 @@ export default function NaverChoropleth({
       applyAllStyles();
       updateLayerVisibility();
       onZoomTierChangeRef.current?.(tier);
+      reportViewport(); // v230: 단계가 바뀌면 범위도 같이 알린다(주변 구 자동 불러오기가 바로 시작되게)
     }
     scheduleMarkerSync(120);
     schedulePolygonViewportSync(80);
@@ -633,6 +634,8 @@ export default function NaverChoropleth({
         // v230: 화면 범위 알림은 지도를 만들 때 바로 붙인다. 아래 idle effect는 단지 목록이 바뀔 때만 붙어서, 지역을 고르지 않은
         // 첫 화면(단지 0개)에서는 범위가 안 알려져 주변 구 자동 불러오기가 시작되지 않았다.
         window.naver.maps.Event.addListener(mapRef.current, 'idle', () => reportViewportRef.current?.());
+        // 첫 idle이 오지 않는 경우가 있어(실제 사이트에서 끌기 전까지 범위가 안 알려짐) 만든 직후에도 한 번 알린다.
+        setTimeout(() => reportViewportRef.current?.(), 700);
         // v228: 지도를 끌거나 빈 곳을 누르면 묶음 팝업을 닫는다(묶음을 누른 직후 따라오는 지도 클릭은 무시).
         window.naver.maps.Event.addListener(mapRef.current, 'dragstart', () => setClusterPop(null));
         window.naver.maps.Event.addListener(mapRef.current, 'click', () => {
