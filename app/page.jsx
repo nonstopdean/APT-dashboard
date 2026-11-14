@@ -2617,42 +2617,45 @@ export default function Page() {
   // "가격변동" 색칠 모드: 조회 기간의 앞 절반 → 뒤 절반 평균 평당가 변화율. 이 모드일 때만 계산한다.
   const changeValueOf = (t) => (isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong);
   const changeYmOf = (t) => Number(t.year) * 100 + Number(t.month);
+  // v236: 지도 색칠(가격변동·거래량변동·시장 신호·동 가격)은 고른 지역 + 지도가 자동으로 불러온 주변 구 거래를 함께 쓴다.
+  // 예전엔 고른 지역(allTx)만 써서, 지역을 고르지 않은 첫 화면에서는 색칠이 모두 회색이었다. 두 목록은 겹치지 않는다(browseTx가 고른 구를 뺀다).
+  const mapTx = useMemo(() => (browseTx.length ? [...allTx, ...browseTx] : allTx), [allTx, browseTx]);
   const regionChangeIndex = useMemo(() => {
     if (!changeMode) return null;
     // 거래량은 분모가 되는 앞 기간이 5건 이상일 때만 계산한다(적은 건수의 %는 크게 부풀려진다).
-    return buildChangeIndex(allTx, {
+    return buildChangeIndex(mapTx, {
       keyOf: (t) => t.regionCode || null, valueOf: changeValueOf, ymOf: changeYmOf,
       minPerHalf: changeMode === 'count' ? 5 : 3, mode: changeMode,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTx, isRent, changeMode]);
+  }, [mapTx, isRent, changeMode]);
   const dongChangeIndex = useMemo(() => {
     if (!changeMode || !dongLayerOn) return null;
-    return buildChangeIndex(allTx, {
+    return buildChangeIndex(mapTx, {
       keyOf: (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null),
       valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: changeMode,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTx, isRent, changeMode, dongLayerOn]);
+  }, [mapTx, isRent, changeMode, dongLayerOn]);
 
   // v235: "시장 신호" 색칠 — 가격변동(앞→뒤 평균 평당가, 기간별 3건+)과 거래량변동(앞 기간 구 5건+/동 3건+)을 함께 보고 6가지로(lib/market-signal.js).
   const signalMode = mapColorMode === 'signal';
   const regionSignalIndex = useMemo(() => {
     if (!signalMode) return null;
     const keyOf = (t) => t.regionCode || null;
-    const p = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
-    const v = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 5, mode: 'count' });
+    const p = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
+    const v = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 5, mode: 'count' });
     return combineSignals(p, v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTx, isRent, signalMode]);
+  }, [mapTx, isRent, signalMode]);
   const dongSignalIndex = useMemo(() => {
     if (!signalMode || !dongLayerOn) return null;
     const keyOf = (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null);
-    const p = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
-    const v = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'count' });
+    const p = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
+    const v = buildChangeIndex(mapTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'count' });
     return combineSignals(p, v);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTx, isRent, signalMode, dongLayerOn]);
+  }, [mapTx, isRent, signalMode, dongLayerOn]);
 
   // "34평 갭" 색칠 모드(v199, 아파트 매매일 때만): 구·동별 34평 매매 중간값 − 전세 중간값. 매매 모드에선 전세 거래가 없으므로
   // 이 모드를 켰을 때만 같은 지역·기간의 전월세를 따로 받는다(서버가 저장해 둔 값이라 가볍다).
@@ -3022,7 +3025,7 @@ export default function Page() {
     const index = new Map();
     const guIndex = new Map();
     if (!dongLayerOn) { index.guFallback = guIndex; return index; }
-    allTx.forEach((t) => {
+    mapTx.forEach((t) => { // v236: 주변 구 거래도 함께
       if (!t?.regionCode || !t?.dong) return;
       const value = isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong;
       const key = `${t.regionCode}|${normalizeDongName(t.dong)}`;
@@ -3043,7 +3046,7 @@ export default function Page() {
     });
     index.guFallback = guIndex;
     return index;
-  }, [allTx, isRent, dongLayerOn]);
+  }, [mapTx, isRent, dongLayerOn]);
 
   const dongMapData = useMemo(() => {
     if (!dongLayerOn || dongRawFeatures.length === 0) return null;
