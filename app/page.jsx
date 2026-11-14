@@ -17,6 +17,7 @@ import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
 import { normalizeComplexName } from '../lib/complex-match';
 import { buildChangeIndex, changeNote } from '../lib/market-change';
+import { combineSignals, signalNote } from '../lib/market-signal';
 import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
@@ -2596,6 +2597,7 @@ export default function Page() {
     if (isRone) return roneRanking.find((r) => r.code === code)?.latest ?? null;
     if (isRatio) return ratioRanking.find((r) => r.code === code)?.ratio ?? null;
     if (changeMode) return regionChangeIndex?.get(code)?.pct ?? null; // 표본이 모자라면 null → 회색
+    if (signalMode) return regionSignalIndex?.get(code)?.idx ?? null; // v235: 신호 번호(1~6), 표본 부족이면 회색
     if (gapMode) return regionGapIndex?.get(code)?.gap ?? null; // 34평 매매·전세 각 2건 미만이면 회색
     if (mapColorMode === 'volume') {
       let count = 0;
@@ -2632,6 +2634,25 @@ export default function Page() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allTx, isRent, changeMode, dongLayerOn]);
+
+  // v235: "시장 신호" 색칠 — 가격변동(앞→뒤 평균 평당가, 기간별 3건+)과 거래량변동(앞 기간 구 5건+/동 3건+)을 함께 보고 6가지로(lib/market-signal.js).
+  const signalMode = mapColorMode === 'signal';
+  const regionSignalIndex = useMemo(() => {
+    if (!signalMode) return null;
+    const keyOf = (t) => t.regionCode || null;
+    const p = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
+    const v = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 5, mode: 'count' });
+    return combineSignals(p, v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTx, isRent, signalMode]);
+  const dongSignalIndex = useMemo(() => {
+    if (!signalMode || !dongLayerOn) return null;
+    const keyOf = (t) => (t.regionCode && t.dong ? `${t.regionCode}|${normalizeDongName(t.dong)}` : null);
+    const p = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' });
+    const v = buildChangeIndex(allTx, { keyOf, valueOf: changeValueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'count' });
+    return combineSignals(p, v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allTx, isRent, signalMode, dongLayerOn]);
 
   // "34평 갭" 색칠 모드(v199, 아파트 매매일 때만): 구·동별 34평 매매 중간값 − 전세 중간값. 매매 모드에선 전세 거래가 없으므로
   // 이 모드를 켰을 때만 같은 지역·기간의 전월세를 따로 받는다(서버가 저장해 둔 값이라 가볍다).
@@ -2843,26 +2864,28 @@ export default function Page() {
       const activeCodes = codes.filter((c) => selected.includes(c));
       const candidateCodes = activeCodes.length ? activeCodes : codes;
       const vals = candidateCodes.map((c) => mapValueFor(c)).filter((v) => v != null);
+      if (signalMode) return vals.length ? vals[0] : null; // 신호 번호는 평균내면 뜻이 없어 첫 값
       return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode, timelineMonth, regionChangeIndex, regionGapIndex]);
+  }, [mapDisplayFeatures, selected, rawByRegionMonth, months, roneRanking, ratioRanking, dealType, mapColorMode, timelineMonth, regionChangeIndex, regionGapIndex, regionSignalIndex]);
 
   // 변화 모드일 때 지도 위 툴팁에 함께 보여줄 근거(표본 수). 구 하나가 여러 코드로 이뤄진 경우는 합쳐 말하기 어려워 비운다.
   // v199: 34평 갭 모드면 "34평 매매 X − 전세 Y (건수)".
   const mapValueNotes = useMemo(() => {
-    const index = changeMode ? regionChangeIndex : gapMode ? regionGapIndex : null;
+    const index = changeMode ? regionChangeIndex : gapMode ? regionGapIndex : signalMode ? regionSignalIndex : null;
     if (!mapDisplayFeatures || !index) return null;
     return mapDisplayFeatures.map((f) => {
       const codes = f.codes || [];
       const active = codes.filter((c) => selected.includes(c));
       const cand = active.length ? active : codes;
       const entries = cand.map((c) => index.get(c)).filter(Boolean);
+      if (signalMode) return entries.length ? signalNote(entries[0]) : '';
       if (entries.length !== 1) return '';
       return changeMode ? changeNote(entries[0], changeMode) : gapNote(entries[0]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapDisplayFeatures, selected, regionChangeIndex, changeMode, gapMode, regionGapIndex]);
+  }, [mapDisplayFeatures, selected, regionChangeIndex, changeMode, gapMode, regionGapIndex, signalMode, regionSignalIndex]);
 
   const seoulMapData = useMemo(() => {
     if (!mapDisplayFeatures || !mapValues) return null;
@@ -3038,6 +3061,7 @@ export default function Page() {
         return dongChangeIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`)?.pct ?? null;
       }
       if (gapMode) return dongGapIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`)?.gap ?? null; // 표본 부족이면 구 값으로 채우지 않는다
+      if (signalMode) return dongSignalIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`)?.idx ?? null; // v235
       const agg = dongPriceIndex.get(`${f.regionCode}|${normalizeDongName(f.name)}`);
       if (mapColorMode === 'volume') {
         if (agg?.count) return agg.count;
@@ -3056,7 +3080,9 @@ export default function Page() {
       ? dongRawFeatures.map((f) => changeNote(dongChangeIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`), changeMode))
       : gapMode
         ? dongRawFeatures.map((f) => gapNote(dongGapIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`)))
-        : null;
+        : signalMode
+          ? dongRawFeatures.map((f) => signalNote(dongSignalIndex?.get(`${f.regionCode}|${normalizeDongName(f.name)}`)))
+          : null;
     return {
       features: dongRawFeatures.map((f) => ({ feature: f.feature, name: f.name, code: f.regionCode })),
       values,
@@ -3065,7 +3091,7 @@ export default function Page() {
       max,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn, isRatio, ratioRanking, dongChangeIndex, changeMode, gapMode, dongGapIndex]);
+  }, [dongRawFeatures, dongPriceIndex, mapColorMode, dongLayerOn, isRatio, ratioRanking, dongChangeIndex, changeMode, gapMode, dongGapIndex, signalMode, dongSignalIndex]);
 
 
   const styles = {
