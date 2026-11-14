@@ -680,7 +680,7 @@ export default function MapTab({
                       {gs && gs.refine && (gs.refine.attempted > 0 || gs.refine.sdkFail > 0 || gs.kakao.calls > 0) && (
                         <div title="동 중심에 겹쳐 있는 단지의 정확한 위치를 카카오에서 찾는 중이에요. 결과없음: 검색 결과가 없음 · 지역불일치: 결과는 있었지만 시·도/시군구가 맞지 않아 버림 · 오류: 카카오 응답 오류">
                           위치 다듬기: 시도 {gs.refine.attempted} · 이동 {gs.refine.moved}
-                          {` · 카카오 ${gs.kakao.calls}회(채택 ${gs.kakao.picked} · 결과없음 ${gs.kakao.zero} · 지역불일치 ${gs.kakao.rejected} · 오류 ${gs.kakao.error}${gs.kakao.lastError ? `:${gs.kakao.lastError}` : ''})`}
+                          {` · 카카오 ${gs.kakao.calls}회(채택 ${gs.kakao.picked}${gs.kakao.addr ? `(지번 ${gs.kakao.addr})` : ''} · 결과없음 ${gs.kakao.zero} · 지역불일치 ${gs.kakao.rejected} · 오류 ${gs.kakao.error}${gs.kakao.lastError ? `:${gs.kakao.lastError}` : ''})`}
                           {gs.refine.far > 0 && ` · 동에서 멀어 버림 ${gs.refine.far}`}
                         </div>
                       )}
