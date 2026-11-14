@@ -381,7 +381,7 @@ export default function KakaoChoropleth({
     if (!focusLatLng || !mapRef.current || !window.kakao?.maps) return;
     const latlng = new window.kakao.maps.LatLng(focusLatLng.lat, focusLatLng.lng);
     mapRef.current.panTo(latlng);
-    mapRef.current.setLevel(5);
+    mapRef.current.setLevel(focusLatLng.zoom >= 16 ? 3 : 5); // v229: 단지 검색으로 오면 더 가까이
   }, [focusLatLng]);
 
   useEffect(() => {
