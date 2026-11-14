@@ -157,6 +157,8 @@ export default function NaverChoropleth({
     const sw = b.getSW(); const ne = b.getNE();
     onViewportChangeRef.current({ swLat: sw.lat(), swLng: sw.lng(), neLat: ne.lat(), neLng: ne.lng() });
   };
+  const reportViewportRef = useRef(null);
+  reportViewportRef.current = reportViewport;
 
   // 네이버 zoom: 숫자가 클수록 확대된 상태. far는 12 이하(구 여러 개, 구 색칠), near는 13 이상(단지 핀·묶음).
   // v180까지 near가 16, v227까지 14라서 꽤 확대해야 단지가 나왔다. v228부터 구 하나가 보이는 13에서 핀이 뜬다(mid 단계는 이제 없음).
@@ -626,6 +628,11 @@ export default function NaverChoropleth({
           zoom: focusLatLng ? (focusLatLng.zoom || 13) : 11,
         });
         window.naver.maps.Event.addListener(mapRef.current, 'zoom_changed', () => zoomChangedRef.current?.());
+        // v230: 처음부터 줌 13 이상으로 만들면 zoom_changed가 안 와서 단계가 'far'로 남았다(핀·주변 구 불러오기가 안 됨) — 한 번 맞춘다.
+        zoomChangedRef.current?.();
+        // v230: 화면 범위 알림은 지도를 만들 때 바로 붙인다. 아래 idle effect는 단지 목록이 바뀔 때만 붙어서, 지역을 고르지 않은
+        // 첫 화면(단지 0개)에서는 범위가 안 알려져 주변 구 자동 불러오기가 시작되지 않았다.
+        window.naver.maps.Event.addListener(mapRef.current, 'idle', () => reportViewportRef.current?.());
         // v228: 지도를 끌거나 빈 곳을 누르면 묶음 팝업을 닫는다(묶음을 누른 직후 따라오는 지도 클릭은 무시).
         window.naver.maps.Event.addListener(mapRef.current, 'dragstart', () => setClusterPop(null));
         window.naver.maps.Event.addListener(mapRef.current, 'click', () => {
@@ -933,7 +940,7 @@ export default function NaverChoropleth({
     const listener = window.naver.maps.Event.addListener(mapRef.current, 'idle', () => {
       schedulePolygonViewportSync(40);
       if (zoomTierRef.current === 'near') scheduleMarkerSync(40);
-      reportViewport();
+      // 화면 범위 알림은 지도를 만들 때 붙인 idle 리스너가 한다(v230).
     });
     return () => {
       if (listener?.remove) listener.remove();
