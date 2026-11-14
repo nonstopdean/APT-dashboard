@@ -21,7 +21,7 @@ import { resolveMarkerCoord } from '../lib/geocode-pick';
 import { geocodeCache, fetchServerGeocodeCache } from '../lib/geocodeCache';
 import { jeonseRatioSeries, gapByArea } from '../lib/jeonse-ratio';
 import { supplyPyeong } from '../lib/pyeong';
-import { peerPriceCompare, gapIndex, gapSeries } from '../lib/peer-compare';
+import { peerPriceCompare, gapIndex, gapSeries, dongLeaders } from '../lib/peer-compare';
 import { peakDropRows } from '../lib/peak-drop';
 import ComplexDetail from '../components/ComplexDetail';
 import MapTab from '../components/MapTab';
@@ -1686,6 +1686,13 @@ export default function Page() {
 
   const MAX_MAP_COMPLEXES = 800;
 
+  // v227: 동별 대장 아파트(같은 동에서 34평 매매 중간값 1위, lib/peer-compare.js dongLeaders). 평형·연식 필터와 상관없이
+  // 조회한 매매 전체 + 주변 구 자동 표시분으로 뽑는다. 아파트 매매일 때만(전월세·오피스텔은 없음).
+  const leaderMap = useMemo(
+    () => (dealType === 'trade' && propertyType !== 'offi' ? dongLeaders([...allTx, ...browseTx]) : new Map()),
+    [allTx, browseTx, dealType, propertyType],
+  );
+
   const mapComplexes = useMemo(() => {
     const seen = new Set();
     const list = [];
@@ -1712,7 +1719,7 @@ export default function Page() {
       seen.add(key);
       const coord = findDongCentroid(regionCode, dong);
       const latest = latestByKey.get(key);
-      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price });
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price, leader: leaderMap.has(key) });
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
@@ -1768,12 +1775,12 @@ export default function Page() {
       if (!coord) return;
       seen.add(key);
       const l = browseLatest.get(key);
-      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true });
+      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true, leader: leaderMap.has(key) });
     });
     out.mergedByName = mergedByName; // 상태 카드에 "이름이 같아 합친 수"를 보여주기 위해 배열에 붙여둔다
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected]);
+  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap]);
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
   // v207: 단지 목록 행의 가장 가까운 지하철역. 좌표는 핀과 같은 규칙(정확한 위치 > 동 중심점).
