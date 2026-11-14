@@ -1712,6 +1712,13 @@ export default function Page() {
         if (!prev34 || ym > prev34.ym) latest34ByKey.set(key, { ym, price });
       }
     });
+    // v228: 단지별 지번(실거래 자료) — 지도가 카카오 주소 검색으로 정확한 위치를 찾는 데 쓴다. 기간·평형 필터와 상관없이 조회한 거래 전체에서.
+    const jibunByKey = new Map();
+    [...allTx, ...browseTx].forEach((t) => {
+      if (!t.jibun || !t.apt || !t.dong) return;
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (!jibunByKey.has(key)) jibunByKey.set(key, String(t.jibun).trim());
+    });
     const addItem = (apt, dong, regionCode) => {
       if (!apt || !dong || !regionCode) return;
       const key = `${regionCode}|${dong}|${apt}`;
@@ -1719,7 +1726,7 @@ export default function Page() {
       seen.add(key);
       const coord = findDongCentroid(regionCode, dong);
       const latest = latestByKey.get(key);
-      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price, leader: leaderMap.has(key) });
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, jibun: jibunByKey.get(key), latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price, leader: leaderMap.has(key) });
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
@@ -1775,12 +1782,12 @@ export default function Page() {
       if (!coord) return;
       seen.add(key);
       const l = browseLatest.get(key);
-      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true, leader: leaderMap.has(key) });
+      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, jibun: jibunByKey.get(key), latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true, leader: leaderMap.has(key) });
     });
     out.mergedByName = mergedByName; // 상태 카드에 "이름이 같아 합친 수"를 보여주기 위해 배열에 붙여둔다
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap]);
+  }, [allTx, allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap]);
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
   // v207: 단지 목록 행의 가장 가까운 지하철역. 좌표는 핀과 같은 규칙(정확한 위치 > 동 중심점).
