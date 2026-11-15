@@ -2859,7 +2859,8 @@ export default function Page() {
     const rows = mapTx.filter(inArea);
     const valueOf = (t) => (isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong);
     const vals = rows.map(valueOf).filter((v) => Number.isFinite(v) && v > 0);
-    const ch = rows.length ? buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' }).get('all') : null;
+    // v239: 가격 흐름도 시장 신호와 같은 달(신고가 끝난 달까지)로 — 두 숫자가 어긋나 보이지 않게
+    const ch = rows.length ? buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg', maxYm: completeYm }).get('all') : null;
     // v239: 시장 신호(지도 "시장 신호" 색칠과 같은 기준 — 신고가 끝난 달까지, 가격 3건+·거래 앞 기간 구 5건+/동 3건+).
     const sig = rows.length ? combineSignals(
       buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg', maxYm: completeYm }),
@@ -2874,7 +2875,7 @@ export default function Page() {
       changeText: ch ? `${ch.pct > 0 ? '+' : ''}${ch.pct.toFixed(1)}%` : null,
       periodLabel: `최근 ${new Set(rows.map(changeYmOf)).size}개월`, // 지역을 안 고르면 months가 비어 있어 거래가 있는 달 수로
       note: rows.length
-        ? `${isRent ? '전세 보증금' : '매매'} 기준 · 가격 흐름은 기간 앞 절반 → 뒤 절반 평균 평당가 비교(거래된 단지 구성에 따라 달라질 수 있어요).`
+        ? `${isRent ? '전세 보증금' : '매매'} 기준 · 가격 흐름·시장 신호는 신고가 끝난 달(${Math.floor(completeYm / 100)}.${String(completeYm % 100).padStart(2, '0')})까지 앞 절반 → 뒤 절반 평균 평당가 비교(거래된 단지 구성에 따라 달라질 수 있어요).`
         : '',
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
