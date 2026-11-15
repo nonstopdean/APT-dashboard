@@ -137,6 +137,31 @@ export default function MapSearchPanel({
             <b style={{ fontSize: 14, flex: 1 }}>📍 {summary.label}</b>
             <span style={{ cursor: 'pointer', color: P.textMuted }} onClick={onCloseSummary} title="닫기">✕</span>
           </div>
+          {/* v239: 시장 신호(지도 색칠과 같은 기준)와 한국부동산원 평균 매매가격 */}
+          {summary.signal && (
+            <div data-summary-signal="1" title={summary.signal.note} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '8px 10px', borderRadius: 8, background: P.panelAlt }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: summary.signal.color, flexShrink: 0 }} />
+              <span style={{ minWidth: 0 }}>
+                <b style={{ fontSize: 13 }}>시장 신호 · {summary.signal.label}</b>
+                <span style={{ display: 'block', fontSize: 10.5, color: P.textMuted, marginTop: 1 }}>{summary.signal.desc} — {summary.signal.note}</span>
+              </span>
+            </div>
+          )}
+          {summary.rone && (
+            <div data-summary-rone="1" style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, border: `1px solid ${P.border}` }}>
+              <div style={{ fontSize: 10.5, color: P.textMuted }}>
+                한국부동산원 아파트 평균 매매가{summary.rone.ofGu ? '(구 전체)' : ''}{summary.rone.ym ? ` · ${summary.rone.ym}` : ''}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+                <b style={{ fontSize: 15 }}>{summary.rone.value >= 10000 ? `${(summary.rone.value / 10000).toFixed(2)}억` : `${Math.round(summary.rone.value).toLocaleString()}만`}</b>
+                {Number.isFinite(summary.rone.change) && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: summary.rone.change > 0 ? P.up : summary.rone.change < 0 ? P.down : P.textMuted }}>
+                    전월 대비 {summary.rone.change > 0 ? '▲' : summary.rone.change < 0 ? '▼' : ''}{Math.abs(summary.rone.change).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {summary.loading ? (
             <p style={{ fontSize: 11.5, color: P.textMuted, margin: '8px 0 0' }}>이 지역 거래를 불러오는 중이에요…</p>
           ) : summary.count ? (
