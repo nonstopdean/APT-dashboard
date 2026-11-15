@@ -2860,7 +2860,13 @@ export default function Page() {
     const valueOf = (t) => (isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong);
     const vals = rows.map(valueOf).filter((v) => Number.isFinite(v) && v > 0);
     const ch = rows.length ? buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg' }).get('all') : null;
+    // v239: 시장 신호(지도 "시장 신호" 색칠과 같은 기준 — 신고가 끝난 달까지, 가격 3건+·거래 앞 기간 구 5건+/동 3건+).
+    const sig = rows.length ? combineSignals(
+      buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: 3, mode: 'avg', maxYm: completeYm }),
+      buildChangeIndex(rows, { keyOf: () => 'all', valueOf, ymOf: changeYmOf, minPerHalf: searchRegion.dong ? 3 : 5, mode: 'count', maxYm: completeYm }),
+    ).get('all') : null;
     return {
+      signal: sig ? { label: sig.signal.label, color: sig.signal.color, desc: sig.signal.desc, note: signalNote(sig) } : null,
       label: searchRegion.label,
       count: rows.length,
       complexes: mapComplexes.filter(inArea).length,
@@ -2901,6 +2907,27 @@ export default function Page() {
     ym: regionPrices?.ym || '',
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [regionPrices, codeToLatLng, mapFeatures, allTx, browseTx, dongCentroids, isRent]);
+  // v239: 지역 요약 카드 = 불러온 거래 요약 + 한국부동산원 평균 매매가격(시·도/시군구, 동이면 그 구 값). 세종처럼 전체 코드가 없으면 하나뿐인 지역 값.
+  const searchRegionCard = useMemo(() => {
+    if (!searchRegionSummary) return null;
+    const items = regionPrices?.items;
+    let it = items?.[searchRegion?.code] || null;
+    if (!it && items && searchRegion) {
+      const members = expandRegionCode(searchRegion.code);
+      if (members.length === 1) it = items[members[0]] || null;
+    }
+    const ym = it?.ym || regionPrices?.ym || '';
+    return {
+      ...searchRegionSummary,
+      rone: it ? {
+        value: it.v,
+        change: it.prev ? ((it.v - it.prev) / it.prev) * 100 : null,
+        ym: ym ? `${String(ym).slice(0, 4)}.${String(ym).slice(4, 6)}` : '',
+        ofGu: searchRegion?.kind === 'dong',
+      } : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchRegionSummary, regionPrices, searchRegion]);
 
   const mapDisplayFeatures = useMemo(() => {
     if (!mapFeatures) return null;
@@ -3230,10 +3257,15 @@ export default function Page() {
             sidoAggregates={SIDO_AGGREGATES}
             regionLabel={labelFor}
             palette={PALETTE}
-            onPickComplex={(c) => { setSearchRegion(null); goToComplex(c); }}
+            onPickComplex={(c) => {
+              setSearchRegion(null);
+              goToComplex(c);
+              // v239: 폰은 검색 패널이 지도 위를 덮으므로 단지를 고르면 접어서 지도·상세가 보이게
+              if (typeof window !== 'undefined' && window.innerWidth <= 720) setPanelOpen(false);
+            }}
             onPickRegion={pickSearchRegion}
             onPickDong={pickSearchDong}
-            summary={searchRegionSummary}
+            summary={searchRegionCard}
             onCloseSummary={() => setSearchRegion(null)}
             onOpenDashboard={searchRegion ? () => { addRegionAndFetch(searchRegion.code); setViewMode('normal'); } : null}
           />
@@ -4552,6 +4584,8 @@ export default function Page() {
         @media (max-width: 720px) {
           .hero-wrap { flex-direction: column !important; height: calc(100vh - ${HEADER_HEIGHT + 60}px) !important; }
           .dash-sidebar-fixed {
+            /* v239: 좌우 여백(20px×2)까지 100% 안에 — 예전엔 폰에서 폭 415px로 화면(375px) 오른쪽이 잘렸다 */
+            box-sizing: border-box !important;
             width: 100% !important; height: 58vh !important; border-right: none !important;
             border-bottom: 1px solid ${PALETTE.border};
           }
