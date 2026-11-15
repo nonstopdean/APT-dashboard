@@ -562,7 +562,8 @@ export default function MapTab({
           aria-label="패널 펼치기"
         >
           <ChevronRight size={16} color={PALETTE.textMuted} />
-          <span className="panel-expand-label" style={{ display: 'none' }}>조건 설정 (지역·기간·평형)</span>
+          {/* v239: 지도 탭 왼쪽 패널은 이제 검색 패널(조회 기간·지역은 대시보드 탭) — 폰에서 보이는 이름도 맞춘다 */}
+          <span className="panel-expand-label" style={{ display: 'none' }}>🔍 단지·지역 검색</span>
         </button>
       )}
 
