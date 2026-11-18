@@ -5,7 +5,7 @@ import {
 import { X } from 'lucide-react';
 import { isRegulatedByCode } from '../lib/regions';
 import {
-  PALETTE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, fmtWon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
+  PALETTE, BLUE, LINE_COLORS, fmtPct, fmtArea, fmtManwon, fmtWon, calcAcquisitionTax, calcLoanEstimate, labelFor, slopeClass,
 } from '../lib/ui-helpers';
 import FloatingWindow from './FloatingWindow';
 import DetailSections from './DetailSections';
@@ -901,28 +901,37 @@ export default function ComplexDetail({
     ['준공', builtY ? `${builtY}년` : null, builtAge != null ? `${builtAge}년차 · ${builtAge <= 5 ? '신축' : builtAge <= 10 ? '준신축' : builtAge <= 20 ? '구축' : '노후'}` : null],
     ['시공사', aptBasicInfo?.builder || null],
   ];
+  // v242: 푸른 그라데이션 카드 — 단지 이름·주소, 핵심 4칸, 역·학교·규제 칩을 한 장에.
+  const heroChip = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,0.16)', color: '#fff', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' };
+  const heroTiles = infoTiles.filter(([, val]) => val || aptHistoryLoading); // 자료에 없는 칸은 다 불러온 뒤엔 뺀다
   const bComplexInfo = (
-    <div data-complex-info="1" style={{ marginBottom: 10 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-        {/* 자료에 없는 칸(예: 시공사)은 다 불러온 뒤엔 빼서 "정보 없음"이 줄줄이 보이지 않게 */}
-        {infoTiles.filter(([, val]) => val || aptHistoryLoading).map(([k, val, sub]) => (
-          <div key={k} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px', minWidth: 0 }}>
-            <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{k}</div>
-            <div style={{ fontSize: 14, fontWeight: 800, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={val || ''}>
-              {val || <span style={{ color: PALETTE.textMuted, fontWeight: 500, fontSize: 12 }}>{aptHistoryLoading ? '…' : '정보 없음'}</span>}
+    <div
+      data-complex-info="1"
+      style={{
+        background: `linear-gradient(135deg, ${BLUE.deep} 0%, ${BLUE.primary} 100%)`, color: '#fff', borderRadius: 16,
+        padding: '14px 14px 12px', marginBottom: 12, boxShadow: '0 10px 24px rgba(37,99,235,0.25)',
+      }}
+    >
+      <div style={{ fontSize: 11.5, opacity: 0.8 }}>{labelFor(selectedApt.regionCode)} {selectedApt.dong}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', margin: '1px 0 10px' }}>{selectedApt.apt}</div>
+      {heroTiles.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(heroTiles.length, 2)}, minmax(0, 1fr))`, gap: 6 }}>
+          {heroTiles.map(([k, val, sub]) => (
+            <div key={k} style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 12, padding: '9px 11px', minWidth: 0 }}>
+              <div style={{ fontSize: 10.5, opacity: 0.75, fontWeight: 600 }}>{k}</div>
+              <div style={{ fontSize: 15.5, fontWeight: 800, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={val || ''}>
+                {val || <span style={{ opacity: 0.6, fontWeight: 500, fontSize: 12 }}>…</span>}
+              </div>
+              {sub && <div style={{ fontSize: 10.5, opacity: 0.8 }}>{sub}</div>}
             </div>
-            {sub && <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{sub}</div>}
-          </div>
-        ))}
-      </div>
-      {(isRegulatedByCode(selectedApt.regionCode) || nearestStationInfo) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {isRegulatedByCode(selectedApt.regionCode) && (
-            <span style={{ ...styles.chip, background: 'rgba(239,68,68,0.12)', borderColor: PALETTE.accent }}>규제지역</span>
-          )}
-          {nearestStationInfo && (
-            <span style={styles.chip}>{nearestStationInfo.name}역({nearestStationInfo.line}) 도보 {nearestStationInfo.walkMin}분</span>
-          )}
+          ))}
+        </div>
+      )}
+      {(locParts.length > 0 || isRegulatedByCode(selectedApt.regionCode) || nearestStationInfo) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+          {isRegulatedByCode(selectedApt.regionCode) && <span style={{ ...heroChip, background: 'rgba(255,255,255,0.92)', color: BLUE.deep }}>규제지역</span>}
+          {nearestStationInfo && <span style={heroChip}>🚇 {nearestStationInfo.name}역 도보 {nearestStationInfo.walkMin}분</span>}
+          {locParts.filter((p) => !p.startsWith('🏢') && !(nearestStationInfo && p.startsWith('🚇'))).map((p) => <span key={p} style={heroChip}>{p}</span>)}
         </div>
       )}
     </div>
@@ -930,11 +939,10 @@ export default function ComplexDetail({
 
   const panelBody = (
     <>
-      <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 10px' }}>{labelFor(selectedApt.regionCode)} {selectedApt.dong}</p>
       <DetailSections
         summaryLine={summaryLine}
         sections={[
-          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bComplexInfo, bLocSummary, bGongsiLoading, bGongsi] },
+          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bComplexInfo, bGongsiLoading, bGongsi] },
           {
             id: 'trade',
             title: '실거래가',
