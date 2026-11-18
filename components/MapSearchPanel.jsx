@@ -44,7 +44,11 @@ export default function MapSearchPanel({
   const regions = qOk ? searchRegions(regionGroups, sidoAggregates, q, 8) : [];
   const localDongs = qOk ? searchDongs(complexes, q, 5) : [];
   const localDongIds = new Set(localDongs.map((d) => `${d.regionCode}|${d.dong}`));
-  const dongs = [...localDongs, ...(remote.q === q ? remote.dongs || [] : []).filter((d) => !localDongIds.has(`${d.regionCode}|${d.dong}`))].slice(0, 8);
+  // 이름이 검색어와 딱 맞는 동·읍·면("봉담" → 봉담읍)을 그 아래 리("봉담읍 와우리")보다 먼저
+  const qSq = q.replace(/\s+/g, '');
+  const exactDong = (d) => [qSq, `${qSq}동`, `${qSq}읍`, `${qSq}면`].includes(String(d.dong || '').replace(/\s+/g, ''));
+  const dongs = [...localDongs, ...(remote.q === q ? remote.dongs || [] : []).filter((d) => !localDongIds.has(`${d.regionCode}|${d.dong}`))]
+    .sort((a, b) => Number(exactDong(b)) - Number(exactDong(a))).slice(0, 8);
   const localRows = qOk ? localComplexMatches(complexes, q, 6) : [];
   const localIds = new Set(localRows.map((c) => `${c.regionCode}|${c.dong}`));
   const squash = (s) => String(s || '').replace(/\s+/g, '');
