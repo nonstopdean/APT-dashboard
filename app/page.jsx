@@ -2857,7 +2857,14 @@ export default function Page() {
   const searchRegionSummary = useMemo(() => {
     if (!searchRegion) return null;
     const codes = new Set(expandRegionCode(searchRegion.code));
-    const inArea = (x) => codes.has(x.regionCode) && (!searchRegion.dong || normalizeDongName(x.dong) === normalizeDongName(searchRegion.dong));
+    // v240: 읍·면을 고르면 그 아래 리까지("봉담읍" → 실거래 "봉담읍 와우리"·"봉담읍 상리")
+    const wantDong = searchRegion.dong ? normalizeDongName(searchRegion.dong) : '';
+    const inArea = (x) => {
+      if (!codes.has(x.regionCode)) return false;
+      if (!wantDong) return true;
+      const d = normalizeDongName(x.dong);
+      return d === wantDong || d.startsWith(`${wantDong} `);
+    };
     const rows = mapTx.filter(inArea);
     const valueOf = (t) => (isRent ? (t.isJeonse ? t.depositPerPyeong : null) : t.pricePerPyeong);
     const vals = rows.map(valueOf).filter((v) => Number.isFinite(v) && v > 0);
