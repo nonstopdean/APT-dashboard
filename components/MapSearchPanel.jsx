@@ -16,13 +16,13 @@ export default function MapSearchPanel({
 }) {
   const P = palette;
   const [query, setQuery] = useState('');
-  const [remote, setRemote] = useState({ q: '', rows: [], loading: false, error: '' });
+  const [remote, setRemote] = useState({ q: '', rows: [], dongs: [], loading: false, error: '' });
   const q = query.trim();
   const qOk = q.replace(/\s+/g, '').length >= 2;
 
   useEffect(() => {
     if (!qOk) return undefined;
-    if (remoteCache.has(q)) { setRemote({ q, rows: remoteCache.get(q), loading: false, error: '' }); return undefined; }
+    if (remoteCache.has(q)) { setRemote({ q, ...remoteCache.get(q), loading: false, error: '' }); return undefined; }
     let cancelled = false;
     setRemote((r) => ({ ...r, loading: true, error: '' }));
     const t = setTimeout(() => {
@@ -31,16 +31,20 @@ export default function MapSearchPanel({
         .then((json) => {
           if (cancelled) return;
           const rows = Array.isArray(json?.results) ? json.results : [];
-          if (!json?.error) remoteCache.set(q, rows);
-          setRemote({ q, rows, loading: false, error: json?.error ? '단지 검색에 실패했어요.' : '' });
+          // v240: 서버가 함께 돌려주는 전국 동(카카오 주소 검색) — 지도에 안 불러온 지역의 동도 찾게
+          const dongs = Array.isArray(json?.dongs) ? json.dongs : [];
+          if (!json?.error) remoteCache.set(q, { rows, dongs });
+          setRemote({ q, rows, dongs, loading: false, error: json?.error ? '단지 검색에 실패했어요.' : '' });
         })
-        .catch(() => { if (!cancelled) setRemote({ q, rows: [], loading: false, error: '단지 검색에 실패했어요.' }); });
+        .catch(() => { if (!cancelled) setRemote({ q, rows: [], dongs: [], loading: false, error: '단지 검색에 실패했어요.' }); });
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
   }, [q, qOk]);
 
   const regions = qOk ? searchRegions(regionGroups, sidoAggregates, q, 8) : [];
-  const dongs = qOk ? searchDongs(complexes, q, 5) : [];
+  const localDongs = qOk ? searchDongs(complexes, q, 5) : [];
+  const localDongIds = new Set(localDongs.map((d) => `${d.regionCode}|${d.dong}`));
+  const dongs = [...localDongs, ...(remote.q === q ? remote.dongs || [] : []).filter((d) => !localDongIds.has(`${d.regionCode}|${d.dong}`))].slice(0, 8);
   const localRows = qOk ? localComplexMatches(complexes, q, 6) : [];
   const localIds = new Set(localRows.map((c) => `${c.regionCode}|${c.dong}`));
   const squash = (s) => String(s || '').replace(/\s+/g, '');
@@ -98,7 +102,7 @@ export default function MapSearchPanel({
           ))}
           {dongs.length > 0 && <div style={section}>동</div>}
           {dongs.map((d) => (
-            <button key={`d${d.regionCode}|${d.dong}`} type="button" style={row} onClick={() => pick(onPickDong)(d)}>
+            <button key={`d${d.regionCode}|${d.dong}`} type="button" data-search-dong={d.lat != null ? 'remote' : 'local'} style={row} onClick={() => pick(onPickDong)(d)}>
               <span style={{ fontSize: 13 }}>🏘️</span>
               <b style={{ flex: 1 }}>{d.dong}</b>
               <span style={{ fontSize: 10.5, color: P.textMuted }}>{regionLabel(d.regionCode)}</span>
