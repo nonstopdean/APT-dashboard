@@ -96,7 +96,7 @@ export default function ComplexSuggest({
                 <b style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.leader ? '👑 ' : ''}{c.apt}</b>
                 <span style={{ fontSize: 11, color: '#9C9B96' }}>{c.regionName} {c.dong}</span>
               </span>
-              {c.latestPrice != null && <span style={{ color: '#b23a2e', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtPrice(c.latestPrice)}</span>}
+              {c.latestPrice != null && <span style={{ color: '#1D4ED8', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtPrice(c.latestPrice)}</span>}
             </div>
           ))}
         </>
