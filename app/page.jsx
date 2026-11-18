@@ -3227,19 +3227,19 @@ export default function Page() {
       padding: '10px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%',
       transition: 'transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease',
-      boxShadow: '0 2px 6px rgba(178,58,46,0.25)',
+      boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
     },
     toggleBtn: (active) => ({
       flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 10, fontSize: 13, cursor: 'pointer',
       border: `1px solid ${active ? PALETTE.accent : PALETTE.border}`,
-      background: active ? 'rgba(178,58,46,0.10)' : 'transparent',
-      color: active ? PALETTE.up : PALETTE.textSecondary,
+      background: active ? PALETTE.accentSoft : 'transparent',
+      color: active ? PALETTE.accentDark : PALETTE.textSecondary,
       transition: 'all 0.15s ease',
     }),
     chip: {
       display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 16,
-      border: `1px solid ${PALETTE.accent}`, background: 'rgba(178,58,46,0.10)',
-      color: PALETTE.up, fontSize: 12, transition: 'all 0.15s ease',
+      border: `1px solid ${PALETTE.accent}`, background: PALETTE.accentSoft,
+      color: PALETTE.accentDark, fontSize: 12, transition: 'all 0.15s ease',
     },
     card: {
       background: PALETTE.panel, border: `1px solid ${PALETTE.border}`, borderRadius: 14, padding: '16px 18px',
@@ -3620,7 +3620,7 @@ export default function Page() {
         {errorMsg && (
           <div style={{
             display: 'flex', gap: 8, fontSize: 12, color: PALETTE.down,
-            background: 'rgba(239,68,68,0.08)', border: `1px solid ${PALETTE.accent}`, borderRadius: 10, padding: 10,
+            background: PALETTE.accentSoft, border: `1px solid ${PALETTE.accent}`, borderRadius: 10, padding: 10,
           }}>
             <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>{errorMsg}</span>
@@ -3634,11 +3634,11 @@ export default function Page() {
       <div className="no-print" style={{
         position: 'sticky', top: 0, zIndex: 200,
         display: 'flex', alignItems: 'center', gap: 18,
-        padding: '0 16px', height: HEADER_HEIGHT, background: '#1A1A1A',
+        padding: '0 16px', height: HEADER_HEIGHT, background: '#0F1E3D',
         boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, cursor: 'pointer' }} onClick={goHome} title="홈(처음 화면)">
-          <Building2 size={20} color={PALETTE.accent} />
+          <Building2 size={20} color="#60A5FA" />
           <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', color: '#fff' }}>도갱노노</span>
         </div>
         <nav style={{ display: 'flex', gap: 2, height: '100%', flex: 1, minWidth: 0 }} className="main-nav">
@@ -3659,7 +3659,7 @@ export default function Page() {
                 display: 'flex', alignItems: 'center', height: '100%', padding: '0 7px', cursor: 'pointer',
                 fontSize: 12.5, fontWeight: viewMode === t.key ? 700 : 500, whiteSpace: 'nowrap',
                 color: viewMode === t.key ? '#fff' : 'rgba(255,255,255,0.55)',
-                borderBottom: viewMode === t.key ? `2px solid ${PALETTE.accent}` : '2px solid transparent',
+                borderBottom: viewMode === t.key ? '2px solid #60A5FA' : '2px solid transparent',
                 transition: 'color 0.15s ease, border-color 0.15s ease',
               }}
             >
@@ -3715,7 +3715,7 @@ export default function Page() {
 
       {mobileSearchOpen && (
         // 좁은 화면(≤720px)에서만 보이는 검색 줄: 헤더의 검색창이 숨겨지는 대신 🔍 버튼으로 펼친다. 같은 상태·같은 검색 함수를 쓴다.
-        <div className="mobile-search-row" style={{ display: 'none', position: 'sticky', top: HEADER_HEIGHT, zIndex: 199, background: '#1A1A1A', padding: '0 12px 10px' }}>
+        <div className="mobile-search-row" style={{ display: 'none', position: 'sticky', top: HEADER_HEIGHT, zIndex: 199, background: '#0F1E3D', padding: '0 12px 10px' }}>
           <ComplexSuggest
             anchorRef={mobileSearchRef} query={globalSearch} visible={searchFocus === 'mobile'}
             local={mapComplexes}
@@ -4154,7 +4154,7 @@ export default function Page() {
             {roneUnmapped.length > 0 && (
               <div style={{
                 display: 'flex', gap: 8, fontSize: 12, color: PALETTE.down,
-                background: 'rgba(239,68,68,0.08)', border: `1px solid ${PALETTE.accent}`, borderRadius: 10, padding: 10,
+                background: PALETTE.accentSoft, border: `1px solid ${PALETTE.accent}`, borderRadius: 10, padding: 10,
               }}>
                 <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>이 통계를 아직 지원하지 않는 지역: {roneUnmapped.map(labelFor).join(', ')}</span>
@@ -4393,7 +4393,7 @@ export default function Page() {
                     <div key={c.code} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: 12 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{c.name}</div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                        <span style={{ color: '#B23A2E' }}>매매 {fmtManwon(Math.round(c.salePyeong))}</span>
+                        <span style={{ color: PALETTE.accentDark }}>매매 {fmtManwon(Math.round(c.salePyeong))}</span>
                         <span style={{ color: '#3182F7' }}>전세 {fmtManwon(Math.round(c.jeonsePyeong))}</span>
                       </div>
                       <div style={{ fontSize: 11, color: PALETTE.textMuted, marginTop: 4 }}>전세가율 {c.ratio.toFixed(1)}%</div>
@@ -4600,7 +4600,7 @@ export default function Page() {
         .ui-card:hover { box-shadow: 0 6px 16px rgba(33,31,26,0.08); transform: translateY(-1px); }
         /* v221: 카드가 좁아져도 글자가 카드 밖으로 넘치지 않게(격자 칸 안에서 줄어들고, 끊을 곳 없는 긴 글자는 줄바꿈) */
         .ui-card { min-width: 0; overflow-wrap: break-word; }
-        .ui-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(178,58,46,0.32); }
+        .ui-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(37,99,235,0.32); }
         .ui-btn:active:not(:disabled) { transform: translateY(0); opacity: 0.92; }
         .ui-btn:disabled { opacity: 0.65; cursor: default; }
         .skeleton {
