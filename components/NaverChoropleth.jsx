@@ -10,20 +10,20 @@ const EMPTY_KEY_SET = new Set();
 
 // 마커 모양. 비교함에 담은 단지(pinned)는 ★ + 강조 테두리로 구분한다.
 function markerHtmlOf(titleText, priceText, pinned) {
-  const border = pinned ? '2px solid #b23a2e' : '1px solid rgba(40,35,30,0.18)';
-  const bg = pinned ? '#fff4ef' : 'rgba(255,255,255,0.96)';
-  const star = pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : '';
+  const border = pinned ? '2px solid #1D4ED8' : '1px solid rgba(40,35,30,0.18)';
+  const bg = pinned ? '#EAF1FF' : 'rgba(255,255,255,0.96)';
+  const star = pinned ? '<span style="margin-right:3px;color:#1D4ED8;">★</span>' : '';
   // v236: 아래 빨간 점의 가운데가 단지 좌표에 오게(가로 가운데·세로 아래) 옮긴다 — 겹침 계산(pinLabelBox)과 작은 점 마커가 같은 자리를 쓴다.
   // 예전(앵커 0,24)엔 이름표 왼쪽 끝이 좌표라 점이 이름표 폭의 절반만큼 오른쪽에 찍혔다.
   return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translate(-50%,calc(-100% + 6px));">` +
-    `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${star}${titleText}${priceText ? `<span style="margin-left:5px;color:#b23a2e;">${priceText}</span>` : ''}</div>` +
-    `<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
+    `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${star}${titleText}${priceText ? `<span style="margin-left:5px;color:#1D4ED8;">${priceText}</span>` : ''}</div>` +
+    `<div style="width:7px;height:7px;border-radius:50%;background:#1D4ED8;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
 }
 
 // v236: 이름표 자리가 없을 때 남기는 작은 점(누르면 그 단지가 바로 열림, 마우스를 올리면 이름). 앵커 (6.5, 6.5) = 점 가운데.
 function dotHtmlOf(titleText, count) {
   const tip = count > 1 ? `${titleText} 외 ${count - 1}곳` : titleText;
-  return `<div title="${tip}" style="box-sizing:border-box;width:13px;height:13px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`;
+  return `<div title="${tip}" style="box-sizing:border-box;width:13px;height:13px;border-radius:50%;background:#1D4ED8;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;"></div>`;
 }
 
 // v236: 이름표가 화면에서 차지하는 상자(px, 좌표 기준). markerHtmlOf 글자 크기 10px 기준 어림값 — 한글 10.5px, 그 밖 6.2px.
@@ -521,7 +521,7 @@ export default function NaverChoropleth({
     return b.value >= 10000 ? `${(b.value / 10000).toFixed(1)}억` : `${Math.round(b.value).toLocaleString()}만`;
   };
   const bubbleHtml = (b, level) => {
-    const bg = level === 'dong' ? '#2b2722' : '#b23a2e';
+    const bg = level === 'dong' ? '#0F1E3D' : '#2563EB';
     const esc = (s) => String(s).replace(/[<>&"']/g, '');
     const ch = Number.isFinite(b.change) && Math.abs(b.change) >= 0.05
       ? `<div style="font-size:9.5px;font-weight:600;opacity:.92">${b.change > 0 ? '▲' : '▼'}${Math.abs(b.change).toFixed(1)}%</div>` : '';
@@ -1198,7 +1198,7 @@ export default function NaverChoropleth({
                   </div>
                   <div style={{ fontSize: 10.5, color: '#9C9B96' }}>{c.dong}{c.latestPrice == null ? ' · 이 기간 거래 없음' : ''}</div>
                 </div>
-                {price && <span style={{ color: '#b23a2e', fontWeight: 700, whiteSpace: 'nowrap' }}>{price}</span>}
+                {price && <span style={{ color: '#1D4ED8', fontWeight: 700, whiteSpace: 'nowrap' }}>{price}</span>}
               </div>
             );
           })}
