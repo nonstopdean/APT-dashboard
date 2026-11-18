@@ -3012,8 +3012,12 @@ export default function Page() {
       f.codes.forEach((code) => { if (!selectedMembers.has(code)) hits.push([code, d]); });
     });
     hits.sort((x, y) => x[1] - y[1]);
-    return [...new Set(hits.map((h) => h[0]))].slice(0, 4).sort().join(',');
-  }, [viewMode, mapZoomTier, mapViewportBounds, dealType, propertyType, selected, featureBoxes]);
+    // v240: 검색으로 고른 구·동은 맨 먼저 — 2018년 경계 자료에서 한 덩어리인 화성시(만세·효행·병점·동탄구)처럼
+    // 폴리곤 중심이 멀어 순위에서 밀리면 "봉담읍"을 골라도 거래가 안 불러와졌다. 시·도 전체는 너무 많아 빼둔다.
+    const pinned = searchRegion && searchRegion.kind !== 'sido'
+      ? expandRegionCode(searchRegion.code).filter((c) => !selectedMembers.has(c)) : [];
+    return [...new Set([...pinned, ...hits.map((h) => h[0])])].slice(0, 4).sort().join(',');
+  }, [viewMode, mapZoomTier, mapViewportBounds, dealType, propertyType, selected, featureBoxes, searchRegion]);
   useEffect(() => {
     if (!browseKey) return undefined;
     const codes = browseKey.split(',').filter((c) => browseData[c]?.key !== browseDataKey);
