@@ -148,7 +148,7 @@ export default function AnalyticsTab({
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
                     padding: '9px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
-                    background: isBaseline ? 'rgba(239,68,68,0.10)' : 'transparent',
+                    background: isBaseline ? PALETTE.accentSoft : 'transparent',
                     border: `1px solid ${isBaseline ? PALETTE.accent : 'transparent'}`,
                   }}
                 >
