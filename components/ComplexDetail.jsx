@@ -9,6 +9,7 @@ import {
 } from '../lib/ui-helpers';
 import FloatingWindow from './FloatingWindow';
 import DetailSections from './DetailSections';
+import ComplexTradePanel from './ComplexTradePanel';
 
 // 단지 상세. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 // selectedApt가 있을 때만 부모(page.jsx)가 이 컴포넌트를 렌더링한다.
@@ -38,6 +39,7 @@ export default function ComplexDetail({
   trendViewMode, setTrendViewMode,
   styles,
   onPanelInsetChange,
+  tradeEndpoint = '/api/trades', rentEndpoint = '/api/rents', // v241: 지도 탭 실거래가(매매/전월세 탭)용
 }) {
   const isPanel = variant === 'panel';
   // ── 본문 덩어리: 내용은 원래 코드 그대로이고 이름만 붙였다. 모달은 예전 순서대로, 패널은 섹션으로 묶어서 조립한다. ──
@@ -886,17 +888,72 @@ export default function ComplexDetail({
     </>
   ) : (aptHistoryLoading ? <span style={{ color: PALETTE.textMuted }}>거래 내역 불러오는 중...</span> : null);
 
+  // v241: 지도 탭 단지 상세 맨 위 — 세대수·동수·준공·시공사를 한눈에(아실·호갱노노처럼).
+  const hhRaw = aptBasicInfo?.households ?? locSummary?.households ?? null;
+  const hhNum = Number(String(hhRaw ?? '').replace(/,/g, ''));
+  const useY = parseInt(String(aptBasicInfo?.useDate || '').slice(0, 4), 10);
+  const tradeBuildY = parseInt(String(aptHistory.find((t) => t.buildYear)?.buildYear || ''), 10);
+  const builtY = Number.isFinite(useY) ? useY : Number.isFinite(tradeBuildY) ? tradeBuildY : null;
+  const builtAge = builtY ? new Date().getFullYear() - builtY : null;
+  const infoTiles = [
+    ['세대수', Number.isFinite(hhNum) && hhNum > 0 ? `${hhNum.toLocaleString()}세대` : null],
+    ['동수', aptBasicInfo?.dongCount ? `${aptBasicInfo.dongCount}개동` : null],
+    ['준공', builtY ? `${builtY}년` : null, builtAge != null ? `${builtAge}년차 · ${builtAge <= 5 ? '신축' : builtAge <= 10 ? '준신축' : builtAge <= 20 ? '구축' : '노후'}` : null],
+    ['시공사', aptBasicInfo?.builder || null],
+  ];
+  const bComplexInfo = (
+    <div data-complex-info="1" style={{ marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+        {infoTiles.map(([k, val, sub]) => (
+          <div key={k} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px', minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{k}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={val || ''}>
+              {val || <span style={{ color: PALETTE.textMuted, fontWeight: 500, fontSize: 12 }}>{aptHistoryLoading ? '…' : '정보 없음'}</span>}
+            </div>
+            {sub && <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{sub}</div>}
+          </div>
+        ))}
+      </div>
+      {(isRegulatedByCode(selectedApt.regionCode) || nearestStationInfo) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {isRegulatedByCode(selectedApt.regionCode) && (
+            <span style={{ ...styles.chip, background: 'rgba(239,68,68,0.12)', borderColor: PALETTE.accent }}>규제지역</span>
+          )}
+          {nearestStationInfo && (
+            <span style={styles.chip}>{nearestStationInfo.name}역({nearestStationInfo.line}) 도보 {nearestStationInfo.walkMin}분</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   const panelBody = (
     <>
-      {bSubtitle}
+      <p style={{ fontSize: 12, color: PALETTE.textMuted, margin: '0 0 10px' }}>{labelFor(selectedApt.regionCode)} {selectedApt.dong}</p>
       <DetailSections
         summaryLine={summaryLine}
         sections={[
-          { id: 'summary', title: '요약', defaultOpen: true, blocks: [bLocSummary, bSummaryCards, bSampleInfo, bJeonseTrend, bGapTable, bGapTrend, bVolumeBanner, bCompareBtn, bAlert] },
-          { id: 'trend', title: '가격 추이', defaultOpen: true, blocks: [bAreaChips, bTrendToggle, bTrendSingle, bTrendCompare, bVolumeChart] },
-          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bBasicInfo, bGongsiLoading, bGongsi] },
+          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bComplexInfo, bLocSummary, bGongsiLoading, bGongsi] },
+          {
+            id: 'trade',
+            title: '실거래가',
+            defaultOpen: true,
+            blocks: [(
+              <ComplexTradePanel
+                key="trade"
+                selectedApt={selectedApt}
+                aptHistory={aptHistory}
+                aptHistoryLoading={aptHistoryLoading}
+                aptHistoryFullRange={aptHistoryFullRange}
+                loadFullAptHistory={loadFullAptHistory}
+                isRent={isRent}
+                tradeEndpoint={tradeEndpoint}
+                rentEndpoint={rentEndpoint}
+              />
+            )],
+          },
+          { id: 'summary', title: '시세 요약', defaultOpen: true, blocks: [bSummaryCards, bJeonseTrend, bGapTable, bGapTrend, bVolumeBanner, bVolumeChart, bCompareBtn, bAlert] },
           { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
-          { id: 'history', title: '거래 내역', defaultOpen: true, blocks: [bHistory] },
           { id: 'nearby', title: '주변·비교', defaultOpen: true, blocks: [bPeer34, bRadiusSummary, bRadiusCard, bSimilar] },
           { id: 'calc', title: '계산기', defaultOpen: false, blocks: [bAcqCalc, bSwapCalc] },
         ]}
