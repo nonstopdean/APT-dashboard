@@ -186,13 +186,13 @@ export default function SubscriptionsTab({
                     <tbody>
                       {yearTable.map((r) => (
                         <tr key={r.code} onClick={() => { if (groups.some((g) => g.code === r.code)) setPickedCode(r.code); }}
-                          style={{ cursor: groups.some((g) => g.code === r.code) ? 'pointer' : 'default', background: pickedCode === r.code ? '#fff4ef' : undefined }}>
+                          style={{ cursor: groups.some((g) => g.code === r.code) ? 'pointer' : 'default', background: pickedCode === r.code ? PALETTE.accentSoft : undefined }}>
                           <td style={{ ...styles.td, fontWeight: 700 }}>{r.name}</td>
                           {years.map((y) => {
                             const v = r.byYear[y];
                             const a = v ? 0.08 + 0.5 * (v / yearMax) : 0;
                             return (
-                              <td key={y} style={{ ...styles.td, textAlign: 'right', background: v ? `rgba(239,68,68,${a.toFixed(2)})` : undefined, color: v ? PALETTE.textPrimary : PALETTE.textMuted }}>
+                              <td key={y} style={{ ...styles.td, textAlign: 'right', background: v ? `rgba(37,99,235,${a.toFixed(2)})` : undefined, color: v ? PALETTE.textPrimary : PALETTE.textMuted }}>
                                 {v ? v.toLocaleString() : '-'}
                               </td>
                             );
