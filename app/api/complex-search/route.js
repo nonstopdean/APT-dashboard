@@ -1,4 +1,4 @@
-import { toComplexResults, toDongResults, dongQueryOf } from '../../../lib/complex-search';
+import { toComplexResults, toDongResults, dongQueriesOf } from '../../../lib/complex-search';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,14 +33,17 @@ export async function GET(request) {
     const results = toComplexResults(docs, 10);
     // v240: 동 이름이면 카카오 주소 검색도 — 지도에 아직 안 불러온 지역의 동도 찾게. 실패해도 단지 결과는 그대로 돌려준다.
     let dongs = [];
-    const dq = dongQueryOf(q);
-    if (dq) {
+    // eslint-disable-next-line no-restricted-syntax
+    for (const dq of dongQueriesOf(q)) {
       try {
+        // eslint-disable-next-line no-await-in-loop
         const res = await fetch(`https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(dq)}&size=30`, {
           headers: { Authorization: `KakaoAK ${restKey}` }, cache: 'no-store',
         });
+        // eslint-disable-next-line no-await-in-loop
         if (res.ok) dongs = toDongResults((await res.json())?.documents, 8);
       } catch (e) { dongs = []; }
+      if (dongs.length) break;
     }
     return Response.json({ results, dongs }, { headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=3600' } });
   } catch (e) {
