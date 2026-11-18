@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { PALETTE } from '../lib/ui-helpers';
+import { PALETTE, BLUE } from '../lib/ui-helpers';
 
 // 단지 상세(패널)의 본문을 주제별 섹션으로 묶어서 보여준다.
 //  - 위쪽에 고정되는 줄: 핵심 요약 + 섹션으로 바로 이동하는 칩(스크롤해도 계속 보인다).
@@ -61,8 +61,8 @@ export default function DetailSections({ summaryLine, sections }) {
             <button
               key={s.id} type="button" data-ds="chip" className="ds-chip" onClick={() => jump(s)}
               style={{
-                flexShrink: 0, border: `1px solid ${PALETTE.border}`, background: PALETTE.panelAlt, color: PALETTE.textSecondary,
-                borderRadius: 999, padding: '4px 11px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                flexShrink: 0, border: 'none', background: BLUE.soft, color: BLUE.dark,
+                borderRadius: 999, padding: '5px 12px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
               }}
             >
               {s.title}
@@ -74,17 +74,19 @@ export default function DetailSections({ summaryLine, sections }) {
       {visible.map((s) => {
         const open = isOpen(s);
         return (
-          <section key={s.id} id={sectionDomId(s.id)} style={{ marginBottom: 14, scrollMarginTop: STICKY_OFFSET }}>
+          <section key={s.id} id={sectionDomId(s.id)} style={{ marginBottom: 18, scrollMarginTop: STICKY_OFFSET }}>
             <button
               type="button" data-ds="header" className="ds-header" aria-expanded={open} onClick={() => setOpen(s.id, !open)}
               style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 6, textAlign: 'left',
-                border: 'none', borderBottom: `1px solid ${PALETTE.border}`, background: 'transparent',
-                padding: '6px 0', marginBottom: open ? 12 : 0, cursor: 'pointer', color: PALETTE.textPrimary,
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                border: 'none', background: 'transparent',
+                padding: '8px 0', marginBottom: open ? 10 : 0, cursor: 'pointer', color: BLUE.ink,
               }}
             >
-              {open ? <ChevronDown size={15} color={PALETTE.textMuted} /> : <ChevronRight size={15} color={PALETTE.textMuted} />}
-              <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: '-0.01em' }}>{s.title}</span>
+              {/* v242: 푸른 세로 막대 + 굵은 제목, 펼침 표시는 오른쪽 끝에 */}
+              <span style={{ width: 4, height: 16, borderRadius: 4, background: BLUE.primary, flexShrink: 0 }} />
+              <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.02em', flex: 1 }}>{s.title}</span>
+              {open ? <ChevronDown size={16} color={BLUE.muted} /> : <ChevronRight size={16} color={BLUE.muted} />}
             </button>
             {open && (
               <div>
