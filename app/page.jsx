@@ -1666,8 +1666,7 @@ export default function Page() {
     return index;
   }, [dongCentroids]);
 
-  const findDongCentroid = (regionCode, dong) => {
-    const normalized = normalizeDongName(dong);
+  const findDongCentroidIn = (regionCode, normalized) => {
     const exact = dongCentroids[`${regionCode}|${normalized}`];
     if (exact) return exact;
     // 국토부 실거래 데이터는 "법정동"(예: 광안동), 동 경계 지도는 "행정동"(예: 광안4동) 기준이라
@@ -1676,6 +1675,27 @@ export default function Page() {
     if (!root) return null;
     const hit = dongCentroidRootIndex.get(`${regionCode}|${root}`);
     return hit ? { lat: hit.lat, lng: hit.lng } : null;
+  };
+  const findDongCentroid = (regionCode, dong) => {
+    const normalized = normalizeDongName(dong);
+    const direct = findDongCentroidIn(regionCode, normalized);
+    if (direct) return direct;
+    // v240: 동 경계 자료(2018)에 없는 새 구(화성시 효행구 41593 등)는 같은 시(코드 앞 4자리 + 0)에서 찾고,
+    // 읍·면 아래 리("봉담읍 와우리")는 경계 자료의 단위인 읍·면("봉담읍")으로 찾는다.
+    const code = String(regionCode || '');
+    const codes = [code];
+    if (/^\d{5}$/.test(code) && !code.endsWith('0')) codes.push(`${code.slice(0, 4)}0`);
+    const names = [normalized];
+    const head = normalized.split(' ')[0];
+    if (head && head !== normalized) names.push(head);
+    for (const c of codes) {
+      for (const n of names) {
+        if (c === code && n === normalized) continue;
+        const hit = findDongCentroidIn(c, n);
+        if (hit) return hit;
+      }
+    }
+    return null;
   };
 
   const MAX_MAP_COMPLEXES = 800;
