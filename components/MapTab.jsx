@@ -769,6 +769,8 @@ export default function MapTab({
                 data-layer-btn="1"
                 onClick={() => setLayerPanelOpen((v) => !v)}
                 style={{
+                  // v240: 줄이 옆으로 넘쳐도(폰) 레이어 버튼은 오른쪽 끝에 붙어 늘 보이게(sticky). 아래로 지나가는 버튼은 흰 그림자로 가린다.
+                  position: 'sticky', right: 0, zIndex: 1, boxShadow: '-10px 0 8px -2px rgba(255,255,255,0.96)',
                   flexShrink: 0, marginLeft: 'auto', border: `1px solid ${layerPanelOpen ? PALETTE.accent : PALETTE.border}`, borderRadius: 8,
                   padding: '6px 10px', background: layerPanelOpen ? '#fff4ef' : '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   color: layerPanelOpen ? PALETTE.accent : PALETTE.textPrimary, whiteSpace: 'nowrap',
