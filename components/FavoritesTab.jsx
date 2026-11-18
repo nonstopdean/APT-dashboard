@@ -185,7 +185,7 @@ export default function FavoritesTab({
                       return (
                         <button
                           className="ui-btn"
-                          style={{ ...styles.btn, width: 'auto', padding: '4px 9px', fontSize: 10.5, marginTop: 6, background: isPinned ? PALETTE.up : undefined }}
+                          style={{ ...styles.btn, width: 'auto', padding: '4px 9px', fontSize: 10.5, marginTop: 6, background: isPinned ? PALETTE.accentDark : undefined }}
                           disabled={!isPinned && pinnedComplexes.length >= 5}
                           onClick={() => setPinnedComplexes((prev) => (isPinned
                             ? prev.filter((p) => !(p.apt === pinKey.apt && p.dong === pinKey.dong && p.regionCode === pinKey.regionCode))
