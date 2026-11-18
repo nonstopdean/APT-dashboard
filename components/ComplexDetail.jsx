@@ -442,7 +442,7 @@ export default function ComplexDetail({
             return (
               <button
                 className="ui-btn"
-                style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12, background: isPinned ? PALETTE.up : undefined }}
+                style={{ ...styles.btn, width: 'auto', padding: '7px 12px', fontSize: 12, background: isPinned ? PALETTE.accentDark : undefined }}
                 disabled={!isPinned && pinnedComplexes.length >= 5}
                 onClick={() => {
                   const key = { apt: selectedApt.apt, dong: selectedApt.dong, regionCode: selectedApt.regionCode };
@@ -508,8 +508,8 @@ export default function ComplexDetail({
               onClick={() => { setHistoryAreaFilter('all'); setHistoryListLimit(30); }}
               style={{
                 border: `1px solid ${historyAreaFilter === 'all' ? PALETTE.accent : PALETTE.border}`,
-                background: historyAreaFilter === 'all' ? 'rgba(239,68,68,0.10)' : 'transparent',
-                color: historyAreaFilter === 'all' ? PALETTE.up : PALETTE.textSecondary,
+                background: historyAreaFilter === 'all' ? PALETTE.accentSoft : 'transparent',
+                color: historyAreaFilter === 'all' ? PALETTE.accentDark : PALETTE.textSecondary,
                 borderRadius: 8, padding: '3px 8px', fontSize: 11, cursor: 'pointer',
               }}
             >
@@ -521,8 +521,8 @@ export default function ComplexDetail({
                 onClick={() => { setHistoryAreaFilter(o.value); setHistoryListLimit(30); }}
                 style={{
                   border: `1px solid ${historyAreaFilter === o.value ? PALETTE.accent : PALETTE.border}`,
-                  background: historyAreaFilter === o.value ? 'rgba(239,68,68,0.10)' : 'transparent',
-                  color: historyAreaFilter === o.value ? PALETTE.up : PALETTE.textSecondary,
+                  background: historyAreaFilter === o.value ? PALETTE.accentSoft : 'transparent',
+                  color: historyAreaFilter === o.value ? PALETTE.accentDark : PALETTE.textSecondary,
                   borderRadius: 8, padding: '3px 8px', fontSize: 11, cursor: 'pointer',
                 }}
               >
@@ -540,8 +540,8 @@ export default function ComplexDetail({
                 onClick={() => setTrendViewMode(k)}
                 style={{
                   border: `1px solid ${trendViewMode === k ? PALETTE.accent : PALETTE.border}`,
-                  background: trendViewMode === k ? 'rgba(239,68,68,0.10)' : 'transparent',
-                  color: trendViewMode === k ? PALETTE.up : PALETTE.textSecondary,
+                  background: trendViewMode === k ? PALETTE.accentSoft : 'transparent',
+                  color: trendViewMode === k ? PALETTE.accentDark : PALETTE.textSecondary,
                   borderRadius: 8, padding: '4px 10px', fontSize: 11.5, cursor: 'pointer',
                 }}
               >
@@ -623,8 +623,8 @@ export default function ComplexDetail({
                     onClick={() => setNearbyRadius(r)}
                     style={{
                       border: `1px solid ${nearbyRadius === r ? PALETTE.accent : PALETTE.border}`,
-                      background: nearbyRadius === r ? 'rgba(239,68,68,0.10)' : 'transparent',
-                      color: nearbyRadius === r ? PALETTE.up : PALETTE.textSecondary,
+                      background: nearbyRadius === r ? PALETTE.accentSoft : 'transparent',
+                      color: nearbyRadius === r ? PALETTE.accentDark : PALETTE.textSecondary,
                       borderRadius: 8, padding: '3px 9px', fontSize: 11, cursor: 'pointer',
                     }}
                   >
@@ -686,8 +686,8 @@ export default function ComplexDetail({
                   onClick={() => setNearbyRadius(r)}
                   style={{
                     border: `1px solid ${nearbyRadius === r ? PALETTE.accent : PALETTE.border}`,
-                    background: nearbyRadius === r ? 'rgba(239,68,68,0.10)' : 'transparent',
-                    color: nearbyRadius === r ? PALETTE.up : PALETTE.textSecondary,
+                    background: nearbyRadius === r ? PALETTE.accentSoft : 'transparent',
+                    color: nearbyRadius === r ? PALETTE.accentDark : PALETTE.textSecondary,
                     borderRadius: 8, padding: '3px 9px', fontSize: 11, cursor: 'pointer',
                   }}
                 >
