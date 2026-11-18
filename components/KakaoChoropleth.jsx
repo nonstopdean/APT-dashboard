@@ -23,12 +23,12 @@ function pinPriceTextOf(c, mode) {
 }
 function pinHtml(c, mode, pinned) {
   const price = pinPriceTextOf(c, mode);
-  const border = pinned ? '2px solid #b23a2e' : '1px solid rgba(40,35,30,0.18)';
-  const bg = pinned ? '#fff4ef' : 'rgba(255,255,255,0.96)';
+  const border = pinned ? '2px solid #1D4ED8' : '1px solid rgba(40,35,30,0.18)';
+  const bg = pinned ? '#EAF1FF' : 'rgba(255,255,255,0.96)';
   return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;">`
     + `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">`
-    + `${pinned ? '<span style="margin-right:3px;color:#b23a2e;">★</span>' : ''}${c.leader ? '👑 ' : ''}${escHtml(c.apt)}${price ? `<span style="margin-left:5px;color:#b23a2e;">${escHtml(price)}</span>` : ''}</div>`
-    + '<div style="width:7px;height:7px;border-radius:50%;background:#b23a2e;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>';
+    + `${pinned ? '<span style="margin-right:3px;color:#1D4ED8;">★</span>' : ''}${c.leader ? '👑 ' : ''}${escHtml(c.apt)}${price ? `<span style="margin-left:5px;color:#1D4ED8;">${escHtml(price)}</span>` : ''}</div>`
+    + '<div style="width:7px;height:7px;border-radius:50%;background:#1D4ED8;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>';
 }
 const layerHtml = (icon, text, color) => `<div style="display:flex;align-items:center;gap:3px;background:#fff;border:1.5px solid ${color};border-radius:12px;padding:2px 7px;box-shadow:0 1px 4px rgba(0,0,0,0.2);white-space:nowrap;">`
   + `<span style="font-size:11px;">${icon}</span><span style="font-size:10.5px;font-weight:700;color:${color};">${escHtml(text)}</span></div>`;
@@ -189,8 +189,8 @@ export default function KakaoChoropleth({
         minLevel: CLUSTER_MIN_LEVEL,
         calculator: (size) => (size < 10 ? 0 : size < 50 ? 1 : 2),
         styles: [
-          { width: 38, height: 38, borderRadius: 19, background: 'rgba(178,58,46,0.88)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 12, lineHeight: '38px' },
-          { width: 48, height: 48, borderRadius: 24, background: 'rgba(178,58,46,0.92)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 13, lineHeight: '48px' },
+          { width: 38, height: 38, borderRadius: 19, background: 'rgba(37,99,235,0.88)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 12, lineHeight: '38px' },
+          { width: 48, height: 48, borderRadius: 24, background: 'rgba(37,99,235,0.92)', color: '#fff', textAlign: 'center', fontWeight: 700, fontSize: 13, lineHeight: '48px' },
           { width: 60, height: 60, borderRadius: 30, background: 'rgba(122,34,26,0.94)', color: '#fff', textAlign: 'center', fontWeight: 800, fontSize: 14, lineHeight: '60px' },
         ],
       });
