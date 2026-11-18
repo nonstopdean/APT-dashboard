@@ -2849,7 +2849,9 @@ export default function Page() {
   const pickSearchDong = (d) => {
     setSelectedApt(null);
     setSearchRegion({ code: d.regionCode, label: `${labelFor(d.regionCode)} ${d.dong}`, kind: 'dong', dong: d.dong });
-    const c = findDongCentroid(d.regionCode, d.dong) || regionLatLngOf(d.regionCode);
+    // v240: 전국 동 검색(카카오 주소) 결과는 좌표가 같이 온다 — 동 경계를 아직 안 받은 지역도 바로 그 동으로
+    const exact = Number.isFinite(d.lat) && Number.isFinite(d.lng) ? { lat: d.lat, lng: d.lng } : null;
+    const c = exact || findDongCentroid(d.regionCode, d.dong) || regionLatLngOf(d.regionCode);
     if (c) setFocusLatLng({ lat: c.lat, lng: c.lng, zoom: 15 });
   };
   const searchRegionSummary = useMemo(() => {
