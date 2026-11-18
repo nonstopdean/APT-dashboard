@@ -7,7 +7,7 @@ import {
 import { PALETTE, fmtArea } from '../lib/ui-helpers';
 import {
   dealTs, floorOf, priceOfDeal, rowsOfMode, pyeongOptions, topPyeong, aptDongOptions, floorOptions,
-  inPyeong, inUnit, monthlyAverage, complexRowsFromApi, fmtEok, dealPriceText, ymRange,
+  inPyeong, inUnit, monthlyAverage, complexRowsFromApi, fmtEok, dealPriceText, ymRange, monthTicks,
 } from '../lib/complex-trades';
 import { supplyPyeong } from '../lib/pyeong';
 
@@ -115,7 +115,11 @@ export default function ComplexTradePanel({
       tip: `${ymd(t)} · ${t.aptDong ? `${t.aptDong}동 ` : ''}${floorOf(t) != null ? `${floorOf(t)}층` : ''} · ${fmtArea(t.area)}`,
     });
     const unitSet = new Set(unitRows);
+    const tss = pRows.map(dealTs);
+    const minTs = tss.length ? Math.min(...tss) : null;
+    const maxTs = tss.length ? Math.max(...tss) : null;
     return {
+      minTs, maxTs, ticks: monthTicks(minTs, maxTs, 5),
       opts, pyeong, pRows, dongOpts, aptDong, floorOpts, floor, unitRows, unitOn,
       base: pRows.filter((t) => !unitOn || !unitSet.has(t)).map(point),
       hi: unitOn ? unitRows.map(point) : [],
@@ -218,7 +222,7 @@ export default function ComplexTradePanel({
           <ResponsiveContainer>
             <ScatterChart margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid stroke={PALETTE.border} vertical={false} />
-              <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} tickFormatter={fmtTick} stroke={PALETTE.textMuted} fontSize={10} tickLine={false} tickCount={5} />
+              <XAxis dataKey="t" type="number" scale="time" domain={[v.minTs, v.maxTs]} ticks={v.ticks} tickFormatter={fmtTick} stroke={PALETTE.textMuted} fontSize={10} tickLine={false} />
               <YAxis dataKey="v" type="number" domain={['auto', 'auto']} tickFormatter={(x) => fmtEok(x)} stroke={PALETTE.textMuted} fontSize={10} tickLine={false} width={44} />
               <Tooltip content={<TipBox />} cursor={{ strokeDasharray: '3 3' }} />
               <Scatter data={v.avg} line={{ stroke: PALETTE.textSecondary, strokeWidth: 1.5 }} shape={noDot} isAnimationActive={false} legendType="none" />
@@ -248,7 +252,8 @@ export default function ComplexTradePanel({
         )}
       </div>
 
-      {/* 실거래 내역 */}
+      {/* 실거래 내역 (불러오는 중엔 "0건"이 보이지 않게 숨긴다) */}
+      {!(loading && !rows.length) && (<>
       <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
         실거래 내역 <span style={{ fontSize: 11, fontWeight: 500, color: PALETTE.textMuted }}>{v.unitRows.length.toLocaleString()}건</span>
       </div>
@@ -276,6 +281,7 @@ export default function ComplexTradePanel({
           더 보기 (남은 {(v.unitRows.length - limit).toLocaleString()}건)
         </button>
       )}
+      </>)}
     </div>
   );
 }
