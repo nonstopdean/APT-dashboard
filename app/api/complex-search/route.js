@@ -1,4 +1,4 @@
-import { toComplexResults } from '../../../lib/complex-search';
+import { toComplexResults, toDongResults, dongQueryOf } from '../../../lib/complex-search';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,18 @@ export async function GET(request) {
       if (json?.meta?.is_end || toComplexResults(docs, 10).length >= 6) break;
     }
     const results = toComplexResults(docs, 10);
-    return Response.json({ results }, { headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=3600' } });
+    // v240: 동 이름이면 카카오 주소 검색도 — 지도에 아직 안 불러온 지역의 동도 찾게. 실패해도 단지 결과는 그대로 돌려준다.
+    let dongs = [];
+    const dq = dongQueryOf(q);
+    if (dq) {
+      try {
+        const res = await fetch(`https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(dq)}&size=30`, {
+          headers: { Authorization: `KakaoAK ${restKey}` }, cache: 'no-store',
+        });
+        if (res.ok) dongs = toDongResults((await res.json())?.documents, 8);
+      } catch (e) { dongs = []; }
+    }
+    return Response.json({ results, dongs }, { headers: { 'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=3600' } });
   } catch (e) {
     return Response.json({ error: '단지 검색에 실패했어요. 잠시 뒤 다시 시도해주세요.' }, { status: 500 });
   }
