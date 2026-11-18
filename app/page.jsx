@@ -4569,6 +4569,8 @@ export default function Page() {
           nearbyRadius={nearbyRadius} setNearbyRadius={setNearbyRadius}
           nearbyComplexes={nearbyComplexes} radiusSummary={radiusSummary} peer34={peer34}
           similarComplexes={similarComplexes}
+          tradeEndpoint={isSilv ? '/api/silv-trades' : propertyType === 'offi' ? '/api/offi-trades' : '/api/trades'}
+          rentEndpoint={isSilv ? null : propertyType === 'offi' ? '/api/offi-rents' : '/api/rents'}
           pinnedComplexes={pinnedComplexes} setPinnedComplexes={setPinnedComplexes}
           setMapFocusKeys={setMapFocusKeys} setViewMode={setViewMode}
           aptJeonseInfo={aptJeonseInfo}
