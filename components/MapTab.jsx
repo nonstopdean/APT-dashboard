@@ -437,8 +437,8 @@ export default function MapTab({
       if (mapColorMode === 'signal') return signalColor(value) || PALETTE.panelAlt; // v235: 신호마다 정해진 색
       const { min, max } = seoulMapData;
       const t = max > min ? (value - min) / (max - min) : 0.5;
-      const from = [245, 244, 239];
-      const to = [178, 58, 46];
+      const from = [239, 244, 251]; // v243: 푸른 톤(연파랑 → 진파랑)
+      const to = [29, 78, 216];
       const mix = from.map((c, i) => Math.round(c + (to[i] - c) * t));
       return `rgb(${mix.join(',')})`;
     };
@@ -523,7 +523,7 @@ export default function MapTab({
             <span>낮음</span>
             <div style={{
               width: 90, height: 8, borderRadius: 4,
-              background: `linear-gradient(90deg, rgb(245,244,239), ${PALETTE.accent})`,
+              background: `linear-gradient(90deg, rgb(239,244,251), rgb(29,78,216))`,
             }} />
             <span>높음</span>
           </div>
@@ -750,7 +750,7 @@ export default function MapTab({
                     style={{
                       flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', cursor: 'pointer',
                       border: `1px solid ${on || isOpen ? PALETTE.accent : PALETTE.border}`, borderRadius: 8, padding: '6px 10px',
-                      background: on ? '#fff4ef' : '#fff', color: on ? PALETTE.accent : PALETTE.textPrimary, fontSize: 12, fontWeight: on ? 700 : 500,
+                      background: on ? PALETTE.accentSoft : '#fff', color: on ? PALETTE.accent : PALETTE.textPrimary, fontSize: 12, fontWeight: on ? 700 : 500,
                     }}
                   >
                     {b.value && !b.display ? b.value : b.display ? `${b.name}: ${b.value}` : b.name}
@@ -772,7 +772,7 @@ export default function MapTab({
                   // v240: 줄이 옆으로 넘쳐도(폰) 레이어 버튼은 오른쪽 끝에 붙어 늘 보이게(sticky). 아래로 지나가는 버튼은 흰 그림자로 가린다.
                   position: 'sticky', right: 0, zIndex: 1, boxShadow: '-10px 0 8px -2px rgba(255,255,255,0.96)',
                   flexShrink: 0, marginLeft: 'auto', border: `1px solid ${layerPanelOpen ? PALETTE.accent : PALETTE.border}`, borderRadius: 8,
-                  padding: '6px 10px', background: layerPanelOpen ? '#fff4ef' : '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  padding: '6px 10px', background: layerPanelOpen ? PALETTE.accentSoft : '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   color: layerPanelOpen ? PALETTE.accent : PALETTE.textPrimary, whiteSpace: 'nowrap',
                 }}
               >
@@ -824,7 +824,7 @@ export default function MapTab({
                       onClick={() => { openBtn.set(k); setOpenFilter(null); }}
                       style={{
                         textAlign: 'left', border: 'none', borderRadius: 6, padding: '7px 8px', cursor: 'pointer', fontSize: 12.5,
-                        background: openBtn.cur === k ? '#fff4ef' : 'transparent', color: openBtn.cur === k ? PALETTE.accent : PALETTE.textPrimary,
+                        background: openBtn.cur === k ? PALETTE.accentSoft : 'transparent', color: openBtn.cur === k ? PALETTE.accent : PALETTE.textPrimary,
                         fontWeight: openBtn.cur === k ? 700 : 400,
                       }}
                     >
@@ -908,7 +908,7 @@ export default function MapTab({
               title="끄면 동 경계·색칠을 아예 안 그려서 단지 마커 표시에 더 집중해요"
             >
               <span style={{ fontSize: 12 }}>🗺️ 동 경계·색칠</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: dongLayerOn ? PALETTE.up : PALETTE.textMuted }}>{dongLayerOn ? '켜짐' : '꺼짐'}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: dongLayerOn ? PALETTE.accent : PALETTE.textMuted }}>{dongLayerOn ? '켜짐' : '꺼짐'}</span>
             </div>
             <div
               onClick={() => setSubwayLayerOn((v) => !v)}
@@ -916,7 +916,7 @@ export default function MapTab({
               title="화면에 보이는 범위의 지하철역을 지도에 표시해요"
             >
               <span style={{ fontSize: 12 }}>🚇 지하철역</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: subwayLayerOn ? PALETTE.up : PALETTE.textMuted }}>{subwayLayerOn ? '켜짐' : '꺼짐'}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: subwayLayerOn ? PALETTE.accent : PALETTE.textMuted }}>{subwayLayerOn ? '켜짐' : '꺼짐'}</span>
             </div>
             <div
               onClick={() => setSchoolLayerOn((v) => !v)}
@@ -924,7 +924,7 @@ export default function MapTab({
               title="화면에 보이는 범위의 초·중학교를 지도에 표시해요"
             >
               <span style={{ fontSize: 12 }}>🏫 학교{schoolLocationsLoading ? ' (불러오는 중)' : ''}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: schoolLayerOn ? PALETTE.up : PALETTE.textMuted }}>{schoolLayerOn ? '켜짐' : '꺼짐'}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: schoolLayerOn ? PALETTE.accent : PALETTE.textMuted }}>{schoolLayerOn ? '켜짐' : '꺼짐'}</span>
             </div>
             <div
               onClick={toggleListOnly}
@@ -932,7 +932,7 @@ export default function MapTab({
               title="단지 목록에는 있지만 조회 기간에 거래가 없는 단지(가격 없는 핀)를 지도에 보일지 골라요. 비교함 단지는 항상 보여요."
             >
               <span style={{ fontSize: 12 }}>🏢 거래 없는 단지</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: showListOnly ? PALETTE.up : PALETTE.textMuted }}>{showListOnly ? '켜짐' : '꺼짐'}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: showListOnly ? PALETTE.accent : PALETTE.textMuted }}>{showListOnly ? '켜짐' : '꺼짐'}</span>
             </div>
             {!isRent && !isRatio && !isRone && (
               <div style={{ marginTop: 6, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
