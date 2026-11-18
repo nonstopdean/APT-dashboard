@@ -904,7 +904,8 @@ export default function ComplexDetail({
   const bComplexInfo = (
     <div data-complex-info="1" style={{ marginBottom: 10 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-        {infoTiles.map(([k, val, sub]) => (
+        {/* 자료에 없는 칸(예: 시공사)은 다 불러온 뒤엔 빼서 "정보 없음"이 줄줄이 보이지 않게 */}
+        {infoTiles.filter(([, val]) => val || aptHistoryLoading).map(([k, val, sub]) => (
           <div key={k} style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px', minWidth: 0 }}>
             <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{k}</div>
             <div style={{ fontSize: 14, fontWeight: 800, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={val || ''}>
