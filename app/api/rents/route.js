@@ -1,6 +1,7 @@
 import { publicError } from '../../../lib/safe-error';
 import { fetchRegionMonthRent, runPool, lastNMonths, monthsBetween } from '../../../lib/molit';
 import { expandRegionCode } from '../../../lib/regions';
+import { filterToComplex } from '../../../lib/api-filter';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -91,5 +92,6 @@ export async function GET(request) {
     });
   });
 
-  return Response.json({ data, months, error: errorMsg, fetchedAt: new Date().toISOString() });
+  // v245: ?apt=&dong= 이면 그 단지 거래만(lib/api-filter.js)
+  return Response.json({ data: filterToComplex(data, searchParams), months, error: errorMsg, fetchedAt: new Date().toISOString() });
 }
