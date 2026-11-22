@@ -5,7 +5,10 @@ import { X } from 'lucide-react';
 import {
   PALETTE, LINE_COLORS, fmtPct, fmtWon, fmtManwon, labelFor,
 } from '../lib/ui-helpers';
-import { regionCompareRows, searchRows, complexLabels } from '../lib/market-compare';
+import {
+  regionCompareRows, searchRows, complexLabels, complexCompareStats,
+} from '../lib/market-compare';
+import { supplyPyeong } from '../lib/pyeong';
 import LongCompare from './LongCompare';
 
 // v247: 시장분석 탭 "단지 비교"·"지역 비교"(아실·호갱노노식).
@@ -19,7 +22,7 @@ const pill = (on) => ({
 });
 const toneOf = (v) => (v > 0 ? PALETTE.up : v < 0 ? PALETTE.down : PALETTE.textPrimary);
 
-function ComplexCompare({ rows, isRent, pinnedComplexes, setSelectedApt, styles }) {
+function ComplexCompare({ rows, tx, isRent, pinnedComplexes, setSelectedApt, styles }) {
   const [picked, setPicked] = useState([]); // [{ key, apt, dong, regionCode }]
   const [query, setQuery] = useState('');
   const rowByKey = useMemo(() => new Map((rows || []).map((r) => [r.key, r])), [rows]);
@@ -70,23 +73,26 @@ function ComplexCompare({ rows, isRent, pinnedComplexes, setSelectedApt, styles 
       {picked.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 16 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }} data-compare-table="complexes">
-            <thead><tr>{['단지', '최근가', '평당가', '기간 변동', '거래', '고점 대비'].map((h) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['단지', '최근 거래', '평균 평당가', '평당가 변화', '최고 평당가', '거래'].map((h) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
             <tbody>
               {picked.map((c, i) => {
-                const r = rowByKey.get(c.key);
+                const r = rowByKey.get(c.key) ? complexCompareStats(tx, c.key, isRent) : null;
                 return (
                   <tr key={c.key}>
                     <td style={{ ...styles.td, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode })}>
                       <b style={{ color: LINE_COLORS[i % LINE_COLORS.length] }}>{labels[i]}</b>
                       <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{labelFor(c.regionCode)} {c.dong}</div>
                     </td>
-                    {r ? (
+                    {r && r.count ? (
                       <>
-                        <td style={styles.td}>{fmtWon(r.latest)}</td>
-                        <td style={styles.td}>{r.unitPrice ? fmtManwon(Math.round(r.unitPrice)) : '-'}</td>
-                        <td style={{ ...styles.td, color: toneOf(r.change) }}>{r.change != null ? fmtPct(r.change) : '-'}</td>
-                        <td style={styles.td}>{r.volume}건</td>
-                        <td style={{ ...styles.td, color: r.drawdown < 0 ? PALETTE.down : PALETTE.textSecondary }}>{r.drawdown != null ? fmtPct(r.drawdown) : '-'}</td>
+                        <td style={styles.td}>
+                          {r.latest ? fmtWon(r.latest.price) : '-'}
+                          {r.latest && <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{supplyPyeong(r.latest.area)}평 · {r.latest.ymd}</div>}
+                        </td>
+                        <td style={styles.td}>{r.avgUnit ? fmtManwon(Math.round(r.avgUnit)) : '-'}</td>
+                        <td style={{ ...styles.td, color: toneOf(r.changePct) }}>{r.changePct != null ? fmtPct(r.changePct) : <span style={{ color: PALETTE.textMuted }}>표본 부족</span>}</td>
+                        <td style={styles.td}>{r.maxUnit ? fmtManwon(Math.round(r.maxUnit)) : '-'}</td>
+                        <td style={styles.td}>{r.count}건</td>
                       </>
                     ) : (
                       <td colSpan={5} style={{ ...styles.td, color: PALETTE.textMuted }}>분석기간에 거래가 없어요 (아래 장기 추이는 나와요)</td>
@@ -97,7 +103,7 @@ function ComplexCompare({ rows, isRent, pinnedComplexes, setSelectedApt, styles 
             </tbody>
           </table>
           <p style={{ fontSize: 10, color: PALETTE.textMuted, margin: '6px 0 0' }}>
-            기간 변동은 분석기간 첫 거래 → 마지막 거래(평형 섞임), 고점 대비는 기간 최고가 대비예요. 같은 평형끼리는 아래 그래프에서 비교하세요.
+            평형이 섞여도 왜곡되지 않게 평당가로 비교해요. 평당가 변화 = 분석기간 앞 절반 → 뒤 절반 평균(양쪽 2건 이상). 같은 평형대끼리는 아래 그래프에서 비교하세요.
           </p>
         </div>
       )}
