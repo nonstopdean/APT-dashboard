@@ -983,7 +983,7 @@ export default function Page() {
       : propertyType === 'offi'
         ? (isRent ? '/api/offi-rents' : '/api/offi-trades')
         : (isRent ? '/api/rents' : '/api/trades');
-    fetch(`${endpointH}?codes=${selectedApt.regionCode}&start=${startYmH}&end=${endYmH}`)
+    fetch(`${endpointH}?codes=${selectedApt.regionCode}&start=${startYmH}&end=${endYmH}&apt=${encodeURIComponent(selectedApt.apt)}&dong=${encodeURIComponent(selectedApt.dong)}`) // v245: 이 단지 거래만
       .then((res) => res.json())
       .then((json) => {
         if (cancelled) return;
@@ -1020,7 +1020,7 @@ export default function Page() {
       : propertyType === 'offi'
         ? (isRent ? '/api/offi-rents' : '/api/offi-trades')
         : (isRent ? '/api/rents' : '/api/trades');
-    fetch(`${endpointH}?codes=${selectedApt.regionCode}&start=${startYmH}&end=${endYmH}`)
+    fetch(`${endpointH}?codes=${selectedApt.regionCode}&start=${startYmH}&end=${endYmH}&apt=${encodeURIComponent(selectedApt.apt)}&dong=${encodeURIComponent(selectedApt.dong)}`) // v245: 이 단지 거래만
       .then((res) => res.json())
       .then((json) => {
         const months2 = json?.months || [];
