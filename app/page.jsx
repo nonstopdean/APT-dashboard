@@ -15,7 +15,7 @@ import { nearestStation, allStations } from '../lib/subway';
 import { SIDO_REGIONS, roneRegionLabel } from '../lib/rone-regions';
 import { parseSearchQuery } from '../lib/search-parse';
 import { complexIdentity } from '../lib/complex-name';
-import { normalizeComplexName } from '../lib/complex-match';
+import { normalizeComplexName, findKaptMatch } from '../lib/complex-match';
 import { buildChangeIndex, changeNote, lastCompleteYm } from '../lib/market-change';
 import MapSearchPanel from '../components/MapSearchPanel';
 import { combineSignals, signalNote } from '../lib/market-signal';
@@ -143,8 +143,9 @@ function normalCdf(z) {
 function valuationLabel(z) {
   if (z == null) return null;
   const pct = Math.round(normalCdf(z) * 100);
-  if (z <= -1) return { text: `하위 ${pct}%`, color: '#3B6FE0', bg: 'rgba(59,111,224,0.1)', extreme: z <= -2 };
-  if (z >= 1) return { text: `상위 ${100 - pct}%`, color: '#B23A2E', bg: 'rgba(178,58,46,0.1)', extreme: z >= 2 };
+  // v244: 오름(빨강)·내림(파랑) 색과 헷갈리지 않게 — 상위는 남색, 하위는 회색(위치일 뿐 방향이 아니라서)
+  if (z <= -1) return { text: `하위 ${pct}%`, color: '#55657F', bg: '#EEF2F7', extreme: z <= -2 };
+  if (z >= 1) return { text: `상위 ${100 - pct}%`, color: '#1E3A8A', bg: 'rgba(30,58,138,0.10)', extreme: z >= 2 };
   return null;
 }
 
@@ -579,8 +580,8 @@ export default function Page() {
           aptListCacheRef.current[selectedApt.regionCode] = list;
         }
         if (cancelled) return;
-        const match = list.find((it) => it.kaptName === selectedApt.apt)
-          || list.find((it) => it.kaptName?.replace(/\s/g, '') === selectedApt.apt.replace(/\s/g, ''));
+        // v244: "헬리오시티" ↔ "헬리오시티아파트"처럼 꼬리말이 달라도 찾게(lib/complex-match.js)
+        const match = findKaptMatch(list, selectedApt.apt, selectedApt.dong);
 
         if (match) {
           const infoRes = await fetch(`/api/apt-basic?kaptCode=${match.kaptCode}`);
