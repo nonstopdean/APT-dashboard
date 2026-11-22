@@ -8,6 +8,7 @@ import {
   PALETTE, fmtPct, fmtManwon, fmtWon, labelFor, monthLabel,
 } from '../lib/ui-helpers';
 import MarketCompare from './MarketCompare';
+import TradeReport from './TradeReport';
 
 // 시장분석센터 탭. app/page.jsx 안에 있던 viewMode === 'market' 블록을 그대로 옮긴 것.
 export default function MarketTab({
@@ -17,6 +18,7 @@ export default function MarketTab({
   setSelectedApt, marketSignals,
   styles,
   isRent = false, pinnedComplexes = [], // v247: 단지·지역 비교용
+  allTx = [], // v249: 실거래 리포트(불러온 기간 전체)
 }) {
   return (
     <div style={{ padding: '20px 20px 44px', maxWidth: 1400, margin: '0 auto' }}>
@@ -84,7 +86,7 @@ export default function MarketTab({
         ))}
       </div>
       <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card no-print">
-        {[['complexes', '단지 비교'], ['regions', '지역 비교'], ['overview', '요약'], ['intensity', '시장강도'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
+        {[['complexes', '단지 비교'], ['regions', '지역 비교'], ['report', '신고가·주요 거래'], ['overview', '요약'], ['intensity', '시장강도'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
           <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
         ))}
       </div>
@@ -95,6 +97,12 @@ export default function MarketTab({
             view={analyticsView} rows={advancedAnalytics.rows} tx={advancedAnalytics.tx} isRent={isRent}
             selected={selected} pinnedComplexes={pinnedComplexes} setSelectedApt={setSelectedApt} styles={styles}
           />
+        </div>
+      )}
+      {/* v249: 실거래 리포트(블로그식) — 분석기간과 상관없이 불러온 거래 전체로 신고가를 본다 */}
+      {analyticsView === 'report' && (
+        <div style={{ marginBottom: 12 }}>
+          <TradeReport tx={allTx} isRent={isRent} setSelectedApt={setSelectedApt} styles={styles} />
         </div>
       )}
       {analyticsView === 'intensity' && (
