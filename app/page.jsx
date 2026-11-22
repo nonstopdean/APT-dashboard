@@ -3864,7 +3864,7 @@ export default function Page() {
           marketIntensity={marketIntensity} ratioKpis={ratioKpis}
           setSelectedApt={setSelectedApt} marketSignals={marketSignals}
           styles={styles}
-          isRent={isRent} pinnedComplexes={pinnedComplexes}
+          isRent={isRent} pinnedComplexes={pinnedComplexes} allTx={allTx}
         />
       ) : viewMode === 'favorites' ? (
         <FavoritesTab
