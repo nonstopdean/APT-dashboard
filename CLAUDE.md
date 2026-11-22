@@ -128,6 +128,7 @@
 - **v245 = 단지 실거래 빠르게**: 실거래 API 5개(trades·rents·offi-trades·offi-rents·silv-trades)에 `?apt=&dong=`를 붙이면 그 단지 거래만 돌려줌(`lib/api-filter.js` filterToComplex). 단지 상세(page.jsx aptHistory 3년·20년, ComplexTradePanel 다른 유형 탭)가 이걸 씀 — 송파 전월세 3년치가 14.5MB·16초였다. 지도·대시보드 호출은 그대로(apt 안 붙임).
 - **v246 = 단지 실거래가 기간 선택**: ComplexTradePanel에 기간 버튼(1년·3년·5년·전체, 기본 3년, 단지를 바꿔도 유지). 3년보다 길면 자동으로 20년치를 받는다(지도 유형 = page.jsx loadFullAptHistory, 다른 유형 = fetchOther(239)). 그래프·최근/최고가·내역 모두 그 기간으로. 예전 "더 오래된 기록 보기" 버튼은 뺌.
 - **v247 = 시장분석 단지 비교·지역 비교**: MarketTab 메뉴 맨 앞에 "단지 비교"·"지역 비교"(`components/MarketCompare.jsx`, 순수 함수 `lib/market-compare.js`). 단지 비교 = 조회한 지역 단지 중 최대 5개(이름 검색 searchRows, "비교함 단지 넣기"), 분석기간 요약표(advancedAnalytics.rows: 최근가·평당가·변동·거래·고점 대비) + 기존 `LongCompare`(1~10년 평형대별 평당가). 지역 비교 = 시장분석에 추가한 지역별 표(regionCompareRows: 평균 평당가·중위가·앞/뒤 절반 평당가 변화(양쪽 5건+)·거래·단지·신고가 단지) + LongCompare(구·시만, 시·도 전체 제외). page.jsx가 MarketTab에 isRent·pinnedComplexes를 넘김. 비교분석 탭(A/B/C)은 그대로.
+- **v248 = 단지 비교표 평당가 기준**: v247 표의 "기간 변동·고점 대비"는 평형이 섞여(리센츠 -63%처럼) 오해를 줬다 → `complexCompareStats`(최근 거래 금액·평형·날짜, 평균 평당가, 앞/뒤 절반 평당가 변화(양쪽 2건+), 최고 평당가, 거래 수)로 바꿈.
 - 사용자가 준 참고 자료(다른 AI가 만든 "집시세" diff, TanStack/Tailwind라 직접 적용 불가)의 아이디어: 폰 하단 고정 탭바, 지도 위 검색창·필터 칩, 폰에서 목록 열기/닫기 버튼, 목록에 평당가·"신축" 배지, 지도 키 없을 때 안내 카드.
 - **아직 확인 안 된 것**: 폰 화면, 위치 다듬기가 실제 브라우저에서 단지를 낱개로 푸는지.
 - 지도 카드(상단 오른쪽) 맨 아래에 `빌드 vNNN`이 표시된다. 릴리스마다 `lib/ui-helpers.js`의 `APP_BUILD`를 올린다.
