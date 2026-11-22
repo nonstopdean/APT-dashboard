@@ -897,7 +897,7 @@ export default function ComplexDetail({
   const builtAge = builtY ? new Date().getFullYear() - builtY : null;
   const infoTiles = [
     ['세대수', Number.isFinite(hhNum) && hhNum > 0 ? `${hhNum.toLocaleString()}세대` : null],
-    ['동수', aptBasicInfo?.dongCount ? `${aptBasicInfo.dongCount}개동` : null],
+    ['동수', aptBasicInfo?.dongCount ? `${aptBasicInfo.dongCount}개동` : null, aptBasicInfo?.raw?.kaptTopFloor ? `최고 ${aptBasicInfo.raw.kaptTopFloor}층` : null],
     ['준공', builtY ? `${builtY}년` : null, builtAge != null ? `${builtAge}년차 · ${builtAge <= 5 ? '신축' : builtAge <= 10 ? '준신축' : builtAge <= 20 ? '구축' : '노후'}` : null],
     ['시공사', aptBasicInfo?.builder || null],
   ];
