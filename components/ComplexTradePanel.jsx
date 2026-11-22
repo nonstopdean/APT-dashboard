@@ -80,7 +80,8 @@ export default function ComplexTradePanel({
     const k = `${aptKey}|${deal}`;
     const { regionCode, apt, dong } = selectedApt;
     setOther((o) => ({ ...(o.key === k ? o : { rows: [], full: false }), key: k, loading: true, error: false }));
-    fetch(`${ep}?codes=${regionCode}&start=${start}&end=${end}`)
+    // v245: 단지 하나만 받는다(서버가 apt·dong으로 걸러 줌) — 송파 전월세 3년치 14.5MB → 수십 KB
+    fetch(`${ep}?codes=${regionCode}&start=${start}&end=${end}&apt=${encodeURIComponent(apt)}&dong=${encodeURIComponent(dong)}`)
       .then((r) => r.json())
       .then((json) => {
         const got = complexRowsFromApi(json, regionCode, apt, dong);
