@@ -7,6 +7,7 @@ import { REGION_GROUPS, SIDO_AGGREGATES } from '../lib/regions';
 import {
   PALETTE, fmtPct, fmtManwon, fmtWon, labelFor, monthLabel,
 } from '../lib/ui-helpers';
+import MarketCompare from './MarketCompare';
 
 // 시장분석센터 탭. app/page.jsx 안에 있던 viewMode === 'market' 블록을 그대로 옮긴 것.
 export default function MarketTab({
@@ -15,6 +16,7 @@ export default function MarketTab({
   analyticsView, setAnalyticsView, marketIntensity, ratioKpis,
   setSelectedApt, marketSignals,
   styles,
+  isRent = false, pinnedComplexes = [], // v247: 단지·지역 비교용
 }) {
   return (
     <div style={{ padding: '20px 20px 44px', maxWidth: 1400, margin: '0 auto' }}>
@@ -82,10 +84,19 @@ export default function MarketTab({
         ))}
       </div>
       <div style={{ ...styles.card, marginBottom: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }} className="ui-card no-print">
-        {[['overview', '요약'], ['intensity', '시장강도'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
+        {[['complexes', '단지 비교'], ['regions', '지역 비교'], ['overview', '요약'], ['intensity', '시장강도'], ['compare', '가격비교'], ['momentum', '상승 모멘텀'], ['volume', '거래량'], ['highs', '신고가·하락'], ['distribution', '가격분포'], ['signals', '시장신호']].map(([k, l]) => (
           <button key={k} className="portal-pill" onClick={() => setAnalyticsView(k)} style={{ background: analyticsView === k ? PALETTE.textPrimary : PALETTE.panelAlt, color: analyticsView === k ? '#fff' : PALETTE.textPrimary }}>{l}</button>
         ))}
       </div>
+      {/* v247: 단지 비교·지역 비교(아실·호갱노노식) */}
+      {(analyticsView === 'complexes' || analyticsView === 'regions') && (
+        <div style={{ marginBottom: 12 }}>
+          <MarketCompare
+            view={analyticsView} rows={advancedAnalytics.rows} tx={advancedAnalytics.tx} isRent={isRent}
+            selected={selected} pinnedComplexes={pinnedComplexes} setSelectedApt={setSelectedApt} styles={styles}
+          />
+        </div>
+      )}
       {analyticsView === 'intensity' && (
         <div style={{ ...styles.card, marginBottom: 12 }} className="ui-card">
           <h2 style={styles.sectionTitle}>시장강도</h2>
