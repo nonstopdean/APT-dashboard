@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResponsiveContainer, ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import { BLUE, fmtArea } from '../lib/ui-helpers';
 import {
-  dealTs, floorOf, priceOfDeal, rowsOfMode, pyeongOptions, topPyeong, aptDongOptions, floorOptions,
+  dealTs, dealDateNum, floorOf, priceOfDeal, rowsOfMode, pyeongOptions, topPyeong, aptDongOptions, floorOptions,
   inPyeong, inUnit, monthlyAverage, complexRowsFromApi, fmtEok, dealPriceText, ymRange, monthTicks,
 } from '../lib/complex-trades';
 import { supplyPyeong } from '../lib/pyeong';
@@ -64,6 +64,8 @@ export default function ComplexTradePanel({
   const [floorSel, setFloorSel] = useState('all');
   const [limit, setLimit] = useState(FIRST);
   const [other, setOther] = useState({ key: '', rows: [], loading: false, full: false, error: false });
+  // v246: 기간(1·3·5년, 0 = 전체). 단지를 바꿔도 고른 기간은 그대로 둔다.
+  const [years, setYears] = useState(3);
 
   // 단지가 바뀌면 처음 상태로
   useEffect(() => {
@@ -104,8 +106,25 @@ export default function ComplexTradePanel({
   const fullRange = isOwn ? aptHistoryFullRange : other.full;
   const mode = deal === 'trade' ? 'trade' : rentKind;
 
+  // v246: 3년보다 긴 기간을 고르면 그때 20년치를 받는다(지도 유형이면 page.jsx, 다른 유형이면 여기서)
+  const needFull = years === 0 || years > 3;
+  const fullAskedRef = useRef(new Set()); // 실패해도 같은 단지·유형은 한 번만 다시 받는다(무한 재시도 방지)
+  useEffect(() => {
+    if (!needFull || fullRange || loading || !rows) return;
+    const k = `${aptKey}|${deal}`;
+    if (fullAskedRef.current.has(k)) return;
+    if (isOwn) { fullAskedRef.current.add(k); loadFullAptHistory(); } else if (other.key === otherKey) { fullAskedRef.current.add(k); fetchOther(239); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needFull, fullRange, loading, deal, aptKey, other.key]);
+  const cutoff = (() => {
+    if (!years) return 0;
+    const d = new Date();
+    return (d.getFullYear() - years) * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  })();
+  const periodLabel = years ? `최근 ${years}년` : '전체 기간';
+
   const v = useMemo(() => {
-    const modeRows = rowsOfMode(rows, mode).filter((t) => priceOfDeal(t, mode) != null);
+    const modeRows = rowsOfMode(rows, mode).filter((t) => priceOfDeal(t, mode) != null && (!cutoff || dealDateNum(t) >= cutoff));
     const opts = pyeongOptions(modeRows);
     const pyeong = pyeongSel === 'all' || opts.some((o) => o.value === pyeongSel) ? pyeongSel : topPyeong(opts);
     const pRows = modeRows.filter((t) => inPyeong(t, pyeong));
@@ -131,11 +150,10 @@ export default function ComplexTradePanel({
       avg: monthlyAverage(pRows, mode),
       max: unitRows.reduce((m, t) => (m == null || priceOfDeal(t, mode) > priceOfDeal(m, mode) ? t : m), null),
     };
-  }, [rows, mode, deal, pyeongSel, aptDongSel, floorSel]);
+  }, [rows, mode, deal, pyeongSel, aptDongSel, floorSel, cutoff]);
 
   const switchDeal = (d) => { if (d === deal) return; setDeal(d); setPyeongSel(null); setAptDongSel('all'); setFloorSel('all'); setLimit(FIRST); };
   const resetUnit = () => { setAptDongSel('all'); setFloorSel('all'); setLimit(FIRST); };
-  const loadOlder = () => (isOwn ? loadFullAptHistory() : fetchOther(239));
   const latest = v.unitRows[0];
   const valueName = mode === 'trade' ? '매매가' : mode === 'jeonse' ? '전세 보증금' : '월세';
   const kindName = deal === 'trade' ? '매매' : rentKind === 'jeonse' ? '전세' : '월세';
@@ -159,13 +177,25 @@ export default function ComplexTradePanel({
           </button>
         ))}
       </div>
-      {deal === 'rent' && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {[['jeonse', '전세'], ['wolse', '월세']].map(([k, l]) => (
-            <button key={k} type="button" data-rent-kind={k} onClick={() => { setRentKind(k); setLimit(FIRST); }} style={pill(rentKind === k)}>{l}</button>
+      {/* 전세/월세(전월세일 때) + 기간(v246) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+        {deal === 'rent' && [['jeonse', '전세'], ['wolse', '월세']].map(([k, l]) => (
+          <button key={k} type="button" data-rent-kind={k} onClick={() => { setRentKind(k); setLimit(FIRST); }} style={pill(rentKind === k)}>{l}</button>
+        ))}
+        <div data-trade-period="1" style={{ marginLeft: 'auto', display: 'flex', background: BLUE.softer, borderRadius: 999, padding: 2, boxShadow: `inset 0 0 0 1px ${BLUE.line}` }}>
+          {[[1, '1년'], [3, '3년'], [5, '5년'], [0, '전체']].map(([y, l]) => (
+            <button
+              key={y} type="button" data-period={y} onClick={() => { setYears(y); setLimit(FIRST); }}
+              style={{
+                border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, cursor: 'pointer', whiteSpace: 'nowrap',
+                background: years === y ? BLUE.primary : 'transparent', color: years === y ? '#fff' : BLUE.sub, fontWeight: years === y ? 700 : 600,
+              }}
+            >
+              {l}
+            </button>
           ))}
         </div>
-      )}
+      </div>
 
       {/* 평형 — 한 줄로 옆으로 밀어 보기 */}
       {v.opts.length > 0 && (
@@ -232,7 +262,7 @@ export default function ComplexTradePanel({
           <p style={{ fontSize: 12, color: '#B23A2E', padding: '24px 0', textAlign: 'center', margin: 0 }}>실거래가를 불러오지 못했어요. 탭을 다시 눌러 주세요.</p>
         ) : v.pRows.length === 0 ? (
           <p style={{ fontSize: 12, color: BLUE.muted, padding: '28px 0', textAlign: 'center', margin: 0 }}>
-            {fullRange ? '' : '최근 3년 동안 '}이 조건의 {kindName} 거래가 없어요.
+            {years ? `${periodLabel} 동안 ` : ''}이 조건의 {kindName} 거래가 없어요.
           </p>
         ) : (
           <div data-trade-chart="1" style={{ width: '100%', height: 190 }}>
@@ -263,12 +293,8 @@ export default function ComplexTradePanel({
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', fontSize: 10.5, color: BLUE.muted, margin: '6px 2px 16px' }}>
-        <span>{fullRange ? '최대 20년' : '최근 3년'} · 국토교통부 실거래가</span>
-        {!fullRange && (
-          <button type="button" onClick={loadOlder} disabled={loading} style={{ border: 'none', background: 'transparent', padding: 0, fontSize: 11, fontWeight: 700, color: BLUE.primary, cursor: 'pointer' }}>
-            {loading ? '불러오는 중…' : '더 오래된 기록 보기 ›'}
-          </button>
-        )}
+        <span>{periodLabel}{!years ? '(2006년~)' : ''} · 국토교통부 실거래가</span>
+        {needFull && !fullRange && loading && <span style={{ color: BLUE.primary, fontWeight: 700 }}>오래된 기록 불러오는 중…</span>}
       </div>
 
       {/* 실거래 내역 (불러오는 중엔 "0건"이 보이지 않게 숨긴다) */}
