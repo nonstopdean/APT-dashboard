@@ -170,12 +170,12 @@ export default function MarketTab({
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
             <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>최근 상승 모멘텀</h2>
               {advancedAnalytics.momentum.slice(0, 8).map((r) => (
                 <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: `1px solid ${PALETTE.border}`, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>
-                  <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', color: PALETTE.textMuted, fontWeight: 400 }}>{r.dong}</small></span>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', color: PALETTE.textMuted, fontWeight: 400 }}>{r.dong}{r.area ? ` · ${Math.round(r.area)}㎡` : ''}</small></span>
                   <b style={{ color: r.mom >= 0 ? PALETTE.up : PALETTE.down }}>{fmtPct(r.mom)}</b>
                 </div>
               ))}
@@ -184,7 +184,7 @@ export default function MarketTab({
               <h2 style={styles.sectionTitle}>고점 대비 하락</h2>
               {advancedAnalytics.drawdowns.slice(0, 8).map((r) => (
                 <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: `1px solid ${PALETTE.border}`, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>
-                  <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', color: PALETTE.textMuted, fontWeight: 400 }}>{r.dong}</small></span>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', color: PALETTE.textMuted, fontWeight: 400 }}>{r.dong}{r.area ? ` · ${Math.round(r.area)}㎡` : ''}</small></span>
                   <b style={{ color: PALETTE.down }}>{fmtPct(r.drawdown)}</b>
                 </div>
               ))}
@@ -218,14 +218,14 @@ export default function MarketTab({
       {analyticsView === 'momentum' && (
         <div style={styles.card} className="ui-card">
           <h2 style={styles.sectionTitle}>최근 거래 모멘텀</h2>
-          <p style={{ fontSize: 11, color: PALETTE.textMuted }}>선택 기간 내 마지막 두 거래의 가격 차이를 계산한 지표입니다. 거래 간 면적 차이는 보정하지 않습니다.</p>
+          <p style={{ fontSize: 11, color: PALETTE.textMuted }}>선택 기간 내 마지막 두 거래의 가격 차이를 계산한 지표입니다. 같은 면적(±2㎡) 거래끼리만 비교해요.</p>
           {advancedAnalytics.momentum.map((r, i) => (
-            <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '42px 1fr 100px 90px', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}`, alignItems: 'center' }}>
+            <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr) auto auto', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}`, alignItems: 'center' }}>
               <b>{i + 1}</b>
               <span style={{ fontSize: 12, fontWeight: 700, cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode })}>
                 {r.apt}
                 <small style={{ display: 'block', fontWeight: 400, color: PALETTE.textMuted }}>
-                  {r.dong} · 표본 {r.volume}건{r.volume <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
+                  {r.dong}{r.area ? ` · ${Math.round(r.area)}㎡` : ''} · 표본 {r.sameN ?? r.volume}건{(r.sameN ?? r.volume) <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
                 </small>
               </span>
               <span>{fmtWon(r.latest)}</span>
@@ -238,7 +238,7 @@ export default function MarketTab({
         <div style={styles.card} className="ui-card">
           <h2 style={styles.sectionTitle}>거래량 상위 단지</h2>
           {advancedAnalytics.volumeLeaders.map((r, i) => (
-            <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '42px 1fr 90px 90px', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
+            <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr) auto auto', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
               <b>{i + 1}</b>
               <span style={{ fontSize: 12, fontWeight: 700 }}>{r.apt}<small style={{ display: 'block', fontWeight: 400, color: PALETTE.textMuted }}>{r.dong}</small></span>
               <span>{r.volume}건</span>
@@ -278,7 +278,7 @@ export default function MarketTab({
         );
       })()}
       {analyticsView === 'highs' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
           <div style={styles.card} className="ui-card">
             <h2 style={styles.sectionTitle}>신고가 후보</h2>
             <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>기간 내 마지막 거래가 그 단지의 가장 비쌌던 거래일 때예요. 표본이 적으면 우연일 수 있어요.</p>
@@ -286,7 +286,7 @@ export default function MarketTab({
               <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
                 <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.up }}>{fmtWon(r.latest)}</span>
                 <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>
-                  {r.dong} · 최고가 갱신 · 표본 {r.volume}건{r.volume <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
+                  {r.dong}{r.area ? ` · ${Math.round(r.area)}㎡` : ''} · 최고가 갱신 · 표본 {r.sameN ?? r.volume}건{(r.sameN ?? r.volume) <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
                 </div>
               </div>
             ))}
@@ -298,7 +298,7 @@ export default function MarketTab({
               <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
                 <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.down }}>{fmtPct(r.drawdown)}</span>
                 <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>
-                  {r.dong} · 현재 {fmtWon(r.latest)} / 고점 {fmtWon(r.high)} · 표본 {r.volume}건{r.volume <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
+                  {r.dong}{r.area ? ` · ${Math.round(r.area)}㎡` : ''} · 현재 {fmtWon(r.latest)} / 고점 {fmtWon(r.high)} · 표본 {r.sameN ?? r.volume}건{(r.sameN ?? r.volume) <= 2 && <span style={{ color: PALETTE.down }}> · 표본 적음</span>}
                 </div>
               </div>
             ))}
@@ -307,12 +307,12 @@ export default function MarketTab({
       )}
       {analyticsView === 'signals' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <div style={{ ...styles.card, display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 10 }} className="ui-card">
+          <div style={{ ...styles.card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }} className="ui-card">
             {[['최근 거래량', `${marketSignals.recent.toLocaleString()}건`], ['이전 구간', `${marketSignals.prev.toLocaleString()}건`], ['거래량 변화', fmtPct(marketSignals.volumeChange)], ['가격 중앙값', fmtWon(marketSignals.median)]].map(([label, value]) => (
               <div key={label} style={{ padding: 12, background: PALETTE.panelAlt, borderRadius: 8 }}><div style={styles.kpiLabel}>{label}</div><div style={{ fontSize: 18, fontWeight: 800 }}>{value}</div></div>
             ))}
           </div>
-          <div style={{ ...styles.card, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="ui-card">
+          <div style={{ ...styles.card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }} className="ui-card">
             <div>
               <h2 style={styles.sectionTitle}>가격 분포 범위</h2>
               <p style={{ fontSize: 11, color: PALETTE.textMuted }}>조회기간 거래가격의 25~75 분위 범위입니다.</p>
