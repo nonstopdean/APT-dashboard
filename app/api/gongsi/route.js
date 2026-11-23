@@ -31,7 +31,14 @@ export async function GET(request) {
       return Response.json({ error: '주소로 고유번호(PNU)를 찾지 못했습니다.', address });
     }
     // v258: 결과가 비면 응답 모양 요약(diag: 키 이름·결과 코드·건수만)을 같이 준다
-    const { rows, diag } = await fetchApartHousingPrice(vworldKey, pnu, aptDong || undefined);
+    // v258b: domain 후보 — 환경변수 VWORLD_DOMAIN(있으면) → 이 사이트 주소(https 포함/미포함) → 예전 값 'vworld'
+    const host = (request.headers.get('host') || '').trim().toLowerCase();
+    const okHost = /^[a-z0-9.-]{3,100}$/.test(host) ? host : '';
+    const domains = [
+      (process.env.VWORLD_DOMAIN || '').trim(),
+      okHost && `https://${okHost}`, okHost, 'https://apt-dashboard-five.vercel.app', 'apt-dashboard-five.vercel.app', 'vworld',
+    ].filter(Boolean);
+    const { rows, diag } = await fetchApartHousingPrice(vworldKey, pnu, aptDong || undefined, undefined, domains);
     return Response.json({ pnu, address, rows, ...(rows.length ? {} : { diag }) });
   } catch (e) {
     return Response.json({ error: publicError(e, '공시가격을 불러오지 못했습니다.') }, { status: 500 });
