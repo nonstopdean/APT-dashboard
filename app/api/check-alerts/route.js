@@ -8,13 +8,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+// v254: fetchRegionMonth는 정리된 거래(amount·area·pricePerPyeong)를 돌려준다. 예전엔 원본 필드(dealAmount 등)를 읽어 늘 비어 있었다.
 function avgPricePerPyeong(items) {
   const valid = items
     .map((r) => {
-      const area = parseFloat(r.excluUseAr);
-      const amount = parseInt(String(r.dealAmount ?? '').replace(/,/g, ''), 10);
-      if (!area || !Number.isFinite(amount)) return null;
-      return amount / supplyPyeong(area); // v195: 화면과 같은 공급 평형(추정) 기준
+      if (Number.isFinite(r.pricePerPyeong) && r.pricePerPyeong > 0) return r.pricePerPyeong;
+      if (!r.area || !Number.isFinite(r.amount)) return null;
+      return r.amount / supplyPyeong(r.area); // v195: 화면과 같은 공급 평형(추정) 기준
     })
     .filter((v) => v);
   return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
@@ -46,7 +46,7 @@ export async function GET(request) {
   if (!serviceKey) return Response.json({ error: 'MOLIT_SERVICE_KEY 없음' }, { status: 500 });
   if (!webhookUrl) return Response.json({ error: 'DISCORD_WEBHOOK_URL 없음' }, { status: 500 });
   if (!kvReady()) return Response.json({ error: 'KV(Vercel Storage) 연결 안 됨' }, { status: 500 });
-  if (watchCodes.length === 0) return Response.json({ error: 'ALERT_REGIONS 미설정' }, { status: 400 });
+  // v254: 지역 알림(ALERT_REGIONS)이 없어도 단지별 알림은 확인한다(예전엔 여기서 400으로 끝나 단지 알림이 한 번도 돌지 않았다).
 
   const [thisMonth] = lastNMonths(1);
   const results = [];
@@ -95,7 +95,7 @@ export async function checkUserAlerts(serviceKey, webhookUrl) {
   const pending = list.filter((a) => !a.firedAt);
   if (pending.length === 0) return [];
 
-  const [thisMonth, lastMonth] = lastNMonths(2);
+  const [lastMonth, thisMonth] = lastNMonths(2); // lastNMonths는 오래된 달부터
   const results = [];
 
   for (const alert of pending) {
@@ -104,13 +104,14 @@ export async function checkUserAlerts(serviceKey, webhookUrl) {
         fetchRegionMonth(serviceKey, alert.regionCode, thisMonth),
         fetchRegionMonth(serviceKey, alert.regionCode, lastMonth),
       ]);
-      const rows = [...rowsThis, ...rowsLast].filter((r) => r.aptNm === alert.apt && r.umdNm === alert.dong);
+      const rows = [...rowsThis, ...rowsLast].filter((r) => r.apt === alert.apt && r.dong === alert.dong);
       if (rows.length === 0) {
         results.push({ id: alert.id, skipped: '최근 거래 없음' });
         continue;
       }
-      const latest = rows.sort((a, b) => `${b.dealYear}${b.dealMonth}${b.dealDay}`.localeCompare(`${a.dealYear}${a.dealMonth}${a.dealDay}`))[0];
-      const price = parseInt(String(latest.dealAmount ?? '').replace(/,/g, ''), 10);
+      const dayKey = (r) => `${r.year}${String(r.month).padStart(2, '0')}${String(r.day).padStart(2, '0')}`;
+      const latest = rows.sort((a, b) => dayKey(b).localeCompare(dayKey(a)))[0];
+      const price = latest.amount;
       const triggered = alert.direction === 'above' ? price >= alert.targetPrice : price <= alert.targetPrice;
       results.push({ id: alert.id, price, triggered });
       if (triggered && webhookUrl) {
