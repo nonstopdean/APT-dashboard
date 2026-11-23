@@ -94,7 +94,10 @@ export default function DailyReport({ setSelectedApt, styles }) {
               {r.trades?.[0] && <> 가장 비싸게 신고된 거래는 <b>{labelFor(r.trades[0].c)} {r.trades[0].a}</b> 전용 {Math.round(r.trades[0].ar)}㎡ <b>{fmtWon(r.trades[0].p)}</b>이에요.</>}
             </p>
             <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '8px 0 0', lineHeight: 1.6 }}>
-              국토부 자료에 신고일이 없어 매일 전날 저장본과 비교해 새로 나타난 거래를 셌어요. 신고가는 이 기능을 시작한 뒤 쌓은 최고가 기준이라 처음 몇 주는 실제보다 많이 잡힐 수 있어요.
+              국토부 자료에 신고일이 없어 매일 전날 저장본과 비교해 새로 나타난 거래를 셌어요.
+              {r.backfill && r.backfill.total > 0 && r.backfill.done < r.backfill.total
+                ? ` 신고가 비교용 최고가 기록은 지난 3년 치를 매일 조금씩 채우는 중이에요(${Math.round((r.backfill.done / r.backfill.total) * 100)}%${r.backfill.reachedYm ? `, ${r.backfill.reachedYm.slice(0, 4)}.${r.backfill.reachedYm.slice(4)}까지` : ''}). 다 채우기 전엔 신고가가 실제보다 많이 잡힐 수 있어요.`
+                : r.backfill && r.backfill.total > 0 ? ' 신고가는 지난 약 3년 치 최고가와 비교했어요.' : ' 신고가는 이 기능을 시작한 뒤 쌓은 최고가 기준이라 처음 몇 주는 실제보다 많이 잡힐 수 있어요.'}
               {r.failed?.length > 0 && ` 오늘 ${r.failed.length}개 지역은 국토부 응답 오류로 빠졌어요(내일 함께 반영).`}
             </p>
           </>
