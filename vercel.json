@@ -3,6 +3,10 @@
     {
       "path": "/api/check-alerts",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/daily-snapshot",
+      "schedule": "0 23 * * *"
     }
   ]
 }
