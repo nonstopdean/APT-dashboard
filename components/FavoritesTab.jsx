@@ -9,7 +9,7 @@ import {
 // app/page.jsx 안에 있던 viewMode === 'favorites' 블록을 그대로 옮긴 것.
 export default function FavoritesTab({
   favorites, applyFavorite, setViewMode, removeFavorite,
-  userAlerts, complexCompare, setSelectedApt, isRent, removeUserAlert, addRegionAndFetch,
+  userAlerts, alertKeys = {}, complexCompare, setSelectedApt, isRent, removeUserAlert, addRegionAndFetch,
   listingForm, setListingForm, addListing,
   myListingsWithComparison, updateListingStatus, removeListing,
   pinnedComplexes, setPinnedComplexes,
@@ -92,11 +92,16 @@ export default function FavoritesTab({
                       {a.apt} <span style={{ fontWeight: 400, color: PALETTE.textMuted, fontSize: 11 }}>({a.regionName} {a.dong})</span>
                     </div>
                     <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
-                      알림가 {fmtManwon(a.targetPrice)} {a.direction === 'above' ? '이상' : '이하'}
+                      알림가 {fmtWon(a.targetPrice)} {a.direction === 'above' ? '이상' : '이하'}
                       {a.firedAt && <span style={{ color: PALETTE.up, marginLeft: 6 }}>✓ 알림 발송됨</span>}
                     </div>
                   </div>
-                  <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeUserAlert(a.id)} />
+                  {/* v256: 지우기는 등록한 브라우저에서만(열쇠가 있을 때) */}
+                  {alertKeys[a.id] ? (
+                    <X size={14} color={PALETTE.textMuted} style={{ cursor: 'pointer' }} onClick={() => removeUserAlert(a.id)} aria-label="알림 지우기" />
+                  ) : (
+                    <span style={{ fontSize: 10, color: PALETTE.textMuted, whiteSpace: 'nowrap' }}>다른 기기에서 등록</span>
+                  )}
                 </div>
                 {live ? (
                   <div style={{ display: 'flex', gap: 12, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${PALETTE.border}`, fontSize: 11.5 }}>
