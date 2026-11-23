@@ -863,7 +863,7 @@ export default function Page() {
       const row = { ym: monthLabel(ym) };
       selected.forEach((code) => {
         const m = monthlyByRegion[code]?.find((x) => x.ym === ym);
-        row[labelFor(code)] = m?.avgPyeong ? Math.round(m.avgPyeong / 10) / 100 : null;
+        row[labelFor(code)] = m?.avgPyeong ? Math.round(m.avgPyeong) : null; // v252: 제목대로 만원 단위(예전엔 천만 단위라 축이 0~8로 보였다)
       });
       return row;
     });
@@ -891,8 +891,9 @@ export default function Page() {
     const avgPyeongAll = withPyeong.length
       ? withPyeong.reduce((s, r) => s + r.latestAvgPyeong, 0) / withPyeong.length
       : null;
-    const rising = ranking.filter((r) => r.change != null).sort((a, b) => b.change - a.change)[0];
-    const falling = ranking.filter((r) => r.change != null).sort((a, b) => a.change - b.change)[0];
+    // v252: 오른 곳만 "최고 상승", 내린 곳만 "최고 하락"(지역이 하나면 같은 지역이 양쪽에 나오던 것)
+    const rising = ranking.filter((r) => r.change != null && r.change > 0).sort((a, b) => b.change - a.change)[0];
+    const falling = ranking.filter((r) => r.change != null && r.change < 0).sort((a, b) => a.change - b.change)[0];
 
     let avgMonthlyRent = null;
     if (dealType === 'rent') {
@@ -1431,18 +1432,21 @@ export default function Page() {
       const rowsSorted = [...rows0].filter((r) => priceOf(r) != null).sort((a, b) => `${a.year}${String(a.month).padStart(2, '0')}${String(a.day).padStart(2, '0')}`.localeCompare(`${b.year}${String(b.month).padStart(2, '0')}${String(b.day).padStart(2, '0')}`));
       if (!rowsSorted.length) return null;
       const latest = rowsSorted[rowsSorted.length - 1];
-      const prev = rowsSorted.length > 1 ? rowsSorted[rowsSorted.length - 2] : null;
-      const prices = rowsSorted.map(priceOf).filter((v) => v != null);
+      // v252: 변동·모멘텀·고점은 마지막 거래와 같은 면적(±2㎡) 거래끼리만 비교한다.
+      // 예전엔 평형을 섞어 리센츠 -63%(84㎡ 고점 vs 27㎡ 최근)처럼 엉뚱한 값이 나왔다.
+      const same = rowsSorted.filter((r) => Math.abs((r.area || 0) - (latest.area || 0)) <= 2);
+      const prev = same.length > 1 ? same[same.length - 2] : null;
+      const prices = same.map(priceOf).filter((v) => v != null);
       const high = Math.max(...prices);
       const current = priceOf(latest);
-      const first = priceOf(rowsSorted[0]);
-      const change = first ? ((current - first) / first) * 100 : null;
+      const first = priceOf(same[0]);
+      const change = same.length > 1 && first ? ((current - first) / first) * 100 : null;
       const mom = prev && priceOf(prev) ? ((current - priceOf(prev)) / priceOf(prev)) * 100 : null;
-      const newHigh = current >= high && rowsSorted.length >= 2;
+      const newHigh = current >= high && same.length >= 2;
       return {
-        key, apt: latest.apt, dong: latest.dong, regionCode: latest.regionCode, latest: current,
-        unitPrice: latest.pricePerPyeong, volume: rowsSorted.length, change, mom, high,
-        drawdown: high ? ((current - high) / high) * 100 : null, newHigh,
+        key, apt: latest.apt, dong: latest.dong, regionCode: latest.regionCode, latest: current, area: latest.area,
+        unitPrice: latest.pricePerPyeong, volume: rowsSorted.length, sameN: same.length, change, mom, high,
+        drawdown: same.length > 1 && high ? ((current - high) / high) * 100 : null, newHigh,
       };
     }).filter(Boolean);
     const monthly = {};
@@ -2558,8 +2562,8 @@ export default function Page() {
   const roneKpis = useMemo(() => {
     const withVal = roneRanking.filter((r) => r.latest != null);
     const avg = withVal.length ? withVal.reduce((s, r) => s + r.latest, 0) / withVal.length : null;
-    const rising = roneRanking.filter((r) => r.change != null).sort((a, b) => b.change - a.change)[0];
-    const falling = roneRanking.filter((r) => r.change != null).sort((a, b) => a.change - b.change)[0];
+    const rising = roneRanking.filter((r) => r.change != null && r.change > 0).sort((a, b) => b.change - a.change)[0];
+    const falling = roneRanking.filter((r) => r.change != null && r.change < 0).sort((a, b) => a.change - b.change)[0];
     return { avg, rising, falling, unit: withVal[0]?.unit };
   }, [roneRanking]);
 
@@ -3914,7 +3918,7 @@ export default function Page() {
           <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>
             {fetchedAt
               ? `${fetchedAt.toLocaleString('ko-KR')} 기준 · 실거래 신고 특성상 최근 1~2개월 데이터는 계속 채워지는 중일 수 있습니다.`
-              : '왼쪽에서 조건을 설정한 뒤 데이터 조회를 눌러주세요.'}
+              : '조건 패널에서 지역·기간을 정한 뒤 데이터 조회를 눌러주세요.'}
           </p>
         </div>
 
@@ -4284,9 +4288,11 @@ export default function Page() {
                   <LineChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={PALETTE.border} vertical={false} />
                     <XAxis dataKey="ym" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
-                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={48} />
+                    <YAxis stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={50} domain={['auto', 'auto']}
+                      tickFormatter={(v) => Math.round(v).toLocaleString()} />
                     <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
-                      labelStyle={{ color: PALETTE.textPrimary }} />
+                      labelStyle={{ color: PALETTE.textPrimary }}
+                      formatter={(v) => (v == null ? '-' : `${Math.round(v).toLocaleString()}만원`)} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     {selected.map((code, i) => (
                       <Line key={code} type="monotone" dataKey={labelFor(code)}
@@ -4532,7 +4538,7 @@ export default function Page() {
           <div style={{ ...styles.card, textAlign: 'center', padding: '60px 20px', color: PALETTE.textMuted }} className="ui-card">
             <Building2 size={28} color={PALETTE.border} style={{ marginBottom: 10 }} />
             <div style={{ fontSize: 14 }}>아직 조회된 데이터가 없어요</div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>왼쪽 패널에서 지역과 기간을 정하고 "데이터 조회"를 눌러주세요.</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>조건 패널(폰은 위쪽 "조건 패널 펼치기")에서 지역과 기간을 정하고 "데이터 조회"를 눌러주세요.</div>
           </div>
         )}
 
