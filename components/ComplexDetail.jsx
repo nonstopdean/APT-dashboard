@@ -323,7 +323,7 @@ export default function ComplexDetail({
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
               {gongsiInfo.rows.slice(0, 6).map((r, i) => (
                 <span key={i} style={styles.chip}>
-                  {r.dong}동 {r.ho}호 · {fmtManwon(Math.round(r.price / 10000))} ({r.year}년)
+                  {r.dong ? `${String(r.dong).replace(/동$/, '')}동 ` : ''}{r.ho ? `${String(r.ho).replace(/호$/, '')}호` : ''} · {fmtWon(Math.round(r.price / 10000))} ({r.year}년)
                 </span>
               ))}
             </div>
