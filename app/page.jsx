@@ -405,14 +405,20 @@ export default function Page() {
     if (!price || !selectedApt) return;
     setAlertSaving(true);
     try {
-      await fetch('/api/user-alerts', {
+      const res = await fetch('/api/user-alerts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apt: selectedApt.apt, dong: selectedApt.dong, regionCode: selectedApt.regionCode,
-          regionName: labelFor(selectedApt.regionCode), targetPrice: price * 10000, direction: alertDirection,
+          regionName: labelFor(selectedApt.regionCode), targetPrice: Math.round(price * 10000), direction: alertDirection,
         }),
       });
+      // v255: 서버가 거절하면(개수 제한·형식 오류) 이유를 알려준다(예전엔 조용히 창만 닫혔다)
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        window.alert(j.error || '알림을 저장하지 못했어요. 잠시 뒤 다시 시도해주세요.');
+        return;
+      }
       setAlertFormOpen(false);
       setAlertTargetPrice('');
       loadUserAlerts();
