@@ -218,7 +218,7 @@ export default function MarketTab({
       {analyticsView === 'momentum' && (
         <div style={styles.card} className="ui-card">
           <h2 style={styles.sectionTitle}>최근 거래 모멘텀</h2>
-          <p style={{ fontSize: 11, color: PALETTE.textMuted }}>선택 기간 내 마지막 두 거래의 가격 차이를 계산한 지표입니다. 같은 면적(±2㎡) 거래끼리만 비교해요.</p>
+          <p style={{ fontSize: 11, color: PALETTE.textMuted }}>선택 기간 내 마지막 두 거래의 가격 차이를 계산한 지표입니다. 같은 면적(±2㎡) 거래끼리만 비교하고, 그 거래가 3건 이상인 단지만 보여줘요.</p>
           {advancedAnalytics.momentum.map((r, i) => (
             <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr) auto auto', gap: 8, padding: '11px 0', borderBottom: `1px solid ${PALETTE.border}`, alignItems: 'center' }}>
               <b>{i + 1}</b>
@@ -281,7 +281,7 @@ export default function MarketTab({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
           <div style={styles.card} className="ui-card">
             <h2 style={styles.sectionTitle}>신고가 후보</h2>
-            <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>기간 내 마지막 거래가 그 단지의 가장 비쌌던 거래일 때예요. 표본이 적으면 우연일 수 있어요.</p>
+            <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>기간 내 마지막 거래가 같은 면적에서 가장 비쌌던 거래일 때예요(같은 면적 거래 3건 이상인 단지만).</p>
             {advancedAnalytics.highs.map((r) => (
               <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
                 <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.up }}>{fmtWon(r.latest)}</span>
@@ -293,7 +293,7 @@ export default function MarketTab({
           </div>
           <div style={styles.card} className="ui-card">
             <h2 style={styles.sectionTitle}>고점 대비 하락폭</h2>
-            <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>표본이 적으면 우연한 한두 건 차이일 수 있어요.</p>
+            <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>같은 면적 거래끼리 비교하고, 3건 이상인 단지만 보여줘요.</p>
             {advancedAnalytics.drawdowns.map((r) => (
               <div key={r.key} style={{ padding: '10px 0', borderBottom: `1px solid ${PALETTE.border}` }}>
                 <b>{r.apt}</b><span style={{ float: 'right', color: PALETTE.down }}>{fmtPct(r.drawdown)}</span>
