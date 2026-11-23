@@ -2,6 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+} from 'recharts';
+import {
   PALETTE, fmtPct, fmtWon, fmtManwon, labelFor,
 } from '../lib/ui-helpers';
 import { supplyPyeong } from '../lib/pyeong';
@@ -42,7 +45,7 @@ function Row({ t, rank, high, onOpen, styles }) {
 
 export default function DailyReport({ setSelectedApt, styles }) {
   const [date, setDate] = useState('');
-  const [data, setData] = useState({ loading: true, index: [], report: null, error: '' });
+  const [data, setData] = useState({ loading: true, index: [], report: null, stats: [], error: '' });
   const [highLimit, setHighLimit] = useState(15);
 
   useEffect(() => {
@@ -50,8 +53,8 @@ export default function DailyReport({ setSelectedApt, styles }) {
     setData((d) => ({ ...d, loading: true }));
     fetch(`/api/daily-report${date ? `?date=${date}` : ''}`)
       .then((r) => r.json())
-      .then((j) => { if (!cancelled) setData({ loading: false, index: j.index || [], report: j.report || null, error: j.error || '' }); })
-      .catch(() => { if (!cancelled) setData({ loading: false, index: [], report: null, error: '불러오지 못했어요.' }); });
+      .then((j) => { if (!cancelled) setData({ loading: false, index: j.index || [], report: j.report || null, stats: Array.isArray(j.stats) ? j.stats : [], error: j.error || '' }); })
+      .catch(() => { if (!cancelled) setData({ loading: false, index: [], report: null, stats: [], error: '불러오지 못했어요.' }); });
     return () => { cancelled = true; };
   }, [date]);
 
@@ -61,6 +64,11 @@ export default function DailyReport({ setSelectedApt, styles }) {
   const isHigh = (t) => highSet.has(`${t.c}|${t.a}|${t.ar}|${t.f}|${t.y}${t.m}${t.d}|${t.p}`);
   const tops = r ? r.trades.slice(0, 20) : [];
   const topHigh = r ? [...(r.byRegion || [])].filter((g) => g.h > 0).sort((a, b) => b.h - a.h)[0] : null;
+  // v257: 날짜별 추이(최근 30일, 오래된 날부터)
+  const series = [...(data.stats || [])].slice(0, 30).reverse().map((s) => ({
+    day: `${Number(String(s.d).slice(4, 6))}/${Number(String(s.d).slice(6, 8))}`,
+    서울: s.s?.서울 || 0, 인천: s.s?.인천 || 0, 경기: s.s?.경기 || 0, 신고가: s.h || 0, 합계: s.t || 0,
+  }));
 
   return (
     <div style={{ display: 'grid', gap: 12 }} data-daily-report="1">
@@ -104,6 +112,30 @@ export default function DailyReport({ setSelectedApt, styles }) {
         )}
         {data.error && <p style={{ fontSize: 11.5, color: '#B23A2E', margin: '8px 0 0' }}>{data.error}</p>}
       </div>
+
+      {series.length >= 2 && (
+        <div style={styles.card} className="ui-card" data-daily-trend="1">
+          <h2 style={styles.sectionTitle}>📈 날짜별 신고 건수</h2>
+          <p style={{ fontSize: 10.5, color: PALETTE.textMuted, margin: '-4px 0 8px' }}>막대 = 시도별 새로 공개된 매매 신고, 선 = 그날 신고가 건수(오른쪽 축). 주말·공휴일 다음 날은 적게 나와요.</p>
+          <div style={{ width: '100%', height: 240 }}>
+            <ResponsiveContainer>
+              <ComposedChart data={series} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
+                <CartesianGrid stroke={PALETTE.border} vertical={false} />
+                <XAxis dataKey="day" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} />
+                <YAxis yAxisId="n" stroke={PALETTE.textMuted} fontSize={11} tickLine={false} width={40} />
+                <YAxis yAxisId="h" orientation="right" stroke={PALETTE.up} fontSize={11} tickLine={false} width={30} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: PALETTE.panelAlt, border: `1px solid ${PALETTE.border}`, fontSize: 12 }}
+                  formatter={(v, n) => [`${Number(v).toLocaleString()}건`, n]} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar yAxisId="n" dataKey="서울" stackId="a" fill="#1D4ED8" />
+                <Bar yAxisId="n" dataKey="경기" stackId="a" fill="#60A5FA" />
+                <Bar yAxisId="n" dataKey="인천" stackId="a" fill="#93C5FD" radius={[3, 3, 0, 0]} />
+                <Line yAxisId="h" type="monotone" dataKey="신고가" stroke={PALETTE.up} strokeWidth={2} dot={{ r: 2 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {r && r.total > 0 && (
         <>
