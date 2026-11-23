@@ -1,5 +1,19 @@
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { publicError } from '../../../lib/safe-error';
 import { kvReady, kvGet, kvSet } from '../../../lib/kv';
+import { adminCheck } from '../../../lib/admin-auth';
+
+// v256: 계정이 없으니 알림마다 "지우기 열쇠"를 만들어 등록한 브라우저에만 준다(저장소엔 해시만).
+// 지울 때 헤더 x-alert-key로 그 열쇠를 보내야 한다. 관리자(x-admin-token = ADMIN_TOKEN)는 무엇이든 지울 수 있다.
+const KEY_HEADER = 'x-alert-key';
+const sha = (s) => createHash('sha256').update(String(s)).digest('hex');
+const publicView = ({ keyHash, ...rest }) => rest;
+const keyMatches = (got, hash) => {
+  if (!got || !hash) return false;
+  const a = Buffer.from(sha(got));
+  const b = Buffer.from(String(hash));
+  return a.length === b.length && timingSafeEqual(a, b);
+};
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +35,7 @@ export async function GET() {
   if (!kvReady()) return Response.json({ alerts: [] });
   try {
     const list = (await kvGet(KEY)) || [];
-    return Response.json({ alerts: list });
+    return Response.json({ alerts: list.map(publicView) });
   } catch (e) {
     return Response.json({ alerts: [] });
   }
@@ -48,7 +62,7 @@ export async function POST(request) {
     const pending = list.filter((a) => !a.firedAt);
     const dup = pending.find((a) => a.apt === apt && a.dong === dong && a.regionCode === regionCode
       && a.direction === direction && a.targetPrice === Math.round(targetPrice));
-    if (dup) return Response.json({ ok: true, alert: dup, duplicate: true });
+    if (dup) return Response.json({ ok: true, alert: publicView(dup), duplicate: true });
     if (pending.length >= MAX_PENDING) {
       return Response.json({ error: `대기 중인 알림이 ${MAX_PENDING}개라 더 등록할 수 없어요. 필요 없는 알림을 지운 뒤 다시 시도해주세요.` }, { status: 429 });
     }
@@ -59,6 +73,8 @@ export async function POST(request) {
       createdAt: new Date().toISOString(),
       firedAt: null,
     };
+    const delKey = randomBytes(16).toString('hex');
+    alert.keyHash = sha(delKey);
     list.push(alert);
     if (list.length > MAX_TOTAL) {
       // 보낸 알림 기록 중 오래된 것부터 지운다(대기 중 알림은 지우지 않음)
@@ -67,7 +83,7 @@ export async function POST(request) {
       list = list.filter((a) => !drop.has(a.id));
     }
     await kvSet(KEY, list);
-    return Response.json({ ok: true, alert });
+    return Response.json({ ok: true, alert: publicView(alert), delKey });
   } catch (e) {
     return Response.json({ error: publicError(e, '알림 저장소 처리 중 오류가 발생했습니다.') }, { status: 500 });
   }
@@ -80,6 +96,12 @@ export async function DELETE(request) {
   if (!id) return Response.json({ error: 'id가 필요합니다.' }, { status: 400 });
   try {
     const list = (await kvGet(KEY)) || [];
+    const target = list.find((a) => a.id === id);
+    if (!target) return Response.json({ ok: true });
+    const isAdmin = adminCheck(request).ok;
+    if (!isAdmin && !keyMatches(request.headers.get(KEY_HEADER), target.keyHash)) {
+      return Response.json({ error: '이 알림은 등록한 브라우저에서만 지울 수 있어요.' }, { status: 403 });
+    }
     const next = list.filter((a) => a.id !== id);
     await kvSet(KEY, next);
     return Response.json({ ok: true });
