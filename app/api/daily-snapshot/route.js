@@ -4,7 +4,7 @@ import {
   kvReady, kvGet, kvMGet, kvMSet,
 } from '../../../lib/kv';
 import {
-  leafRegions, countsOf, diffNew, updateMax, buildDailyReport, kstDate, monthsToFetch, monthsBefore, backfillTask,
+  leafRegions, countsOf, diffNew, updateMax, buildDailyReport, kstDate, monthsToFetch, monthsBefore, backfillTask, appendStat,
 } from '../../../lib/daily-report';
 
 export const runtime = 'nodejs';
@@ -21,6 +21,7 @@ const SEEN = 'daily:seen:';
 const MAX = 'daily:max:';
 const INDEX = 'daily:index';
 const BACKFILL = 'daily:backfill';
+const STATS = 'daily:stats'; // v257: [{ d, t, h, s: {서울,인천,경기}, f }] 최신이 앞
 const BACK_MONTHS = 34; // 오늘 받는 2개월 + 34개월 = 약 3년
 const DEADLINE_MS = 35000; // 60초 한도 안에서 저장(최대 수 MB)할 시간을 넉넉히 남긴다
 
@@ -116,6 +117,10 @@ export async function GET(request) {
   const nextIndex = [date, ...index.filter((d) => d !== date)].slice(0, 90);
   writes.push([`daily:report:${date}`, report]);
   writes.push([BACKFILL, backfill]);
+  // v257: 날짜별 추이 요약(작아서 한 번에 읽힌다). 읽기 실패해도 본 작업은 계속.
+  let stats = [];
+  try { stats = (await kvGet(STATS)) || []; } catch (e) { stats = []; }
+  writes.push([STATS, appendStat(stats, report)]);
   writes.push([INDEX, nextIndex]); // 목록은 맨 마지막에(앞 저장이 실패하면 오늘을 "했음"으로 남기지 않게)
   // 저장소 한 번 요청이 1MB를 넘지 않게 크기로 묶어 저장(최고가 기록은 3년 치가 쌓이면 지역당 수백 KB까지 커진다)
   let group = []; let bytes = 0;
