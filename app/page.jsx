@@ -394,6 +394,19 @@ export default function Page() {
   const [alertDirection, setAlertDirection] = useState('below');
   const [alertSaving, setAlertSaving] = useState(false);
 
+  // v256: 알림 지우기 열쇠(id → 열쇠)는 이 브라우저에만 둔다. 저장소가 막혀 있으면 이번 방문 동안만 기억.
+  const ALERT_KEYS_LS = 'dogaeng.alertKeys';
+  const [alertKeys, setAlertKeys] = useState({});
+  useEffect(() => {
+    try { setAlertKeys(JSON.parse(window.localStorage.getItem(ALERT_KEYS_LS) || '{}') || {}); } catch (e) { /* 저장소 막힘 */ }
+  }, []);
+  const writeAlertKeys = (next) => {
+    setAlertKeys(next);
+    try { window.localStorage.setItem(ALERT_KEYS_LS, JSON.stringify(next)); } catch (e) { /* 저장소 막힘 */ }
+  };
+  const saveAlertKey = (id, key) => writeAlertKeys({ ...alertKeys, [id]: key });
+  const dropAlertKey = (id) => { const next = { ...alertKeys }; delete next[id]; writeAlertKeys(next); };
+
   const loadUserAlerts = () => {
     fetch('/api/user-alerts').then((res) => res.json()).then((json) => setUserAlerts(json?.alerts || [])).catch(() => {});
   };
@@ -414,11 +427,13 @@ export default function Page() {
         }),
       });
       // v255: 서버가 거절하면(개수 제한·형식 오류) 이유를 알려준다(예전엔 조용히 창만 닫혔다)
+      const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
         window.alert(j.error || '알림을 저장하지 못했어요. 잠시 뒤 다시 시도해주세요.');
         return;
       }
+      // v256: 이 브라우저에서 등록한 알림의 지우기 열쇠를 보관(다른 사람은 못 지우게)
+      if (j.delKey && j.alert?.id) saveAlertKey(j.alert.id, j.delKey);
       setAlertFormOpen(false);
       setAlertTargetPrice('');
       loadUserAlerts();
@@ -430,7 +445,16 @@ export default function Page() {
   };
 
   const removeUserAlert = async (id) => {
-    await fetch(`/api/user-alerts?id=${id}`, { method: 'DELETE' }).catch(() => {});
+    const key = alertKeys[id];
+    const res = await fetch(`/api/user-alerts?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: key ? { 'x-alert-key': key } : {},
+    }).catch(() => null);
+    if (res && !res.ok) {
+      const j = await res.json().catch(() => ({}));
+      window.alert(j.error || '알림을 지우지 못했어요.');
+    } else if (res) {
+      dropAlertKey(id);
+    }
     loadUserAlerts();
   };
 
@@ -3882,7 +3906,7 @@ export default function Page() {
       ) : viewMode === 'favorites' ? (
         <FavoritesTab
           favorites={favorites} applyFavorite={applyFavorite} setViewMode={setViewMode} removeFavorite={removeFavorite}
-          userAlerts={userAlerts} complexCompare={complexCompare} setSelectedApt={setSelectedApt} isRent={isRent}
+          userAlerts={userAlerts} alertKeys={alertKeys} complexCompare={complexCompare} setSelectedApt={setSelectedApt} isRent={isRent}
           removeUserAlert={removeUserAlert} addRegionAndFetch={addRegionAndFetch}
           listingForm={listingForm} setListingForm={setListingForm} addListing={addListing}
           myListingsWithComparison={myListingsWithComparison} updateListingStatus={updateListingStatus} removeListing={removeListing}
