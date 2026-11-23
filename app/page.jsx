@@ -1452,9 +1452,12 @@ export default function Page() {
     const monthly = {};
     tx.forEach((t) => { const ym = `${t.year}${String(t.month).padStart(2, '0')}`; monthly[ym] = (monthly[ym] || 0) + 1; });
     const monthSeries = Object.keys(monthly).sort().map((ym) => ({ ym: monthLabel(ym), 건수: monthly[ym] }));
-    const highs = rows.filter((r) => r.newHigh).sort((a, b) => (b.mom ?? -Infinity) - (a.mom ?? -Infinity)).slice(0, 30);
-    const momentum = [...rows].filter((r) => r.mom != null).sort((a, b) => b.mom - a.mom).slice(0, 30);
-    const drawdowns = [...rows].filter((r) => r.drawdown != null && r.drawdown < 0).sort((a, b) => a.drawdown - b.drawdown).slice(0, 30);
+    // v253: 같은 면적 거래가 3건 미만이면 순위에서 뺀다(한두 건 차이로 +86% 같은 값이 1위에 오르던 것)
+    const MIN_SAME = 3;
+    const enough = (r) => (r.sameN || 0) >= MIN_SAME;
+    const highs = rows.filter((r) => r.newHigh && enough(r)).sort((a, b) => (b.mom ?? -Infinity) - (a.mom ?? -Infinity)).slice(0, 30);
+    const momentum = [...rows].filter((r) => r.mom != null && enough(r)).sort((a, b) => b.mom - a.mom).slice(0, 30);
+    const drawdowns = [...rows].filter((r) => r.drawdown != null && r.drawdown < 0 && enough(r)).sort((a, b) => a.drawdown - b.drawdown).slice(0, 30);
     const volumeLeaders = [...rows].sort((a, b) => b.volume - a.volume).slice(0, 30);
     return { tx, rows, monthSeries, highs, momentum, drawdowns, volumeLeaders, cutoff };
   }, [allTx, isRent, endYm, analyticsPeriod]);
