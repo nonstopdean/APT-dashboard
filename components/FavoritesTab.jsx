@@ -26,7 +26,7 @@ export default function FavoritesTab({
         </p>
         {favorites.length === 0 ? (
           <p style={{ fontSize: 13, color: PALETTE.textMuted }}>
-            아직 저장된 즐겨찾기가 없어요. 대시보드 탭 왼쪽 패널에서 조건을 설정한 뒤 이름을 붙여 저장해보세요.
+            아직 저장된 즐겨찾기가 없어요. 대시보드 탭 조건 패널에서 조건을 설정한 뒤 이름을 붙여 저장해보세요.
           </p>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
