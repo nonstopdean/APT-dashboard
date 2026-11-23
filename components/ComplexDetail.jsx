@@ -56,7 +56,7 @@ export default function ComplexDetail({
           <div style={{ display: 'grid', gridTemplateColumns: isPanel ? 'repeat(auto-fit, minmax(110px, 1fr))' : 'repeat(5, 1fr)', gap: 8, marginBottom: 14, overflowWrap: 'anywhere' }}>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
               <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>최근 3개월 평균</div>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</div>
+              <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.recentAvg != null ? fmtWon(aptSummary.recentAvg) : '-'}</div>
               <div style={{ fontSize: 10, color: PALETTE.textMuted }}>거래 {aptSummary.recentCount}건</div>
             </div>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title={`최근 3개월 표본 ${aptSummary.recentSampleN}건, 1년 전 표본 ${aptSummary.yearAgoSampleN}건`}>
@@ -72,13 +72,13 @@ export default function ComplexDetail({
               )}
               <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
                 {aptSummary.yearAgoAvg != null
-                  ? `1년 전 평균 ${fmtManwon(aptSummary.yearAgoAvg)}${aptSummary.yoyLowSample ? ` (표본 ${aptSummary.recentSampleN}·${aptSummary.yearAgoSampleN}건)` : ''}`
+                  ? `1년 전 평균 ${fmtWon(aptSummary.yearAgoAvg)}${aptSummary.yoyLowSample ? ` (표본 ${aptSummary.recentSampleN}·${aptSummary.yearAgoSampleN}건)` : ''}`
                   : '비교 기준 없음'}
               </div>
             </div>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }}>
               <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>{aptHistoryFullRange ? '전체기간 최고가' : '최근 3년 최고가'}</div>
-              <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</div>
+              <div style={{ fontSize: 15, fontWeight: 800 }}>{aptSummary.maxPrice != null ? fmtWon(aptSummary.maxPrice) : '-'}</div>
               <div style={{ fontSize: 10, color: PALETTE.textMuted }}>{aptSummary.maxLabel}</div>
             </div>
             <div style={{ background: PALETTE.panelAlt, borderRadius: 10, padding: '8px 10px' }} title="최근 12개월 거래건수 ÷ 세대수 × 100. 세대수 대비 거래가 얼마나 활발한지 보는 참고 지표예요.">
@@ -103,7 +103,7 @@ export default function ComplexDetail({
                 <div style={{ fontSize: 10.5, color: PALETTE.textMuted }}>전세가율(최근 12개월)</div>
                 <div style={{ fontSize: 15, fontWeight: 800 }}>{((aptJeonseInfo.avgDeposit / aptSummary.recentAvg) * 100).toFixed(1)}%</div>
                 <div style={{ fontSize: 10, color: PALETTE.textMuted }}>
-                  전세 {fmtManwon(Math.round(aptJeonseInfo.avgDeposit))} · 표본 {aptJeonseInfo.count}건
+                  전세 {fmtWon(Math.round(aptJeonseInfo.avgDeposit))} · 표본 {aptJeonseInfo.count}건
                 </div>
               </div>
             )}
@@ -714,7 +714,7 @@ export default function ComplexDetail({
                     <tr key={c.key} style={{ cursor: 'pointer' }} onClick={() => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}>
                       <td style={{ ...styles.td, fontSize: 11.5, color: PALETTE.accent }}>{c.apt}<div style={{ fontSize: 9.5, color: PALETTE.textMuted }}>{c.dong}</div></td>
                       <td style={{ ...styles.td, fontSize: 11.5 }}>{c.distance < 1000 ? `${Math.round(c.distance)}m` : `${(c.distance / 1000).toFixed(1)}km`}</td>
-                      <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPrice != null ? fmtManwon(c.latestPrice) : '-'}</td>
+                      <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPrice != null ? fmtWon(c.latestPrice) : '-'}</td>
                       <td style={{ ...styles.td, fontSize: 11.5 }}>{c.latestPyeong != null ? fmtManwon(Math.round(c.latestPyeong)) : '-'}</td>
                     </tr>
                   ))}
@@ -804,11 +804,11 @@ export default function ComplexDetail({
                   {isRent ? (
                     <>
                       <td style={styles.td}>{t.isJeonse ? '전세' : '월세'}</td>
-                      <td style={styles.td}>{fmtManwon(t.deposit)}</td>
+                      <td style={styles.td}>{fmtWon(t.deposit)}</td>
                       <td style={styles.td}>{t.isJeonse ? '-' : `${t.monthlyRent.toLocaleString()}만원`}</td>
                     </>
                   ) : (
-                    <td style={styles.td}>{fmtManwon(t.amount)}</td>
+                    <td style={styles.td}>{fmtWon(t.amount)}</td>
                   )}
                 </tr>
               ))}
@@ -880,11 +880,11 @@ export default function ComplexDetail({
   const summaryLine = aptSummary ? (
     <>
       <span style={{ color: PALETTE.textMuted }}>최근 3개월 평균 </span>
-      <b>{aptSummary.recentAvg != null ? fmtManwon(aptSummary.recentAvg) : '-'}</b>
+      <b>{aptSummary.recentAvg != null ? fmtWon(aptSummary.recentAvg) : '-'}</b>
       <span style={{ color: PALETTE.textMuted }}> · 1년 전 대비 </span>
       {yoyText}
       <span style={{ color: PALETTE.textMuted }}> · 최고가 </span>
-      <b>{aptSummary.maxPrice != null ? fmtManwon(aptSummary.maxPrice) : '-'}</b>
+      <b>{aptSummary.maxPrice != null ? fmtWon(aptSummary.maxPrice) : '-'}</b>
     </>
   ) : (aptHistoryLoading ? <span style={{ color: PALETTE.textMuted }}>거래 내역 불러오는 중...</span> : null);
 
