@@ -24,9 +24,13 @@ async function postToDiscord(webhookUrl, content) {
   await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    // v255: 사용자가 넣은 단지 이름이 들어가므로 @everyone 같은 멘션이 울리지 않게 막는다
+    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
   });
 }
+
+// v255: 알림 메시지 금액을 화면처럼 억 단위로(만원 정수 → "23.5억", 1억 미만은 "9,500만")
+const fmtEok = (manwon) => (manwon >= 10000 ? `${(manwon / 10000).toFixed(2).replace(/\.?0+$/, '')}억` : `${Math.round(manwon).toLocaleString()}만`);
 
 export async function GET(request) {
   // Vercel Cron 요청인지 간단히 확인 (CRON_SECRET을 설정한 경우에만 검사)
@@ -97,13 +101,21 @@ export async function checkUserAlerts(serviceKey, webhookUrl) {
 
   const [lastMonth, thisMonth] = lastNMonths(2); // lastNMonths는 오래된 달부터
   const results = [];
+  // v255: 같은 지역 알림이 여러 개여도 국토부는 지역·달마다 한 번만 부른다
+  const regionCache = new Map();
+  const regionRows = (code) => {
+    if (!regionCache.has(code)) {
+      regionCache.set(code, Promise.all([
+        fetchRegionMonth(serviceKey, code, thisMonth),
+        fetchRegionMonth(serviceKey, code, lastMonth),
+      ]));
+    }
+    return regionCache.get(code);
+  };
 
   for (const alert of pending) {
     try {
-      const [rowsThis, rowsLast] = await Promise.all([
-        fetchRegionMonth(serviceKey, alert.regionCode, thisMonth),
-        fetchRegionMonth(serviceKey, alert.regionCode, lastMonth),
-      ]);
+      const [rowsThis, rowsLast] = await regionRows(alert.regionCode);
       const rows = [...rowsThis, ...rowsLast].filter((r) => r.apt === alert.apt && r.dong === alert.dong);
       if (rows.length === 0) {
         results.push({ id: alert.id, skipped: '최근 거래 없음' });
@@ -117,7 +129,8 @@ export async function checkUserAlerts(serviceKey, webhookUrl) {
       if (triggered && webhookUrl) {
         const dir = alert.direction === 'above' ? '이상' : '이하';
         const msg = `🔔 **${alert.apt}** (${alert.regionName} ${alert.dong}) 알림\n`
-          + `목표가 ${alert.targetPrice.toLocaleString()}만원 ${dir} 도달 — 최근 거래가 ${price.toLocaleString()}만원`;
+          + `목표가 ${fmtEok(alert.targetPrice)} ${dir} 도달 — 최근 거래가 ${fmtEok(price)}`
+          + ` (${latest.year}.${String(latest.month).padStart(2, '0')}.${String(latest.day).padStart(2, '0')}, ${Math.round(latest.area)}㎡ ${latest.floor}층)`;
         await postToDiscord(webhookUrl, msg);
         alert.firedAt = new Date().toISOString();
       }
