@@ -11,5 +11,8 @@ export async function GET(request) {
   const want = String(searchParams.get('date') || '').trim();
   const date = /^\d{8}$/.test(want) && index.includes(want) ? want : index[0];
   const report = date ? await kvGet(`daily:report:${date}`) : null;
-  return Response.json({ index, report }, { headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300' } });
+  // v257: 날짜별 추이 요약(크론이 daily:stats에 쌓는다)
+  let stats = [];
+  try { stats = (await kvGet('daily:stats')) || []; } catch (e) { stats = []; }
+  return Response.json({ index, report, stats }, { headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300' } });
 }
