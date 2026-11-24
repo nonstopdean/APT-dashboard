@@ -1704,6 +1704,9 @@ export default function Page() {
     return index;
   }, [dongCentroids]);
 
+  // v259: 이름이 안 맞아 동 중심점을 못 찾은 법정동의 위치({ 'code|동': {lat,lng} }) — /api/dong-centers에서 받는다
+  const [extraDongCenters, setExtraDongCenters] = useState({});
+  const askedDongCentersRef = useRef(new Set());
   const findDongCentroidIn = (regionCode, normalized) => {
     const exact = dongCentroids[`${regionCode}|${normalized}`];
     if (exact) return exact;
@@ -1733,6 +1736,9 @@ export default function Page() {
         if (hit) return hit;
       }
     }
+    // v259: 행정동 경계와 이름이 전혀 다른 법정동(김해 율하동 ↔ 장유1동)은 서버가 카카오 주소 검색으로 찾아 준 위치
+    const extra = extraDongCenters[`${code}|${String(dong || '').trim()}`];
+    if (extra) return extra;
     return null;
   };
 
@@ -1839,7 +1845,44 @@ export default function Page() {
     out.mergedByName = mergedByName; // 상태 카드에 "이름이 같아 합친 수"를 보여주기 위해 배열에 붙여둔다
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTx, allTxFiltered, fullComplexList, dongCentroids, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap]);
+  }, [allTx, allTxFiltered, fullComplexList, dongCentroids, extraDongCenters, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap]);
+
+  // v259: 주변 구 자동 표시분(browseData)에서 동 중심점을 못 찾은 법정동을 모아 서버에 위치를 묻는다(지역마다 한 번).
+  // 동 경계 자료가 그 시·도까지 받아진 뒤에만 묻는다 — 그 전엔 대부분이 "못 찾음"이라 쓸데없이 많이 묻게 된다.
+  useEffect(() => {
+    const keys = Object.keys(dongCentroids);
+    if (!keys.length) return;
+    const byCode = new Map();
+    Object.entries(browseData).forEach(([code, b]) => {
+      if (b.key !== browseDataKey) return;
+      const sidoLoaded = keys.some((k) => k.startsWith(`${code.slice(0, 2)}`));
+      if (!sidoLoaded) return;
+      const names = new Set([...(b.aptList || []).map((c) => c.dong), ...(b.trades || []).map((t) => t.dong)].filter(Boolean));
+      names.forEach((dong) => {
+        const k = `${code}|${String(dong).trim()}`;
+        if (askedDongCentersRef.current.has(k) || findDongCentroid(code, dong)) return;
+        askedDongCentersRef.current.add(k);
+        if (!byCode.has(code)) byCode.set(code, []);
+        byCode.get(code).push(String(dong).trim());
+      });
+    });
+    byCode.forEach((dongs, code) => {
+      for (let i = 0; i < dongs.length; i += 25) {
+        const part = dongs.slice(i, i + 25);
+        fetch(`/api/dong-centers?code=${code}&dongs=${encodeURIComponent(part.join(','))}`)
+          .then((r) => r.json())
+          .then((j) => {
+            const got = {};
+            Object.entries(j?.centers || {}).forEach(([dong, c]) => {
+              if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng)) got[`${code}|${dong}`] = { lat: c.lat, lng: c.lng };
+            });
+            if (Object.keys(got).length) setExtraDongCenters((prev) => ({ ...prev, ...got }));
+          })
+          .catch(() => { part.forEach((d) => askedDongCentersRef.current.delete(`${code}|${d}`)); });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browseData, browseDataKey, dongCentroids]);
 
   const mapComplexCoordByKey = useMemo(() => new Map(mapComplexes.map((c) => [c.key, c])), [mapComplexes]);
   // v207: 단지 목록 행의 가장 가까운 지하철역. 좌표는 핀과 같은 규칙(정확한 위치 > 동 중심점).
