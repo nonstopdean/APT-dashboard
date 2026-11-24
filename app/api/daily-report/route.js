@@ -14,5 +14,8 @@ export async function GET(request) {
   // v257: 날짜별 추이 요약(크론이 daily:stats에 쌓는다)
   let stats = [];
   try { stats = (await kvGet('daily:stats')) || []; } catch (e) { stats = []; }
-  return Response.json({ index, report, stats }, { headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300' } });
+  // v259: 마지막 아침 작업이 어디까지 갔는지(단계·걸린 시간만)
+  let lastrun = null;
+  try { lastrun = (await kvGet('daily:lastrun')) || null; } catch (e) { lastrun = null; }
+  return Response.json({ index, report, stats, lastrun }, { headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300' } });
 }
