@@ -1,7 +1,7 @@
 import { fetchRegionMonth, runPool } from '../../../lib/molit';
 import { REGION_GROUPS } from '../../../lib/regions';
 import {
-  kvReady, kvGet, kvMGet, kvMSet,
+  kvReady, kvGet, kvMGet, kvMSet, kvSet,
 } from '../../../lib/kv';
 import {
   leafRegions, countsOf, diffNew, updateMax, buildDailyReport, kstDate, monthsToFetch, monthsBefore, backfillTask, appendStat,
@@ -16,20 +16,48 @@ export const maxDuration = 60;
 //          daily:report:<YYYYMMDD> = 그날 리포트, daily:index = 리포트 날짜 목록(최근 90개).
 // 하루 한 번만 돈다(같은 날 다시 부르면 건너뜀). CRON_SECRET을 설정하면 그 값이 있는 요청(Vercel 크론)만 받는다.
 // v251: 남는 시간에 과거 3년 치를 조금씩 받아 최고가 기록(daily:max)을 채운다(daily:backfill = 진행 위치).
-//       처음 몇 주 신고가가 부풀려지던 것을 줄이려고. 시간이 모자라면 다음 날 이어서.
+// v259: 11/24 아침 리포트가 저장되지 않았다(채우기까지 끝낸 뒤 한꺼번에 저장하는 구조라 60초를 넘기면 전부 사라짐).
+//       순서를 바꿨다 — ① 그날 리포트·기준·목록을 먼저 저장 ② 남는 시간(시작 40초까지)에만 과거 채우기 ③ 최고가·진행 위치 저장.
+//       국토부 요청마다 시간 제한을 두고(늦으면 실패로 치고 넘어감), 단계 기록 daily:lastrun을 남긴다(daily-report API로 보임).
 const SEEN = 'daily:seen:';
 const MAX = 'daily:max:';
 const INDEX = 'daily:index';
 const BACKFILL = 'daily:backfill';
 const STATS = 'daily:stats'; // v257: [{ d, t, h, s: {서울,인천,경기}, f }] 최신이 앞
+const LASTRUN = 'daily:lastrun'; // v259: { date, stage, ms, ... } 마지막 실행이 어디까지 갔는지
 const BACK_MONTHS = 34; // 오늘 받는 2개월 + 34개월 = 약 3년
-const DEADLINE_MS = 35000; // 60초 한도 안에서 저장(최대 수 MB)할 시간을 넉넉히 남긴다
+const MAIN_TASK_MS = 20000; // 오늘 자료 한 건(지역·달) 최대 대기
+const MAIN_UNTIL_MS = 32000; // 오늘 자료 받기는 시작 후 이 시간 안에 끝낸다
+const BACK_TASK_MS = 8000; // 과거 채우기 한 건 최대 대기
+const BACKFILL_UNTIL_MS = 40000; // 시작 후 이 시간이 지나면 과거 채우기를 새로 시작하지 않는다
 
 const chunks = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
+// 시간 제한: 늦으면 { error: 'timeout' }으로 끝낸다(원래 요청은 버려진다)
+const withTimeout = (fn, ms) => () => Promise.race([
+  Promise.resolve().then(fn),
+  new Promise((resolve) => { setTimeout(() => resolve({ error: 'timeout' }), ms); }),
+]);
+// 저장소 한 번 요청이 1MB를 넘지 않게 크기로 묶어 저장
+async function writeGrouped(writes) {
+  let group = []; let bytes = 0;
+  for (const w of writes) {
+    const size = JSON.stringify(w[1]).length * 2; // 한글이 섞여 대략 2배로 잡는다
+    if (group.length && bytes + size > 700000) {
+      // eslint-disable-next-line no-await-in-loop
+      await kvMSet(group);
+      group = []; bytes = 0;
+    }
+    group.push(w); bytes += size;
+  }
+  if (group.length) await kvMSet(group);
+}
 
 export async function GET(request) {
-  const secret = (process.env.CRON_SECRET || '').trim();
-  const authed = Boolean(secret) && request.headers.get('authorization') === `Bearer ${secret}`;
+  const rawSecret = process.env.CRON_SECRET || '';
+  const secret = rawSecret.trim();
+  const got = request.headers.get('authorization') || '';
+  // v259: 값 앞뒤에 공백이 섞여 저장됐어도 크론 요청을 받도록 원래 값·다듬은 값 둘 다 비교
+  const authed = Boolean(secret) && (got === `Bearer ${secret}` || got === `Bearer ${rawSecret}` || got.trim() === `Bearer ${secret}`);
   if (secret && !authed) return Response.json({ error: '인증 실패' }, { status: 401 });
   if (!kvReady()) return Response.json({ error: '저장소(KV)가 연결되지 않았어요.' }, { status: 500 });
   const serviceKey = (process.env.MOLIT_SERVICE_KEY || '').trim();
@@ -40,12 +68,22 @@ export async function GET(request) {
   const force = new URL(request.url).searchParams.get('force') === '1' && authed;
   const index = (await kvGet(INDEX)) || [];
   if (index.includes(date) && !force) return Response.json({ skipped: '오늘은 이미 저장했어요', date });
+  const mark = (stage, extra = {}) => kvSet(LASTRUN, { date, stage, ms: Date.now() - started, at: new Date().toISOString(), ...extra }).catch(() => {});
+  await mark('start');
 
+  // ① 오늘 자료
   const regions = leafRegions(REGION_GROUPS);
   const months = monthsToFetch();
   const tasks = [];
-  regions.forEach((r) => months.forEach((ym) => tasks.push(() => fetchRegionMonth(serviceKey, r.code, ym))));
+  // 오늘 자료는 시작 후 MAIN_UNTIL_MS 안에 끝낸다 — 그때까지 못 받은 지역은 실패로 치고(내일 다시) 저장으로 넘어간다
+  const mainTask = (code, ym) => () => {
+    const left = MAIN_UNTIL_MS - (Date.now() - started);
+    if (left < 1000) return Promise.resolve({ error: 'deadline' });
+    return withTimeout(() => fetchRegionMonth(serviceKey, code, ym), Math.min(MAIN_TASK_MS, left))();
+  };
+  regions.forEach((r) => months.forEach((ym) => tasks.push(mainTask(r.code, ym))));
   const results = await runPool(tasks, 8); // 국토부 초당 요청 한도 때문에 8개씩
+  await mark('fetched', { failedTasks: results.filter((x) => !Array.isArray(x)).length });
 
   // 저장값이 커질 수 있어 10개씩 나눠 읽는다
   const prevSeen = {};
@@ -78,62 +116,68 @@ export async function GET(request) {
     updateMax(maxMaps[r.code], trades);
   });
 
-  // 신고가 판단은 위 maxBefore(오늘 채우기 전 기록)로 이미 끝났다. 이제 남는 시간에 과거를 채운다.
   const bfPrev = (await kvGet(BACKFILL)) || null;
   const baseYm = bfPrev?.baseYm || monthsBefore(months[0], 1)[0]; // 처음 정한 기준 달에서 거꾸로(달이 바뀌어도 순서가 밀리지 않게)
   const backMonths = [baseYm, ...monthsBefore(baseYm, BACK_MONTHS - 1)];
   const bfTotal = regions.length * backMonths.length;
   let bfDone = bfPrev?.done || 0;
+
+  const report = buildDailyReport({ date, perRegion, months, failed, baseline });
+  report.ranAt = new Date().toISOString();
+  report.regions = regions.length;
+  report.backfill = { baseYm, done: bfDone, total: bfTotal, reachedYm: bfPrev?.reachedYm || null, error: '', at: date };
+  let stats = [];
+  try { stats = (await kvGet(STATS)) || []; } catch (e) { stats = []; }
+  const nextIndex = [date, ...index.filter((d) => d !== date)].slice(0, 90);
+
+  // ② 그날 결과를 먼저 저장(최고가는 오늘 거래까지 반영한 것). 목록(index)은 맨 마지막에.
+  regions.forEach((r) => writes.push([`${MAX}${r.code}`, maxMaps[r.code]]));
+  writes.push([`daily:report:${date}`, report]);
+  writes.push([STATS, appendStat(stats, report)]);
+  writes.push([INDEX, nextIndex]);
+  await writeGrouped(writes);
+  await mark('saved', { total: report.total, failed: failed.length });
+
+  // ③ 남는 시간에 과거 채우기 — 신고가 판단은 위에서 maxBefore로 이미 끝났다.
   let bfError = '';
+  const touched = new Set();
   try {
-    while (bfDone < bfTotal && Date.now() - started < DEADLINE_MS) {
+    while (bfDone < bfTotal && Date.now() - started < BACKFILL_UNTIL_MS) {
       const ids = [];
-      for (let k = 0; k < 16 && bfDone + k < bfTotal; k += 1) ids.push(bfDone + k);
+      for (let k = 0; k < 8 && bfDone + k < bfTotal; k += 1) ids.push(bfDone + k);
       // eslint-disable-next-line no-await-in-loop
       const rs = await runPool(ids.map((i) => {
         const { regionIdx, ym } = backfillTask(i, regions.length, backMonths);
-        return () => fetchRegionMonth(serviceKey, regions[regionIdx].code, ym);
+        const left = 50000 - (Date.now() - started); // 채우기 요청도 시작 후 50초를 넘기지 않게
+        return withTimeout(() => fetchRegionMonth(serviceKey, regions[regionIdx].code, ym), Math.max(500, Math.min(BACK_TASK_MS, left)));
       }), 8);
       let ok = 0;
       for (let k = 0; k < rs.length; k += 1) {
         if (!Array.isArray(rs[k])) break; // 실패한 자리에서 멈추고 다음 날 그 자리부터
-        updateMax(maxMaps[regions[backfillTask(ids[k], regions.length, backMonths).regionIdx].code], rs[k]);
+        const code = regions[backfillTask(ids[k], regions.length, backMonths).regionIdx].code;
+        updateMax(maxMaps[code], rs[k]);
+        touched.add(code);
         ok += 1;
       }
       bfDone += ok;
-      if (ok < rs.length) { bfError = '국토부 응답 오류로 멈춤'; break; }
+      if (ok < rs.length) { bfError = '국토부 응답 오류·지연으로 멈춤'; break; }
     }
   } catch (e) {
     bfError = '과거 채우기 중 오류';
   }
   const lastDone = bfDone > 0 ? backfillTask(bfDone - 1, regions.length, backMonths).ym : null;
   const backfill = { baseYm, done: bfDone, total: bfTotal, reachedYm: lastDone, error: bfError, at: date };
-
-  regions.forEach((r) => writes.push([`${MAX}${r.code}`, maxMaps[r.code]]));
-  const report = buildDailyReport({ date, perRegion, months, failed, baseline });
-  report.ranAt = new Date().toISOString();
-  report.regions = regions.length;
   report.backfill = backfill;
-  const nextIndex = [date, ...index.filter((d) => d !== date)].slice(0, 90);
-  writes.push([`daily:report:${date}`, report]);
-  writes.push([BACKFILL, backfill]);
-  // v257: 날짜별 추이 요약(작아서 한 번에 읽힌다). 읽기 실패해도 본 작업은 계속.
-  let stats = [];
-  try { stats = (await kvGet(STATS)) || []; } catch (e) { stats = []; }
-  writes.push([STATS, appendStat(stats, report)]);
-  writes.push([INDEX, nextIndex]); // 목록은 맨 마지막에(앞 저장이 실패하면 오늘을 "했음"으로 남기지 않게)
-  // 저장소 한 번 요청이 1MB를 넘지 않게 크기로 묶어 저장(최고가 기록은 3년 치가 쌓이면 지역당 수백 KB까지 커진다)
-  let group = []; let bytes = 0;
-  for (const w of writes) {
-    const size = JSON.stringify(w[1]).length * 2; // 한글이 섞여 대략 2배로 잡는다
-    if (group.length && bytes + size > 700000) {
-      // eslint-disable-next-line no-await-in-loop
-      await kvMSet(group);
-      group = []; bytes = 0;
-    }
-    group.push(w); bytes += size;
+
+  const late = [...touched].map((code) => [`${MAX}${code}`, maxMaps[code]]);
+  late.push([BACKFILL, backfill]);
+  late.push([`daily:report:${date}`, report]);
+  try {
+    await writeGrouped(late);
+    await mark('done', { total: report.total, backfillDone: bfDone });
+  } catch (e) {
+    await mark('backfill-save-failed', { total: report.total });
   }
-  if (group.length) await kvMSet(group);
 
   return Response.json({
     date, months, regions: regions.length, total: report.total, highs: report.highCount,
