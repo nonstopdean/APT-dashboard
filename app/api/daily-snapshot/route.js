@@ -26,8 +26,12 @@ const BACKFILL = 'daily:backfill';
 const STATS = 'daily:stats'; // v257: [{ d, t, h, s: {서울,인천,경기}, f }] 최신이 앞
 const LASTRUN = 'daily:lastrun'; // v259: { date, stage, ms, ... } 마지막 실행이 어디까지 갔는지
 const BACK_MONTHS = 34; // 오늘 받는 2개월 + 34개월 = 약 3년
+const FAILED_LAST = 'daily:failedlast'; // v260: 지난번에 못 받은 지역(다음 실행 때 맨 먼저 받는다)
 const MAIN_TASK_MS = 20000; // 오늘 자료 한 건(지역·달) 최대 대기
-const MAIN_UNTIL_MS = 32000; // 오늘 자료 받기는 시작 후 이 시간 안에 끝낸다
+// v260: 11/24 실행에서 32초 안에 서울·인천만 받고 경기 46곳이 빠졌다(8개씩, 한 번에 약 3.5초) → 12개씩, 46초까지.
+//       과거 채우기는 오늘 자료가 40초 전에 끝났을 때만 돈다.
+const MAIN_UNTIL_MS = 46000; // 오늘 자료 받기는 시작 후 이 시간 안에 끝낸다
+const MAIN_POOL = 12;
 const BACK_TASK_MS = 8000; // 과거 채우기 한 건 최대 대기
 const BACKFILL_UNTIL_MS = 40000; // 시작 후 이 시간이 지나면 과거 채우기를 새로 시작하지 않는다
 
@@ -74,6 +78,11 @@ export async function GET(request) {
   // ① 오늘 자료
   const regions = leafRegions(REGION_GROUPS);
   const months = monthsToFetch();
+  // 지난번에 못 받은 지역을 맨 앞에(시간이 모자라도 같은 지역만 계속 빠지지 않게)
+  let failedLast = [];
+  try { failedLast = (await kvGet(FAILED_LAST)) || []; } catch (e) { failedLast = []; }
+  const firstSet = new Set(Array.isArray(failedLast) ? failedLast : []);
+  const ordered = [...regions.filter((r) => firstSet.has(r.code)), ...regions.filter((r) => !firstSet.has(r.code))];
   const tasks = [];
   // 오늘 자료는 시작 후 MAIN_UNTIL_MS 안에 끝낸다 — 그때까지 못 받은 지역은 실패로 치고(내일 다시) 저장으로 넘어간다
   const mainTask = (code, ym) => () => {
@@ -81,8 +90,8 @@ export async function GET(request) {
     if (left < 1000) return Promise.resolve({ error: 'deadline' });
     return withTimeout(() => fetchRegionMonth(serviceKey, code, ym), Math.min(MAIN_TASK_MS, left))();
   };
-  regions.forEach((r) => months.forEach((ym) => tasks.push(mainTask(r.code, ym))));
-  const results = await runPool(tasks, 8); // 국토부 초당 요청 한도 때문에 8개씩
+  ordered.forEach((r) => months.forEach((ym) => tasks.push(mainTask(r.code, ym))));
+  const results = await runPool(tasks, MAIN_POOL);
   await mark('fetched', { failedTasks: results.filter((x) => !Array.isArray(x)).length });
 
   // 저장값이 커질 수 있어 10개씩 나눠 읽는다
@@ -100,7 +109,7 @@ export async function GET(request) {
   const baseline = [];
   const writes = [];
   const maxMaps = {};
-  regions.forEach((r, ri) => {
+  ordered.forEach((r, ri) => {
     const before = prevMax[`${MAX}${r.code}`] || null;
     maxMaps[r.code] = before ? { ...before } : {};
     const chunk = results.slice(ri * months.length, (ri + 1) * months.length);
@@ -134,6 +143,7 @@ export async function GET(request) {
   regions.forEach((r) => writes.push([`${MAX}${r.code}`, maxMaps[r.code]]));
   writes.push([`daily:report:${date}`, report]);
   writes.push([STATS, appendStat(stats, report)]);
+  writes.push([FAILED_LAST, failed]);
   writes.push([INDEX, nextIndex]);
   await writeGrouped(writes);
   await mark('saved', { total: report.total, failed: failed.length });
