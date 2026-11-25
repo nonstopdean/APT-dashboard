@@ -20,6 +20,14 @@ const tag = { display: 'inline-block', fontSize: 10, fontWeight: 700, color: '#f
 const fmtDate = (d) => (d ? `${Number(String(d).slice(4, 6))}월 ${Number(String(d).slice(6, 8))}일` : '-');
 const fmtD8 = (n) => { const s = String(n || ''); return s.length === 8 ? `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}` : '-'; };
 const ymdOf = (t) => `${t.y}.${String(t.m).padStart(2, '0')}.${String(t.d).padStart(2, '0')}`;
+// v263: 지역 필터 — 지역코드 앞 두 자리로 시·도(11 서울, 28 인천, 41 경기)
+const SIDO_PREFIX = { 서울: '11', 인천: '28', 경기: '41' };
+export const passDailyFilter = (code, sido, region) => {
+  const c = String(code || '');
+  if (region) return c === region;
+  if (sido && SIDO_PREFIX[sido]) return c.startsWith(SIDO_PREFIX[sido]);
+  return true;
+};
 
 function Row({ t, rank, high, onOpen, styles }) {
   return (
@@ -47,6 +55,8 @@ export default function DailyReport({ setSelectedApt, styles }) {
   const [date, setDate] = useState('');
   const [data, setData] = useState({ loading: true, index: [], report: null, stats: [], error: '' });
   const [highLimit, setHighLimit] = useState(15);
+  const [sidoF, setSidoF] = useState(''); // v263: '' | 서울 | 인천 | 경기
+  const [regionF, setRegionF] = useState(''); // v263: 지역코드(지역 표에서 누름)
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +72,16 @@ export default function DailyReport({ setSelectedApt, styles }) {
   const open = (t) => () => setSelectedApt({ apt: t.a, dong: t.g, regionCode: t.c });
   const highSet = new Set((r?.highs || []).map((h) => `${h.c}|${h.a}|${h.ar}|${h.f}|${h.y}${h.m}${h.d}|${h.p}`));
   const isHigh = (t) => highSet.has(`${t.c}|${t.a}|${t.ar}|${t.f}|${t.y}${t.m}${t.d}|${t.p}`);
-  const tops = r ? r.trades.slice(0, 20) : [];
+  const pass = (t) => passDailyFilter(t.c, sidoF, regionF);
+  const fHighs = r ? (r.highs || []).filter(pass) : [];
+  const fTrades = r ? (r.trades || []).filter(pass) : [];
+  const fRegions = r ? (r.byRegion || []).filter((g) => passDailyFilter(g.code, sidoF, '')) : [];
+  const filtered = Boolean(sidoF || regionF);
+  const fTotal = regionF ? (r?.byRegion || []).find((g) => g.code === regionF)?.n || 0
+    : (sidoF ? (r?.bySido?.[sidoF] || 0) : (r?.total || 0));
+  const fHighCount = regionF ? (r?.byRegion || []).find((g) => g.code === regionF)?.h || 0
+    : (sidoF ? fRegions.reduce((s, g) => s + (g.h || 0), 0) : (r?.highCount || 0));
+  const tops = fTrades.slice(0, 20);
   const topHigh = r ? [...(r.byRegion || [])].filter((g) => g.h > 0).sort((a, b) => b.h - a.h)[0] : null;
   // v257: 날짜별 추이(최근 30일, 오래된 날부터)
   const series = [...(data.stats || [])].slice(0, 30).reverse().map((s) => ({
@@ -142,17 +161,38 @@ export default function DailyReport({ setSelectedApt, styles }) {
 
       {r && r.total > 0 && (
         <>
+          {/* v263: 지역 필터 — 시·도 알약 + 지역 표에서 구·시를 누르면 그 지역만 */}
+          <div style={{ ...styles.card, padding: '10px 14px' }} className="ui-card" data-daily-filter="1">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: PALETTE.textSecondary, marginRight: 2 }}>지역</span>
+              {['', '서울', '인천', '경기'].map((s) => (
+                <button key={s || 'all'} type="button" data-daily-sido={s || 'all'}
+                  onClick={() => { setSidoF(s); setRegionF(''); setHighLimit(15); }}
+                  style={pill(!regionF && sidoF === s)}>
+                  {s || '수도권 전체'}
+                </button>
+              ))}
+              {regionF && (
+                <button type="button" onClick={() => { setRegionF(''); setHighLimit(15); }} style={pill(true)} data-daily-region-chip="1">
+                  {labelFor(regionF)} ✕
+                </button>
+              )}
+              <span style={{ fontSize: 11.5, color: PALETTE.textMuted, marginLeft: 'auto' }}>
+                {filtered ? `신고 ${fTotal.toLocaleString()}건 · 신고가 ${fHighCount}건` : '아래 지역 표에서 구·시를 누르면 그 지역만 봐요'}
+              </span>
+            </div>
+          </div>
           <div style={styles.card} className="ui-card">
-            <h2 style={styles.sectionTitle}>🔺 신고가 {r.highCount}건</h2>
-            {r.highs.length === 0 ? <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>이날 신고가는 없어요.</p> : (
+            <h2 style={styles.sectionTitle}>🔺 신고가 {filtered ? fHighCount : r.highCount}건{filtered && <span style={{ fontSize: 12, fontWeight: 600, color: PALETTE.textMuted }}> · {regionF ? labelFor(regionF) : sidoF}</span>}</h2>
+            {fHighs.length === 0 ? <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>{filtered ? '이 지역엔 이날 신고가가 없어요.' : '이날 신고가는 없어요.'}</p> : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }} data-daily-table="highs">
                   <thead><tr>{['단지', '전용·층', '거래가'].map((h) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
-                  <tbody>{r.highs.slice(0, highLimit).map((t, i) => <Row key={i} t={t} high onOpen={open(t)} styles={styles} />)}</tbody>
+                  <tbody>{fHighs.slice(0, highLimit).map((t, i) => <Row key={i} t={t} high onOpen={open(t)} styles={styles} />)}</tbody>
                 </table>
-                {r.highs.length > highLimit && (
+                {fHighs.length > highLimit && (
                   <button type="button" onClick={() => setHighLimit((n) => n + 20)} style={{ ...pill(false), width: '100%', marginTop: 8, borderRadius: 10, padding: '9px 0' }}>
-                    더 보기 ({r.highs.length - highLimit}건 남음)
+                    더 보기 ({fHighs.length - highLimit}건 남음)
                   </button>
                 )}
               </div>
@@ -161,6 +201,7 @@ export default function DailyReport({ setSelectedApt, styles }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
             <div style={styles.card} className="ui-card">
               <h2 style={styles.sectionTitle}>💰 가격순 신고 거래</h2>
+              {tops.length === 0 && <p style={{ fontSize: 12.5, color: PALETTE.textMuted, margin: 0 }}>이 지역엔 이날 새로 공개된 거래가 없어요.</p>}
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }} data-daily-table="tops">
                   <thead><tr>{['', '단지', '전용·층', '거래가'].map((h) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
@@ -173,9 +214,10 @@ export default function DailyReport({ setSelectedApt, styles }) {
               <table style={{ width: '100%', borderCollapse: 'collapse' }} data-daily-table="regions">
                 <thead><tr>{['지역', '신고', '신고가'].map((h) => <th key={h} style={styles.th}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {(r.byRegion || []).slice(0, 25).map((g) => (
-                    <tr key={g.code}>
-                      <td style={{ ...styles.td, fontWeight: 700 }}>{labelFor(g.code)}</td>
+                  {fRegions.slice(0, sidoF ? 60 : 25).map((g) => (
+                    <tr key={g.code} data-daily-region={g.code} style={{ cursor: 'pointer', background: regionF === g.code ? PALETTE.accentSoft : undefined }}
+                      onClick={() => { setRegionF(regionF === g.code ? '' : g.code); setHighLimit(15); }}>
+                      <td style={{ ...styles.td, fontWeight: 700, color: regionF === g.code ? PALETTE.accentDark : undefined }}>{labelFor(g.code)}</td>
                       <td style={styles.td}>{g.n}건</td>
                       <td style={{ ...styles.td, color: g.h ? PALETTE.up : PALETTE.textMuted }}>{g.h}건</td>
                     </tr>
