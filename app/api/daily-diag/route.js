@@ -1,5 +1,6 @@
 import { fetchRtms, rtmsErrorOf } from '../../../lib/molit';
-import { monthsToFetch } from '../../../lib/daily-report';
+import { monthsToFetch, leafRegions } from '../../../lib/daily-report';
+import { REGION_GROUPS } from '../../../lib/regions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,12 +18,17 @@ const errCode = (msg) => {
   return up ? up[0].trim().slice(0, 60) : '오류 응답';
 };
 
-export async function GET() {
+// v262: ?burst=1 이면 경기 24곳을 한꺼번에(크론처럼 몰아서) 물어 초당 요청 한도에 걸리는지 본다.
+export async function GET(request) {
   const serviceKey = (process.env.MOLIT_SERVICE_KEY || '').trim();
   if (!serviceKey) return Response.json({ error: '서버 설정이 필요해요.' }, { status: 500 });
+  const burst = new URL(request.url).searchParams.get('burst') === '1';
   const ym = monthsToFetch().slice(-2)[0];
   const started = Date.now();
-  const results = await Promise.all(SAMPLE.map(async (code) => {
+  const codes = burst
+    ? leafRegions(REGION_GROUPS).filter((r) => r.sido === '경기').slice(0, 24).map((r) => r.code)
+    : SAMPLE;
+  const results = await Promise.all(codes.map(async (code) => {
     const t0 = Date.now();
     const url = `https://apis.data.go.kr/1613000/RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade`
       + `?serviceKey=${encodeURIComponent(serviceKey)}&LAWD_CD=${code}&DEAL_YMD=${ym}&numOfRows=1000&pageNo=1`;
@@ -39,7 +45,9 @@ export async function GET() {
       return { code, ms: Date.now() - t0, result: 'throw', errName: String(e?.name || 'Error').slice(0, 30) };
     }
   }));
-  return Response.json({ ym, ms: Date.now() - started, results }, {
+  const summary = {};
+  results.forEach((r) => { const k = r.errCode || r.result; summary[k] = (summary[k] || 0) + 1; });
+  return Response.json({ ym, burst, ms: Date.now() - started, summary, results }, {
     headers: { 'Cache-Control': 'public, s-maxage=120' },
   });
 }
