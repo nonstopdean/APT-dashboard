@@ -7,6 +7,10 @@
     {
       "path": "/api/daily-snapshot",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/daily-backfill",
+      "schedule": "0 18 * * *"
     }
   ]
 }
