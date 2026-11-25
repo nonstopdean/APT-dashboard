@@ -26,7 +26,7 @@ export async function GET(request) {
   const ym = monthsToFetch().slice(-2)[0];
   const started = Date.now();
   const codes = burst
-    ? leafRegions(REGION_GROUPS).filter((r) => r.sido === '경기').slice(0, 24).map((r) => r.code)
+    ? leafRegions(REGION_GROUPS).filter((r) => r.code.startsWith('41')).slice(0, 24).map((r) => r.code)
     : SAMPLE;
   const results = await Promise.all(codes.map(async (code) => {
     const t0 = Date.now();
