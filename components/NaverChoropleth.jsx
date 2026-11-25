@@ -55,8 +55,9 @@ function fmtPinPrice(v) {
   return v >= 10000 ? `${(v / 10000).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(v).toLocaleString()}만`;
 }
 // 핀 이름(v227): 동별 대장 아파트(c.leader)는 앞에 👑. HTML에 들어가므로 특수문자는 뺀다.
+// v264: 최근 일일 신고 리포트에서 신고가가 나온 단지(c.newHigh)는 앞에 🔺.
 function pinTitleOf(c) {
-  return `${c.leader ? '👑 ' : ''}${String(c.apt || '').replace(/[<>&"']/g, '')}`;
+  return `${c.newHigh ? '🔺' : ''}${c.leader ? '👑 ' : (c.newHigh ? ' ' : '')}${String(c.apt || '').replace(/[<>&"']/g, '')}`;
 }
 function pinPriceTextOf(c, mode) {
   if (mode === 'unit') return Number.isFinite(c.latestPyeong) ? `${Math.round(c.latestPyeong).toLocaleString()}만/평` : '';
@@ -629,7 +630,8 @@ export default function NaverChoropleth({
 
     const complexByKey = new Map((complexesRef.current || []).map((c) => [c.key, c]));
     const pinnedSet = pinnedKeysRef.current;
-    const rank = (m) => (pinnedSet.has(m.key) ? 8 : 0) + (complexByKey.get(m.key)?.leader ? 4 : 0) + (m.priceText ? 2 : 0);
+    const rank = (m) => (pinnedSet.has(m.key) ? 8 : 0) + (complexByKey.get(m.key)?.leader ? 4 : 0)
+      + (complexByKey.get(m.key)?.newHigh ? 3 : 0) + (m.priceText ? 2 : 0); // v264: 최근 신고가 단지도 이름표 자리를 먼저
     const priceOf = (m) => complexByKey.get(m.key)?.latestPrice ?? 0;
     const cmp = (a, b) => rank(b) - rank(a) || priceOf(b) - priceOf(a) || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
 
@@ -1194,7 +1196,7 @@ export default function NaverChoropleth({
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {pinnedKeysRef.current.has(c.key) ? '★ ' : ''}{c.leader ? '👑 ' : ''}{c.apt}
+                    {pinnedKeysRef.current.has(c.key) ? '★ ' : ''}{c.newHigh ? '🔺 ' : ''}{c.leader ? '👑 ' : ''}{c.apt}
                   </div>
                   <div style={{ fontSize: 10.5, color: '#9C9B96' }}>{c.dong}{c.latestPrice == null ? ' · 이 기간 거래 없음' : ''}</div>
                 </div>
