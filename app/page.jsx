@@ -1751,6 +1751,29 @@ export default function Page() {
     [allTx, browseTx, dealType, propertyType],
   );
 
+  // v264: 최근 일일 신고 리포트(수도권)의 신고가 단지 — 지도 핀·목록에 🔺. 지도 탭을 열 때 한 번 받는다(리포트 API는 CDN 10분 저장).
+  // 키는 지도 단지 키와 같은 "지역코드|동|단지명"(리포트도 실거래 원본 이름을 그대로 쓴다). 같은 단지 여러 건이면 가장 비싼 것.
+  const [dailyHighs, setDailyHighs] = useState(null); // { date, map: Map(key → { p, pm, ar }) }
+  useEffect(() => {
+    if (viewMode !== 'map' || dailyHighs) return undefined;
+    let cancelled = false;
+    fetch('/api/daily-report')
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        const map = new Map();
+        (j?.report?.highs || []).forEach((h) => {
+          const key = `${h.c}|${h.g}|${h.a}`;
+          const prev = map.get(key);
+          if (!prev || h.p > prev.p) map.set(key, { p: h.p, pm: h.pm, ar: h.ar });
+        });
+        setDailyHighs({ date: j?.report?.date || '', map });
+      })
+      .catch(() => { if (!cancelled) setDailyHighs({ date: '', map: new Map() }); });
+    return () => { cancelled = true; };
+  }, [viewMode, dailyHighs]);
+  const dailyHighMap = dailyHighs?.map;
+
   const mapComplexes = useMemo(() => {
     const seen = new Set();
     const list = [];
@@ -1784,7 +1807,7 @@ export default function Page() {
       seen.add(key);
       const coord = findDongCentroid(regionCode, dong);
       const latest = latestByKey.get(key);
-      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, jibun: jibunByKey.get(key), latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price, leader: leaderMap.has(key) });
+      list.push({ key, apt, dong, regionCode, regionName: regionLabel(regionCode), lat: coord?.lat, lng: coord?.lng, jibun: jibunByKey.get(key), latestPrice: latest?.price, latestPyeong: latest?.pyeong, latestArea: latest?.area, latest34Price: latest34ByKey.get(key)?.price, leader: leaderMap.has(key), newHigh: (!isRent && dailyHighMap?.get(key)) || null });
     };
     // 실거래가 있는 단지를 먼저 채우고, 남는 자리만큼만 나머지 단지로 채운다.
     // 좌표가 이미(동 중심점으로) 확보된 단지는 카카오 검색이 필요 없어 훨씬 가볍다.
@@ -1840,12 +1863,12 @@ export default function Page() {
       if (!coord) return;
       seen.add(key);
       const l = browseLatest.get(key);
-      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, jibun: jibunByKey.get(key), latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true, leader: leaderMap.has(key) });
+      out.push({ key, apt: n.apt, dong: n.dong, regionCode: n.regionCode, regionName: regionLabel(n.regionCode), lat: coord.lat, lng: coord.lng, jibun: jibunByKey.get(key), latestPrice: l?.price, latestPyeong: l?.pyeong, latestArea: l?.area, latest34Price: browseLatest34.get(key)?.price, browse: true, leader: leaderMap.has(key), newHigh: (!isRent && dailyHighMap?.get(key)) || null });
     });
     out.mergedByName = mergedByName; // 상태 카드에 "이름이 같아 합친 수"를 보여주기 위해 배열에 붙여둔다
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTx, allTxFiltered, fullComplexList, dongCentroids, extraDongCenters, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap]);
+  }, [allTx, allTxFiltered, fullComplexList, dongCentroids, extraDongCenters, dongFilter, isRent, browseTx, browseData, browseDataKey, selected, leaderMap, dailyHighMap]);
 
   // v259: 주변 구 자동 표시분(browseData)에서 동 중심점을 못 찾은 법정동을 모아 서버에 위치를 묻는다(지역마다 한 번).
   // 동 경계 자료가 그 시·도까지 받아진 뒤에만 묻는다 — 그 전엔 대부분이 "못 찾음"이라 쓸데없이 많이 묻게 된다.
