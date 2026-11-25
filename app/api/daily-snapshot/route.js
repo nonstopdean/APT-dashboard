@@ -88,11 +88,20 @@ export async function GET(request) {
   const mainTask = (code, ym) => () => {
     const left = MAIN_UNTIL_MS - (Date.now() - started);
     if (left < 1000) return Promise.resolve({ error: 'deadline' });
-    return withTimeout(() => fetchRegionMonth(serviceKey, code, ym), Math.min(MAIN_TASK_MS, left))();
+    // v261: 저장본 없이 새로 받고(fresh — 저장본은 만료돼도 옛 값을 먼저 줘서 11/25 서울·인천 0건), 국토부 오류 응답은 실패로(strict)
+    return withTimeout(() => fetchRegionMonth(serviceKey, code, ym, { fresh: true, strict: true }), Math.min(MAIN_TASK_MS, left))();
   };
   ordered.forEach((r) => months.forEach((ym) => tasks.push(mainTask(r.code, ym))));
   const results = await runPool(tasks, MAIN_POOL);
-  await mark('fetched', { failedTasks: results.filter((x) => !Array.isArray(x)).length });
+  // v261: 실패 이유를 종류별로 센다(timeout·deadline·RTMS_ERROR·기타) — 원문은 남기지 않는다
+  const why = {};
+  results.forEach((x) => {
+    if (Array.isArray(x)) return;
+    const k = x?.error === 'timeout' || x?.error === 'deadline' ? x.error
+      : (x?.error?.message === 'RTMS_ERROR' ? 'rtms' : 'other');
+    why[k] = (why[k] || 0) + 1;
+  });
+  await mark('fetched', { failedTasks: results.filter((x) => !Array.isArray(x)).length, why });
 
   // 저장값이 커질 수 있어 10개씩 나눠 읽는다
   const prevSeen = {};
@@ -146,7 +155,7 @@ export async function GET(request) {
   writes.push([FAILED_LAST, failed]);
   writes.push([INDEX, nextIndex]);
   await writeGrouped(writes);
-  await mark('saved', { total: report.total, failed: failed.length });
+  await mark('saved', { total: report.total, failed: failed.length, why });
 
   // ③ 남는 시간에 과거 채우기 — 신고가 판단은 위에서 maxBefore로 이미 끝났다.
   let bfError = '';
@@ -159,7 +168,7 @@ export async function GET(request) {
       const rs = await runPool(ids.map((i) => {
         const { regionIdx, ym } = backfillTask(i, regions.length, backMonths);
         const left = 50000 - (Date.now() - started); // 채우기 요청도 시작 후 50초를 넘기지 않게
-        return withTimeout(() => fetchRegionMonth(serviceKey, regions[regionIdx].code, ym), Math.max(500, Math.min(BACK_TASK_MS, left)));
+        return withTimeout(() => fetchRegionMonth(serviceKey, regions[regionIdx].code, ym, { strict: true }), Math.max(500, Math.min(BACK_TASK_MS, left)));
       }), 8);
       let ok = 0;
       for (let k = 0; k < rs.length; k += 1) {
@@ -184,7 +193,7 @@ export async function GET(request) {
   late.push([`daily:report:${date}`, report]);
   try {
     await writeGrouped(late);
-    await mark('done', { total: report.total, backfillDone: bfDone });
+    await mark('done', { total: report.total, failed: failed.length, why, backfillDone: bfDone });
   } catch (e) {
     await mark('backfill-save-failed', { total: report.total });
   }
