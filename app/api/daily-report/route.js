@@ -17,5 +17,9 @@ export async function GET(request) {
   // v259: 마지막 아침 작업이 어디까지 갔는지(단계·걸린 시간만)
   let lastrun = null;
   try { lastrun = (await kvGet('daily:lastrun')) || null; } catch (e) { lastrun = null; }
-  return Response.json({ index, report, stats, lastrun }, { headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300' } });
+  // v262: 새벽 채우기 작업 기록과 지금 진행 위치(리포트에 담긴 값은 그날 아침 기준이라 늦다)
+  let bflastrun = null;
+  let backfill = null;
+  try { [bflastrun, backfill] = await Promise.all([kvGet('daily:bflastrun'), kvGet('daily:backfill')]); } catch (e) { /* 없어도 리포트는 준다 */ }
+  return Response.json({ index, report, stats, lastrun, bflastrun: bflastrun || null, backfill: backfill || null }, { headers: { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300' } });
 }
