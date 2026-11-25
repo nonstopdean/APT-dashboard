@@ -53,7 +53,7 @@ export default function DailyReport({ setSelectedApt, styles }) {
     setData((d) => ({ ...d, loading: true }));
     fetch(`/api/daily-report${date ? `?date=${date}` : ''}`)
       .then((r) => r.json())
-      .then((j) => { if (!cancelled) setData({ loading: false, index: j.index || [], report: j.report || null, stats: Array.isArray(j.stats) ? j.stats : [], error: j.error || '' }); })
+      .then((j) => { if (!cancelled) setData({ loading: false, index: j.index || [], report: j.report || null, stats: Array.isArray(j.stats) ? j.stats : [], backfillNow: j.backfill || null, error: j.error || '' }); })
       .catch(() => { if (!cancelled) setData({ loading: false, index: [], report: null, stats: [], error: '불러오지 못했어요.' }); });
     return () => { cancelled = true; };
   }, [date]);
@@ -106,6 +106,9 @@ export default function DailyReport({ setSelectedApt, styles }) {
               {r.backfill && r.backfill.total > 0 && r.backfill.done < r.backfill.total
                 ? ` 신고가 비교용 최고가 기록은 지난 3년 치를 매일 조금씩 채우는 중이에요(${Math.round((r.backfill.done / r.backfill.total) * 100)}%${r.backfill.reachedYm ? `, ${r.backfill.reachedYm.slice(0, 4)}.${r.backfill.reachedYm.slice(4)}까지` : ''}). 다 채우기 전엔 신고가가 실제보다 많이 잡힐 수 있어요.`
                 : r.backfill && r.backfill.total > 0 ? ' 신고가는 지난 약 3년 치 최고가와 비교했어요.' : ' 신고가는 이 기능을 시작한 뒤 쌓은 최고가 기준이라 처음 몇 주는 실제보다 많이 잡힐 수 있어요.'}
+              {/* v262: 새벽 채우기 작업이 그 뒤로 더 채웠으면 지금 진행률도 */}
+              {data.backfillNow && r.backfill && data.backfillNow.total > 0 && data.backfillNow.done > r.backfill.done
+                && ` (지금은 ${Math.min(100, Math.round((data.backfillNow.done / data.backfillNow.total) * 100))}%까지 채웠어요. 다음 리포트부터 반영돼요.)`}
               {r.failed?.length > 0 && ` 오늘 ${r.failed.length}개 지역은 국토부 응답 오류로 빠졌어요(내일 함께 반영).`}
             </p>
           </>
