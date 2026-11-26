@@ -49,7 +49,7 @@ export default function MapTab({
   stationInfoOf, listStation = 'all', setListStation, listGeoTick = 0,
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
-  setSchoolWanted, setHhWanted, setPanelCover, onPickComplex, areaBubbles,
+  setSchoolWanted, setHhWanted, setPanelCover, onPickComplex, areaBubbles, dailyPill = null,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   // v222: 주소 끝에 ?map=kakao를 붙이면 네이버 키가 있어도 카카오 대체 지도로 본다(대체 지도 확인용).
@@ -576,6 +576,23 @@ export default function MapTab({
           onFocusMap={focusPinnedOnMap}
           onOpenCompareTab={setViewMode ? () => setViewMode('compare') : undefined}
         />
+
+        {/* v268: 밸류맵의 "OO동 신규 실거래" 알약처럼 — 지금 화면에 걸친 구·시의 최근 일일 신고(새로 공개된 거래) 수. 누르면 일일 신고 화면 */}
+        {dailyPill && dailyPill.n > 0 && (
+          <button type="button" data-daily-pill="1" onClick={dailyPill.onClick}
+            title="국토부에 새로 공개된(그날 신고된) 매매 거래예요. 누르면 수도권 일일 신고 화면으로 가요."
+            style={{
+              position: 'absolute', left: `calc(50% - ${selectedApt ? detailInset / 2 : 0}px)`, top: 66, transform: 'translateX(-50%)', zIndex: 19,
+              display: 'flex', alignItems: 'center', gap: 6, border: `1px solid ${PALETTE.border}`, borderRadius: 999,
+              padding: '7px 14px 7px 8px', background: 'rgba(255,255,255,0.97)', boxShadow: '0 4px 16px rgba(15,30,61,0.18)',
+              cursor: 'pointer', fontSize: 12, color: PALETTE.textPrimary, whiteSpace: 'nowrap', maxWidth: 'calc(100% - 28px)',
+            }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#fff', background: PALETTE.up, borderRadius: 999, padding: '3px 7px' }}>NEW</span>
+            <b>{dailyPill.label} 신규 실거래 {dailyPill.n.toLocaleString()}건</b>
+            {dailyPill.h > 0 && <span style={{ color: PALETTE.up, fontWeight: 700 }}>· 신고가 {dailyPill.h}건</span>}
+            <span style={{ color: PALETTE.textMuted, fontSize: 11 }}>({dailyPill.dateLabel}) ›</span>
+          </button>
+        )}
 
         {/* 지도 위 탐색 도구: 거래유형을 사이드바로 안 가고 바로 바꿀 수 있게 */}
         <div className="map-portal-toolbar" ref={topRowRef} style={{
