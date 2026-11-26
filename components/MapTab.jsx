@@ -16,6 +16,7 @@ import { SIGNALS, signalColor, signalLabel } from '../lib/market-signal';
 
 const PIN_PRICE_KEY = 'apt-dashboard-pin-price';
 const GAP_FILTER_KEY = 'apt-dashboard-gap-filters'; // v215
+const NO_VALUES = []; // v269: 시세 표시를 껐을 때 색칠 값(참조가 늘 같아야 지도가 다시 그리지 않는다)
 const PIN_PRICE_MODES = [['deal', '최근 거래'], ['p34', '34평'], ['unit', '평당가']];
 // v237: 거래 건수 비교에 쓰는 마지막 달(신고 기한이 끝난 달)을 "2026.09"처럼.
 const fmtCompleteYm = () => { const ym = lastCompleteYm(); return `${Math.floor(ym / 100)}.${String(ym % 100).padStart(2, '0')}`; };
@@ -50,6 +51,7 @@ export default function MapTab({
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
   setSchoolWanted, setHhWanted, setPanelCover, onPickComplex, areaBubbles, dailyPill = null,
+  marketLayerOn = true, toggleMarketLayer = null,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   // v222: 주소 끝에 ?map=kakao를 붙이면 네이버 키가 있어도 카카오 대체 지도로 본다(대체 지도 확인용).
@@ -443,12 +445,14 @@ export default function MapTab({
       return `rgb(${mix.join(',')})`;
     };
 
+    // v269: 시세 표시를 끄면(기본) 기본 "가격" 색칠은 그리지 않는다. 레이어 창에서 다른 색칠(가격변동·시장 신호 등)을 고르면 그건 보인다.
+    const showFill = marketLayerOn || mapColorMode !== 'price';
     return heroWrap(
       <>
         {process.env.NEXT_PUBLIC_NAVER_MAP_KEY_ID && !forceKakao ? (
           <NaverChoropleth
             features={seoulMapData.features}
-            values={seoulMapData.values}
+            values={showFill ? seoulMapData.values : NO_VALUES}
             colorFor={colorFor}
             valueFormat={mapColorMode === 'change' || mapColorMode === 'volchange' ? formatChange : mapColorMode === 'gap' ? fmtWon : mapColorMode === 'signal' ? signalLabel : undefined}
             valueNotes={seoulMapData.notes}
@@ -459,7 +463,7 @@ export default function MapTab({
             complexes={pinComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
             dongFeatures={dongMapData?.features}
-            dongValues={dongMapData?.values}
+            dongValues={showFill ? dongMapData?.values : NO_VALUES}
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
             onVisibleMarkerCount={setVisibleMarkerCount}
@@ -798,6 +802,18 @@ export default function MapTab({
               {anyFilterOn && (
                 <button type="button" onClick={resetFilters} style={{ flexShrink: 0, border: 'none', background: 'transparent', color: PALETTE.textMuted, fontSize: 11.5, cursor: 'pointer', whiteSpace: 'nowrap', padding: '6px 4px' }}>
                   ↺ 초기화
+                </button>
+              )}
+              {/* v269: 시세 말풍선·지역 색칠 켜기/끄기(기본 꺼짐 — 지도를 가볍고 빠르게) */}
+              {toggleMarketLayer && (
+                <button type="button" className="portal-pill" data-market-layer={marketLayerOn ? 'on' : 'off'} onClick={toggleMarketLayer}
+                  title="지역별 평균 시세 말풍선과 색칠을 지도에 표시해요(켜면 지도가 조금 무거워져요)"
+                  style={{
+                    flexShrink: 0, border: `1px solid ${marketLayerOn ? PALETTE.accent : PALETTE.border}`, borderRadius: 8, padding: '6px 10px',
+                    background: marketLayerOn ? PALETTE.accentSoft : '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    color: marketLayerOn ? PALETTE.accent : PALETTE.textSecondary, whiteSpace: 'nowrap',
+                  }}>
+                  📊 시세 {marketLayerOn ? '켜짐' : '꺼짐'}
                 </button>
               )}
               <button
