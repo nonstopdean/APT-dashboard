@@ -455,7 +455,7 @@ export default function NaverChoropleth({
       strokeColor: borderColor || '#5B6B85',
       strokeOpacity: near ? (hasValue ? 0.3 : 0.15) : (hasValue ? 0.55 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.07 : 0) : (hasValue ? 0.22 : 0),
+      fillOpacity: near ? (hasValue ? 0.07 : 0) : (hasValue ? 0.14 : 0), // v267: 동 말풍선 단계도 더 옅게(0.22 → 0.14)
     };
   };
 
