@@ -5,6 +5,7 @@ import {
 } from '../../../lib/kv';
 import {
   leafRegions, countsOf, diffNew, updateMax, buildDailyReport, kstDate, monthsToFetch, monthsBefore, backfillTask, appendStat,
+  makeGate, failKind,
 } from '../../../lib/daily-report';
 
 export const runtime = 'nodejs';
@@ -31,7 +32,8 @@ const MAIN_TASK_MS = 20000; // 오늘 자료 한 건(지역·달) 최대 대기
 // v260: 11/24 실행에서 32초 안에 서울·인천만 받고 경기 46곳이 빠졌다(8개씩, 한 번에 약 3.5초) → 12개씩, 46초까지.
 //       과거 채우기는 오늘 자료가 40초 전에 끝났을 때만 돈다.
 const MAIN_UNTIL_MS = 46000; // 오늘 자료 받기는 시작 후 이 시간 안에 끝낸다
-const MAIN_POOL = 12;
+const MAIN_POOL = 6; // v265: 12 → 6, 요청 간격은 GAP_MS가 정한다
+const GAP_MS = 170; // v265: 국토부 요청 사이 최소 간격(초당 약 6건)
 const BACK_TASK_MS = 8000; // 과거 채우기 한 건 최대 대기
 const BACKFILL_UNTIL_MS = 40000; // 시작 후 이 시간이 지나면 과거 채우기를 새로 시작하지 않는다
 
@@ -85,20 +87,32 @@ export async function GET(request) {
   const ordered = [...regions.filter((r) => firstSet.has(r.code)), ...regions.filter((r) => !firstSet.has(r.code))];
   const tasks = [];
   // 오늘 자료는 시작 후 MAIN_UNTIL_MS 안에 끝낸다 — 그때까지 못 받은 지역은 실패로 치고(내일 다시) 저장으로 넘어간다
-  const mainTask = (code, ym) => () => {
-    const left = MAIN_UNTIL_MS - (Date.now() - started);
-    if (left < 1000) return Promise.resolve({ error: 'deadline' });
-    // v261: 저장본 없이 새로 받고(fresh — 저장본은 만료돼도 옛 값을 먼저 줘서 11/25 서울·인천 0건), 국토부 오류 응답은 실패로(strict)
-    return withTimeout(() => fetchRegionMonth(serviceKey, code, ym, { fresh: true, strict: true }), Math.min(MAIN_TASK_MS, left))();
+  // v265: 11/26 아침 실패 128건 중 97건이 국토부 오류 응답(12개 동시, 초당 수십 건) → 요청 간격을 GAP_MS로 고르게(초당 약 6건),
+  //       국토부 오류면 잠깐 쉬고 한 번 더. 164건이면 약 28초.
+  const gate = makeGate(GAP_MS);
+  const mainTask = (code, ym) => async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const left = MAIN_UNTIL_MS - (Date.now() - started);
+      if (left < 1000) return { error: 'deadline' };
+      try {
+        // v261: 저장본 없이 새로 받고(fresh), 국토부 오류 응답은 실패로(strict)
+        // eslint-disable-next-line no-await-in-loop
+        return await withTimeout(async () => { await gate(); return fetchRegionMonth(serviceKey, code, ym, { fresh: true, strict: true }); }, Math.min(MAIN_TASK_MS, left))();
+      } catch (e) {
+        if (attempt > 0 || !String(e?.message || '').startsWith('RTMS_ERROR')) throw e;
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => { setTimeout(r, 1500); });
+      }
+    }
+    return { error: 'deadline' };
   };
   ordered.forEach((r) => months.forEach((ym) => tasks.push(mainTask(r.code, ym))));
   const results = await runPool(tasks, MAIN_POOL);
-  // v261: 실패 이유를 종류별로 센다(timeout·deadline·RTMS_ERROR·기타) — 원문은 남기지 않는다
+  // 실패 이유를 종류별로 센다(timeout·deadline·rtms:<국토부 오류 코드>·기타) — 원문은 남기지 않는다
   const why = {};
   results.forEach((x) => {
     if (Array.isArray(x)) return;
-    const k = x?.error === 'timeout' || x?.error === 'deadline' ? x.error
-      : (x?.error?.message === 'RTMS_ERROR' ? 'rtms' : 'other');
+    const k = failKind(x);
     why[k] = (why[k] || 0) + 1;
   });
   await mark('fetched', { failedTasks: results.filter((x) => !Array.isArray(x)).length, why });
@@ -168,8 +182,8 @@ export async function GET(request) {
       const rs = await runPool(ids.map((i) => {
         const { regionIdx, ym } = backfillTask(i, regions.length, backMonths);
         const left = 50000 - (Date.now() - started); // 채우기 요청도 시작 후 50초를 넘기지 않게
-        return withTimeout(() => fetchRegionMonth(serviceKey, regions[regionIdx].code, ym, { strict: true }), Math.max(500, Math.min(BACK_TASK_MS, left)));
-      }), 8);
+        return withTimeout(async () => { await gate(); return fetchRegionMonth(serviceKey, regions[regionIdx].code, ym, { strict: true }); }, Math.max(500, Math.min(BACK_TASK_MS, left)));
+      }), 4);
       let ok = 0;
       for (let k = 0; k < rs.length; k += 1) {
         if (!Array.isArray(rs[k])) break; // 실패한 자리에서 멈추고 다음 날 그 자리부터
