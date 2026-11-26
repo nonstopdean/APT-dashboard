@@ -216,6 +216,22 @@ export default function MapSearchPanel({
             <div style={{ fontSize: 11, color: P.textMuted, margin: '2px 0 8px' }}>
               지도 화면 안 단지 {recent.complexes.toLocaleString()}곳 · 최근 {recent.isRent ? '전월세' : '실거래'} {recent.total.toLocaleString()}건
             </div>
+            {/* v267: 최근 3개월 요약 칸 */}
+            {recent.stats && recent.stats.n3 > 0 && (
+              <div data-view-recent-stats="1" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
+                {[
+                  ['3개월 거래', `${recent.stats.n3.toLocaleString()}건`, null],
+                  [recent.isRent ? '평당 보증금' : '평균 평당가', recent.stats.avg3 != null ? `${Math.round(recent.stats.avg3).toLocaleString()}만` : '-', null],
+                  ['직전 3개월 대비', recent.stats.change != null ? `${recent.stats.change > 0 ? '▲' : recent.stats.change < 0 ? '▼' : ''}${Math.abs(recent.stats.change).toFixed(1)}%` : '-',
+                    recent.stats.change > 0 ? P.up : recent.stats.change < 0 ? P.down : null],
+                ].map(([k, v, c]) => (
+                  <div key={k} style={{ background: P.panelAlt, borderRadius: 8, padding: '7px 8px', minWidth: 0 }}>
+                    <div style={{ fontSize: 10, color: P.textMuted, whiteSpace: 'nowrap' }}>{k}</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, marginTop: 2, color: c || P.textPrimary, whiteSpace: 'nowrap' }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
               <button type="button" style={pill(recentSort === 'date')} onClick={() => { setRecentSort('date'); setRecentLimit(15); }}>최신순</button>
               <button type="button" style={pill(recentSort === 'price')} onClick={() => { setRecentSort('price'); setRecentLimit(15); }}>가격순</button>
