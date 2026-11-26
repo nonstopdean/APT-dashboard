@@ -577,6 +577,25 @@ export default function MapTab({
           onOpenCompareTab={setViewMode ? () => setViewMode('compare') : undefined}
         />
 
+        {/* v267: 디스코처럼 지도 왼쪽 세로 토글 — 핀 가격 기준(총액/34평/평당가)을 지도에서 바로 바꾼다(필터 바 "핀 가격"과 같은 값) */}
+        {mapZoomTier === 'near' && !isRone && !isRatio && (
+          <div data-pin-mode-rail="1" style={{
+            position: 'absolute', left: 14, top: 66, zIndex: 19, display: 'flex', flexDirection: 'column', gap: 2, padding: 3,
+            background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`, borderRadius: 10, boxShadow: '0 3px 12px rgba(15,30,61,0.14)',
+          }}>
+            {[['deal', '총액'], ['p34', '34평'], ['unit', '평당']].map(([k, l]) => (
+              <button key={k} type="button" data-pin-mode={k} onClick={() => choosePinPriceMode(k)}
+                title={PIN_PRICE_MODES.find(([kk]) => kk === k)?.[1]}
+                style={{
+                  border: 'none', borderRadius: 7, padding: '6px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer', minWidth: 40,
+                  background: pinPriceMode === k ? PALETTE.accent : 'transparent', color: pinPriceMode === k ? '#fff' : PALETTE.textSecondary,
+                }}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* v268: 밸류맵의 "OO동 신규 실거래" 알약처럼 — 지금 화면에 걸친 구·시의 최근 일일 신고(새로 공개된 거래) 수. 누르면 일일 신고 화면 */}
         {dailyPill && dailyPill.n > 0 && (
           <button type="button" data-daily-pill="1" onClick={dailyPill.onClick}
