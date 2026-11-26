@@ -963,10 +963,12 @@ export default function NaverChoropleth({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dongFeatures, borderColor]);
 
+  // v269: 예전엔 colorFor도 의존성이라 MapTab이 다시 그려질 때마다(지도를 움직일 때마다 — colorFor는 렌더마다 새로 만들어진다)
+  //       구·동 도형 수백 개의 스타일을 전부 다시 칠했다. 색이 바뀌는 경우엔 values/dongValues도 새 배열이 되므로 그것만 본다.
   useEffect(() => {
     applyAllStyles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [values, colorFor]);
+  }, [values, dongValues]);
 
   useEffect(() => {
     if (!focusLatLng || !mapRef.current || !window.naver?.maps) return;
