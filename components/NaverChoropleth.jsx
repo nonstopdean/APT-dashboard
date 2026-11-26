@@ -819,7 +819,6 @@ export default function NaverChoropleth({
         };
         // v232: 구 영역을 눌러 그 지역을 조회하던 동작은 없앴다(사용자 요청 — 단계별 말풍선을 눌러 확대한다).
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
-          console.log(`[호버] 구 마우스오버: ${f.name}, 현재 티어=${zoomTierRef.current}, 지도에 붙어있음=${!!polygon.getMap()}`);
           if (zoomTierRef.current !== 'far') return;
           const value = valuesRef.current?.[idx];
           const hasValue = value != null;
@@ -927,7 +926,6 @@ export default function NaverChoropleth({
         // v232: 동 영역 클릭으로 지역을 조회하던 동작도 없앴다.
         window.naver.maps.Event.addListener(polygon, 'mouseover', (e) => {
           const tier = zoomTierRef.current;
-          console.log(`[호버] 동 마우스오버: ${f.name}, 현재 티어=${tier}, 지도에 붙어있음=${!!polygon.getMap()}`);
           if (tier === 'far') return;
           const value = dongValuesRef.current?.[idx];
           // 호버하면 데이터 유무와 상관없이 항상 파란 채움 + 빨간 테두리로 또렷하게 보여준다.
@@ -1018,7 +1016,9 @@ export default function NaverChoropleth({
     // 확대도가 높을수록 화면에 실제로 보이는 단지를 더 많이 표시한다.
     const zoom = mapRef.current.getZoom();
     // v228: 250개 → 400개부터(줌 13에서 구 하나가 다 보이므로). 확대할수록 조금씩 더(최대 700).
-    const maxMarkers = Math.min(700, Math.max(400, 400 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 100)));
+    // v270: 핀 단계로 처음 들어갈 때 마커 400~700개를 한꺼번에 만들어 화면이 0.9초 멈췄다(사용자 "확대하면 바로바로").
+    //       화면 가운데에서 가까운 순 250개부터(확대할수록 조금씩 더, 최대 450) — 이름표가 실제로 들어가는 건 보통 100여 개다.
+    const maxMarkers = Math.min(450, Math.max(250, 250 + Math.round((zoom - NEAR_ZOOM_LEVEL) * 70)));
     const distOf = (c) => { const p = posOf(c); return p ? (p.lat - centerLat) ** 2 + (p.lng - centerLng) ** 2 : Number.POSITIVE_INFINITY; };
     visibleComplexes.sort((a, b) => distOf(a) - distOf(b));
     const candidate = visibleComplexes.slice(0, maxMarkers);
@@ -1051,7 +1051,12 @@ export default function NaverChoropleth({
     }
 
     const newlyFound = [];
+    let made = 0;
     await runPool(todo, async (c) => {
+      if (seq !== markerSyncSeqRef.current) return;
+      // v270: 마커 40개를 만들 때마다 한 번씩 브라우저에 차례를 넘겨(다음 틱) 지도 확대·끌기가 끊기지 않게 한다
+      made += 1;
+      if (made % 40 === 0) await new Promise((r) => { setTimeout(r, 0); });
       if (seq !== markerSyncSeqRef.current) return;
       // 정확한 좌표(카카오·서버 캐시) > 동 중심점(근사) 순서. 예전에는 동 중심점이 있으면 정확한 좌표를
       // 아예 쓰지 않아서, 서버에 저장해둔(예열한) 좌표가 버려지고 같은 동 단지가 한 점에 겹쳤다.
