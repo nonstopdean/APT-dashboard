@@ -462,7 +462,9 @@ export default function MapTab({
             focusLatLng={focusLatLng}
             complexes={pinComplexes}
             onComplexSelect={(c) => setSelectedApt({ apt: c.apt, dong: c.dong, regionCode: c.regionCode, lat: c.lat, lng: c.lng })}
-            dongFeatures={dongMapData?.features}
+            // v270: 색칠을 안 할 땐 동 경계 도형(수백 개)을 지도에 만들지 않는다 — 확대·이동할 때마다 다시 그려져 무거웠다.
+            //       핀 위치(동 중심점)는 page.jsx가 경계 자료로 따로 계산하므로 영향 없다.
+            dongFeatures={showFill ? dongMapData?.features : null}
             dongValues={showFill ? dongMapData?.values : NO_VALUES}
             onZoomTierChange={setMapZoomTier}
             onViewportChange={setMapViewportBounds}
