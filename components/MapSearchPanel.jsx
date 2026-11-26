@@ -12,7 +12,7 @@ const fmtPrice = (v) => (Number.isFinite(v) ? (v >= 10000 ? `${(v / 10000).toFix
 
 export default function MapSearchPanel({
   complexes = [], regionGroups, sidoAggregates, regionLabel, onPickComplex, onPickRegion, onPickDong,
-  summary, onCloseSummary, onOpenDashboard, palette, recent = null, onOpenTrade,
+  summary, onCloseSummary, onOpenDashboard, palette, recent = null, onOpenTrade, recentOpen = false, onToggleRecent,
 }) {
   const P = palette;
   const [query, setQuery] = useState('');
@@ -200,6 +200,13 @@ export default function MapSearchPanel({
         </div>
       )}
 
+      {/* v269: 최근 실거래 목록은 누를 때만 계산·표시(지도 속도) */}
+      {!qOk && onToggleRecent && (
+        <button type="button" data-view-recent-toggle="1" onClick={onToggleRecent}
+          style={{ marginTop: 14, width: '100%', border: `1px solid ${recentOpen ? P.accent : P.border}`, borderRadius: 10, padding: '9px 0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: recentOpen ? P.accentSoft : '#fff', color: P.accentDark }}>
+          {recentOpen ? '최근 실거래 접기 ▴' : '📍 지도 화면 최근 실거래 보기 ▾'}
+        </button>
+      )}
       {/* v267: 지금 지도 화면 안 단지들의 최근 실거래(디스코·부동산플래닛처럼 왼쪽에 지역 이름 + 목록) */}
       {!qOk && recent && recent.total > 0 && (() => {
         const rows = recentSort === 'price' ? [...recent.rows].sort((a, b) => b.price - a.price) : recent.rows;
