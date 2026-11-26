@@ -12,10 +12,12 @@ const fmtPrice = (v) => (Number.isFinite(v) ? (v >= 10000 ? `${(v / 10000).toFix
 
 export default function MapSearchPanel({
   complexes = [], regionGroups, sidoAggregates, regionLabel, onPickComplex, onPickRegion, onPickDong,
-  summary, onCloseSummary, onOpenDashboard, palette,
+  summary, onCloseSummary, onOpenDashboard, palette, recent = null, onOpenTrade,
 }) {
   const P = palette;
   const [query, setQuery] = useState('');
+  const [recentSort, setRecentSort] = useState('date'); // v267: 'date' | 'price'
+  const [recentLimit, setRecentLimit] = useState(15);
   const [remote, setRemote] = useState({ q: '', rows: [], dongs: [], loading: false, error: '' });
   const q = query.trim();
   const qOk = q.replace(/\s+/g, '').length >= 2;
@@ -197,6 +199,56 @@ export default function MapSearchPanel({
           )}
         </div>
       )}
+
+      {/* v267: 지금 지도 화면 안 단지들의 최근 실거래(디스코·부동산플래닛처럼 왼쪽에 지역 이름 + 목록) */}
+      {!qOk && recent && recent.total > 0 && (() => {
+        const rows = recentSort === 'price' ? [...recent.rows].sort((a, b) => b.price - a.price) : recent.rows;
+        const pill = (on) => ({
+          border: 'none', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+          background: on ? P.accent : P.accentSoft, color: on ? '#fff' : P.accentDark,
+        });
+        const d8 = (s) => `${s.slice(2, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}`;
+        return (
+          <div data-view-recent="1" style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <b style={{ fontSize: 15, color: P.textPrimary, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {recent.title}</b>
+            </div>
+            <div style={{ fontSize: 11, color: P.textMuted, margin: '2px 0 8px' }}>
+              지도 화면 안 단지 {recent.complexes.toLocaleString()}곳 · 최근 {recent.isRent ? '전월세' : '실거래'} {recent.total.toLocaleString()}건
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <button type="button" style={pill(recentSort === 'date')} onClick={() => { setRecentSort('date'); setRecentLimit(15); }}>최신순</button>
+              <button type="button" style={pill(recentSort === 'price')} onClick={() => { setRecentSort('price'); setRecentLimit(15); }}>가격순</button>
+            </div>
+            <div style={{ border: `1px solid ${P.border}`, borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+              {rows.slice(0, recentLimit).map((r, i) => (
+                <button key={`${r.key}|${r.d8}|${r.floor}|${r.price}|${i}`} type="button" data-view-recent-row="1" onClick={() => onOpenTrade?.(r)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', borderTop: i ? `1px solid ${P.border}` : 'none', background: 'transparent', cursor: 'pointer' }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                      <b style={{ fontSize: 12.5, color: P.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.apt}</b>
+                      {r.d8 >= recent.newCut && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, color: '#fff', background: P.accent, borderRadius: 4, padding: '1px 4px' }}>NEW</span>}
+                      {r.high && <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, color: '#fff', background: P.up, borderRadius: 4, padding: '1px 4px' }}>🔺신고가</span>}
+                    </span>
+                    <span style={{ display: 'block', fontSize: 10.5, color: P.textMuted, marginTop: 2 }}>
+                      {r.dong} · {Math.round(r.area)}㎡ · {r.floor}층 · {d8(r.d8)}
+                    </span>
+                  </span>
+                  <b style={{ fontSize: 13, color: P.accentDark, whiteSpace: 'nowrap' }}>
+                    {fmtPrice(r.price)}{r.rent ? <span style={{ fontSize: 11, fontWeight: 700 }}>/{r.rent.toLocaleString()}</span> : null}
+                  </b>
+                </button>
+              ))}
+            </div>
+            {rows.length > recentLimit && (
+              <button type="button" onClick={() => setRecentLimit((n) => n + 20)}
+                style={{ marginTop: 6, width: '100%', border: 'none', borderRadius: 10, padding: '8px 0', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: P.accentSoft, color: P.accentDark }}>
+                더 보기 ({Math.min(rows.length, recent.rows.length) - recentLimit}건 남음)
+              </button>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
