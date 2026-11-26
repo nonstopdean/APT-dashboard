@@ -1767,9 +1767,10 @@ export default function Page() {
           const prev = map.get(key);
           if (!prev || h.p > prev.p) map.set(key, { p: h.p, pm: h.pm, ar: h.ar });
         });
-        setDailyHighs({ date: j?.report?.date || '', map });
+        // v268: 지역별 새로 공개된 거래 수(지도 위 "신규 실거래" 알약)
+        setDailyHighs({ date: j?.report?.date || '', map, byRegion: Array.isArray(j?.report?.byRegion) ? j.report.byRegion : [] });
       })
-      .catch(() => { if (!cancelled) setDailyHighs({ date: '', map: new Map() }); });
+      .catch(() => { if (!cancelled) setDailyHighs({ date: '', map: new Map(), byRegion: [] }); });
     return () => { cancelled = true; };
   }, [viewMode, dailyHighs]);
   const dailyHighMap = dailyHighs?.map;
@@ -2303,6 +2304,7 @@ export default function Page() {
     });
     const out = filtered.slice(0, 60);
     out.total = filtered.length; // 60개로 자르기 전 수(목록 머리글에 쓴다)
+    out.keys = new Set(filtered.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`)); // v267: 왼쪽 "최근 실거래"가 화면 안 단지만 고르게
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex, panelCover]);
@@ -2745,6 +2747,53 @@ export default function Page() {
   // v236: 지도 색칠(가격변동·거래량변동·시장 신호·동 가격)은 고른 지역 + 지도가 자동으로 불러온 주변 구 거래를 함께 쓴다.
   // 예전엔 고른 지역(allTx)만 써서, 지역을 고르지 않은 첫 화면에서는 색칠이 모두 회색이었다. 두 목록은 겹치지 않는다(browseTx가 고른 구를 뺀다).
   const mapTx = useMemo(() => (browseTx.length ? [...allTx, ...browseTx] : allTx), [allTx, browseTx]);
+  // v267: 지도 탭 왼쪽 "이 지역 최근 실거래"(디스코·부동산플래닛 참고) — 지금 화면 안 단지들의 거래를 계약일 최신순으로.
+  // 제목은 화면 안 단지가 가장 많은 동 이름. 계약 7일 이내는 NEW, 최근 일일 신고의 신고가 단지는 🔺.
+  const viewRecent = useMemo(() => {
+    const keys = mapPanelList?.keys;
+    if (viewMode !== 'map' || !keys || !keys.size) return null;
+    const rows = [];
+    const dongCount = new Map();
+    mapTx.forEach((t) => {
+      const key = `${t.regionCode}|${t.dong}|${t.apt}`;
+      if (!keys.has(key)) return;
+      const price = isRent ? t.deposit : t.amount;
+      if (!Number.isFinite(price) || price <= 0) return;
+      const d8 = `${t.year}${String(t.month).padStart(2, '0')}${String(t.day ?? 1).padStart(2, '0')}`;
+      rows.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, area: t.area, floor: t.floor, d8, price, rent: isRent ? (t.monthlyRent || 0) : 0, high: !isRent && Boolean(dailyHighMap?.get(key)) });
+      const dk = `${t.regionCode}|${t.dong}`;
+      dongCount.set(dk, (dongCount.get(dk) || 0) + 1);
+    });
+    let top = null;
+    dongCount.forEach((n, dk) => { if (!top || n > top.n) top = { dk, n }; });
+    const [rc, dongName] = top ? top.dk.split('|') : ['', ''];
+    rows.sort((a, b) => (b.d8 > a.d8 ? 1 : b.d8 < a.d8 ? -1 : b.price - a.price));
+    const now = new Date();
+    const cut = new Date(now.getTime() - 7 * 86400000);
+    const cut8 = `${cut.getFullYear()}${String(cut.getMonth() + 1).padStart(2, '0')}${String(cut.getDate()).padStart(2, '0')}`;
+    return {
+      title: top ? `${labelFor(rc)} ${dongName}${dongCount.size > 1 ? ' 일대' : ''}` : '',
+      total: rows.length, complexes: keys.size, isRent, newCut: cut8, rows: rows.slice(0, 300),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, mapPanelList, mapTx, isRent, dailyHighMap]);
+  // v268: 지도 위 "신규 실거래" 알약 — 지금 화면 안 단지들이 속한 구·시의 최근 일일 신고 건수(수도권만, 매매일 때만)
+  const dailyPill = useMemo(() => {
+    const keys = mapPanelList?.keys;
+    if (viewMode !== 'map' || isRent || !keys || !keys.size || !dailyHighs?.byRegion?.length) return null;
+    const codes = new Set([...keys].map((k) => k.split('|')[0]));
+    let n = 0; let h = 0;
+    dailyHighs.byRegion.forEach((g) => { if (codes.has(String(g.code))) { n += g.n || 0; h += g.h || 0; } });
+    if (!n) return null;
+    const d = String(dailyHighs.date || '');
+    return {
+      n, h,
+      label: codes.size === 1 ? labelFor([...codes][0]) : `화면 속 ${codes.size}개 구·시`,
+      dateLabel: d.length === 8 ? `${Number(d.slice(4, 6))}/${Number(d.slice(6, 8))} 공개` : '최근',
+      onClick: () => { setAnalyticsView('daily'); setViewMode('market'); },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, isRent, mapPanelList, dailyHighs]);
   // v237: 거래 건수를 비교할 때(거래량변동·시장 신호)는 신고 기한(30일)이 안 지난 최근 달을 뺀다 — 덜 잡힌 달 때문에 거래량이 일괄 감소로 보였다.
   const completeYm = lastCompleteYm();
   const regionChangeIndex = useMemo(() => {
@@ -3406,6 +3455,11 @@ export default function Page() {
             summary={searchRegionCard}
             onCloseSummary={() => setSearchRegion(null)}
             onOpenDashboard={searchRegion ? () => { addRegionAndFetch(searchRegion.code); setViewMode('normal'); } : null}
+            recent={viewRecent}
+            onOpenTrade={(r) => {
+              const m = mapComplexCoordByKey.get(r.key);
+              setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode, lat: m?.lat, lng: m?.lng });
+            }}
           />
         )}
 
@@ -3913,7 +3967,7 @@ export default function Page() {
           stationInfoOf={stationInfoOf} listStation={listStation} setListStation={setListStation} listGeoTick={listGeoTick}
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
-          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex} areaBubbles={areaBubbles}
+          setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex} areaBubbles={areaBubbles} dailyPill={dailyPill}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
