@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from 'react';
 import * as topojson from 'topojson-client';
 import { geoMercator, geoPath } from 'd3-geo';
 import KakaoChoropleth from '../components/KakaoChoropleth';
@@ -2078,6 +2078,8 @@ export default function Page() {
   const [mapFocusKeys, setMapFocusKeys] = useState(null); // Set<string> | null
   const [budgetAmount, setBudgetAmount] = useState('');
   const [mapViewportBounds, setMapViewportBounds] = useState(null); // {swLat,swLng,neLat,neLng} | null
+  // v269: "현재 화면" 목록 계산은 지도 반응보다 뒤로 미룬다(확대·끌기 직후 지도가 먼저 움직이고, 목록은 여유 있을 때 따라온다)
+  const deferredViewportBounds = useDeferredValue(mapViewportBounds);
   const [panelCover, setPanelCover] = useState(null); // v219: 목록 창이 가리지 않은 지도 쪽과 비율 { side, frac }(v221) | null(MapTab이 잰다)
   const [geocodeStats, setGeocodeStats] = useState(null); // 단지 좌표 출처 통계(지도 컴포넌트가 보고). mapPanelList보다 앞에 둔다
   const [subwayLayerOn, setSubwayLayerOn] = useState(false);
@@ -2277,12 +2279,12 @@ export default function Page() {
       }
       return true;
     };
-    if (!mapViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? viewCompare : viewCompare.filter(nearStation)).slice(0, 40);
+    if (!deferredViewportBounds) return (maxM == null && maxSchoolM == null && minHH == null ? viewCompare : viewCompare.filter(nearStation)).slice(0, 40);
     // v219: 목록 창(넓은 화면은 오른쪽, 폰은 아래 시트)이 가린 부분은 "현재 화면"에서 뺀다. 화면 비율로 경도/위도를 자른다
     // (작은 범위라 메르카토르 왜곡은 무시). 지도 범위 자체(mapViewportBounds)는 역·학교 표시와 주변 구 불러오기에 그대로 쓴다.
     // v221: 목록 창을 옮길 수 있어서 { side: 'left'|'right'|'top'|'bottom', frac } — 가리지 않은 쪽의 비율만 남긴다.
     const vb = (() => {
-      const b = mapViewportBounds;
+      const b = deferredViewportBounds;
       if (!panelCover || !(panelCover.frac > 0)) return b;
       const dLng = (b.neLng - b.swLng) * panelCover.frac;
       const dLat = (b.neLat - b.swLat) * panelCover.frac;
@@ -2307,7 +2309,7 @@ export default function Page() {
     out.keys = new Set(filtered.map((c) => `${c.regionCode}|${c.dong}|${c.apt}`)); // v267: 왼쪽 "최근 실거래"가 화면 안 단지만 고르게
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewCompare, mapComplexCoordByKey, mapViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex, panelCover]);
+  }, [viewCompare, mapComplexCoordByKey, deferredViewportBounds, geocodeStats, listStation, dongCentroids, listGeoTick, listSchool, elemSchools, listHH, hhIndex, panelCover]);
 
   // 단지 상세 "주변 34평 시세"(v197): 조회 기간 34평(공급 33~35평) 거래의 단지별 중간값을 반경 안 단지끼리 비교한다.
   // 좌표는 핀과 같은 규칙(정확한 좌표 > 동 중심점). 전월세 모드면 전세 보증금으로 비교한다.
@@ -2749,21 +2751,31 @@ export default function Page() {
   const mapTx = useMemo(() => (browseTx.length ? [...allTx, ...browseTx] : allTx), [allTx, browseTx]);
   // v267: 지도 탭 왼쪽 "이 지역 최근 실거래"(디스코·부동산플래닛 참고) — 지금 화면 안 단지들의 거래를 계약일 최신순으로.
   // 제목은 화면 안 단지가 가장 많은 동 이름. 계약 7일 이내는 NEW, 최근 일일 신고의 신고가 단지는 🔺.
-  const viewRecent = useMemo(() => {
-    const keys = mapPanelList?.keys;
-    if (viewMode !== 'map' || !keys || !keys.size) return null;
-    const rows = [];
-    const dongCount = new Map();
+  // v269: 왼쪽 목록은 "최근 실거래 보기"를 눌렀을 때만 계산한다(기본 접힘). 거래는 단지 키별로 한 번 묶어 두고 화면 안 단지 것만 꺼낸다.
+  const [recentOpen, setRecentOpen] = useState(false);
+  const txByKey = useMemo(() => {
+    if (!recentOpen) return null;
+    const m = new Map();
     mapTx.forEach((t) => {
       const key = `${t.regionCode}|${t.dong}|${t.apt}`;
-      if (!keys.has(key)) return;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(t);
+    });
+    return m;
+  }, [recentOpen, mapTx]);
+  const viewRecent = useMemo(() => {
+    const keys = mapPanelList?.keys;
+    if (viewMode !== 'map' || !recentOpen || !txByKey || !keys || !keys.size) return null;
+    const rows = [];
+    const dongCount = new Map();
+    keys.forEach((key) => (txByKey.get(key) || []).forEach((t) => {
       const price = isRent ? t.deposit : t.amount;
       if (!Number.isFinite(price) || price <= 0) return;
       const d8 = `${t.year}${String(t.month).padStart(2, '0')}${String(t.day ?? 1).padStart(2, '0')}`;
       rows.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, area: t.area, floor: t.floor, d8, price, rent: isRent ? (t.monthlyRent || 0) : 0, high: !isRent && Boolean(dailyHighMap?.get(key)), ppp: isRent ? t.depositPerPyeong : t.pricePerPyeong });
       const dk = `${t.regionCode}|${t.dong}`;
       dongCount.set(dk, (dongCount.get(dk) || 0) + 1);
-    });
+    }));
     let top = null;
     dongCount.forEach((n, dk) => { if (!top || n > top.n) top = { dk, n }; });
     const [rc, dongName] = top ? top.dk.split('|') : ['', ''];
@@ -2790,7 +2802,7 @@ export default function Page() {
       total: rows.length, complexes: keys.size, isRent, newCut: cut8, rows: rows.slice(0, 300), stats,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, mapPanelList, mapTx, isRent, dailyHighMap]);
+  }, [viewMode, recentOpen, txByKey, mapPanelList, isRent, dailyHighMap]);
   // v268: 지도 위 "신규 실거래" 알약 — 지금 화면 안 단지들이 속한 구·시의 최근 일일 신고 건수(수도권만, 매매일 때만)
   const dailyPill = useMemo(() => {
     const keys = mapPanelList?.keys;
@@ -3097,13 +3109,24 @@ export default function Page() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [viewMode, regionPrices]);
-  const areaBubbles = useMemo(() => ({
+  // v269: 사용자 요청 "지도가 느리다, 시황 정보는 안 나오게" → 지도 위 시세 말풍선·지역 색칠은 기본으로 끈다(지도 도구줄 "📊 시세"로 켜기, 이 브라우저에 기억).
+  //       끄면 말풍선 계산(불러온 거래 전체를 동별로 묶음)도 하지 않는다.
+  const [marketLayerOn, setMarketLayerOn] = useState(false);
+  useEffect(() => {
+    try { if (window.localStorage.getItem('apt-dashboard-market-layer') === '1') setMarketLayerOn(true); } catch (e) { /* 기본 꺼짐 */ }
+  }, []);
+  const toggleMarketLayer = () => setMarketLayerOn((v) => {
+    try { window.localStorage.setItem('apt-dashboard-market-layer', v ? '0' : '1'); } catch (e) { /* 무시 */ }
+    return !v;
+  });
+  const areaBubbles = useMemo(() => (marketLayerOn ? {
     sido: sidoBubbles(regionPrices?.items, codeToLatLng),
     sgg: sggBubbles(mapFeatures, regionPrices?.items, codeToLatLng),
     dong: dongBubbles([...allTx, ...browseTx], findDongCentroid, isRent),
     ym: regionPrices?.ym || '',
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [regionPrices, codeToLatLng, mapFeatures, allTx, browseTx, dongCentroids, isRent]);
+  } : null),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [marketLayerOn, regionPrices, codeToLatLng, mapFeatures, allTx, browseTx, dongCentroids, isRent]);
   // v239: 지역 요약 카드 = 불러온 거래 요약 + 한국부동산원 평균 매매가격(시·도/시군구, 동이면 그 구 값). 세종처럼 전체 코드가 없으면 하나뿐인 지역 값.
   const searchRegionCard = useMemo(() => {
     if (!searchRegionSummary) return null;
@@ -3173,7 +3196,7 @@ export default function Page() {
   const [mapZoomTier, setMapZoomTier] = useState('far');
   // 상세 창이 오른쪽에 붙어 차지한 폭(px). 지도 툴바가 이만큼 비켜준다. 창을 옮기거나 최소화해도 실제 폭을 따른다.
   const [detailInset, setDetailInset] = useState(420);
-  const [mapPanelMinimized, setMapPanelMinimized] = useState(false);
+  const [mapPanelMinimized, setMapPanelMinimized] = useState(true); // v269: 오른쪽 단지 목록은 접힌 채 시작(지도를 움직일 때마다 목록을 다시 그리지 않게)
   const loadedSidosRef = useRef(new Set());
 
   // v203: 확대해서 보고 있는 화면에 걸친 구 중 선택 안 된 곳을 가까운 순으로 최대 4곳 자동으로 불러온다(지도 핀 전용).
@@ -3470,6 +3493,8 @@ export default function Page() {
             onCloseSummary={() => setSearchRegion(null)}
             onOpenDashboard={searchRegion ? () => { addRegionAndFetch(searchRegion.code); setViewMode('normal'); } : null}
             recent={viewRecent}
+            recentOpen={recentOpen}
+            onToggleRecent={() => setRecentOpen((v) => !v)}
             onOpenTrade={(r) => {
               const m = mapComplexCoordByKey.get(r.key);
               setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode, lat: m?.lat, lng: m?.lng });
@@ -3982,6 +4007,7 @@ export default function Page() {
           schoolInfoOf={schoolInfoOf} listSchool={listSchool} setListSchool={setListSchool} elemSchools={elemSchools}
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
           setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex} areaBubbles={areaBubbles} dailyPill={dailyPill}
+          marketLayerOn={marketLayerOn} toggleMarketLayer={toggleMarketLayer}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
