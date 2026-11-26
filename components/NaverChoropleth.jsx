@@ -10,14 +10,17 @@ const EMPTY_KEY_SET = new Set();
 
 // 마커 모양. 비교함에 담은 단지(pinned)는 ★ + 강조 테두리로 구분한다.
 function markerHtmlOf(titleText, priceText, pinned) {
-  const border = pinned ? '2px solid #1D4ED8' : '1px solid rgba(40,35,30,0.18)';
-  const bg = pinned ? '#EAF1FF' : 'rgba(255,255,255,0.96)';
+  // v266: 디스코·밸류맵처럼 가볍고 깔끔한 흰 알약 — 왼쪽에 파란 가격 칩, 오른쪽에 단지 이름, 아래 작은 꼬리(꼭짓점 = 단지 좌표).
+  const border = pinned ? '1.5px solid #1D4ED8' : '1px solid rgba(15,30,61,0.14)';
+  const bg = pinned ? '#EAF1FF' : '#fff';
   const star = pinned ? '<span style="margin-right:3px;color:#1D4ED8;">★</span>' : '';
-  // v236: 아래 빨간 점의 가운데가 단지 좌표에 오게(가로 가운데·세로 아래) 옮긴다 — 겹침 계산(pinLabelBox)과 작은 점 마커가 같은 자리를 쓴다.
-  // 예전(앵커 0,24)엔 이름표 왼쪽 끝이 좌표라 점이 이름표 폭의 절반만큼 오른쪽에 찍혔다.
-  return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:auto;cursor:pointer;transform:translate(-50%,calc(-100% + 6px));">` +
-    `<div style="padding:4px 7px;border-radius:8px;background:${bg};border:${border};box-shadow:0 2px 8px rgba(0,0,0,0.16);font-size:10px;line-height:1.1;white-space:nowrap;color:#2b2722;font-weight:700;">${star}${titleText}${priceText ? `<span style="margin-left:5px;color:#1D4ED8;">${priceText}</span>` : ''}</div>` +
-    `<div style="width:7px;height:7px;border-radius:50%;background:#1D4ED8;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.22);"></div></div>`;
+  const chip = priceText
+    ? `<span style="display:inline-block;padding:3px 7px;border-radius:999px;background:#1D4ED8;color:#fff;font-weight:800;letter-spacing:-0.2px;">${priceText}</span>`
+    : '';
+  return `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:pointer;transform:translate(-50%,-100%);">` +
+    `<div style="display:flex;align-items:center;gap:5px;padding:2px ${priceText ? '9px 2px 2px' : '9px'};border-radius:999px;background:${bg};border:${border};box-shadow:0 2px 6px rgba(15,30,61,0.18);font-size:10.5px;line-height:1.15;white-space:nowrap;color:#0F1B33;font-weight:700;">` +
+    `${chip}<span style="${priceText ? '' : 'padding:3px 0;'}">${star}${titleText}</span></div>` +
+    `<div style="width:0;height:0;margin-top:-1px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid ${pinned ? '#1D4ED8' : '#fff'};filter:drop-shadow(0 1px 1px rgba(15,30,61,0.18));"></div></div>`;
 }
 
 // v236: 이름표 자리가 없을 때 남기는 작은 점(누르면 그 단지가 바로 열림, 마우스를 올리면 이름). 앵커 (6.5, 6.5) = 점 가운데.
@@ -29,9 +32,10 @@ function dotHtmlOf(titleText, count) {
 // v236: 이름표가 화면에서 차지하는 상자(px, 좌표 기준). markerHtmlOf 글자 크기 10px 기준 어림값 — 한글 10.5px, 그 밖 6.2px.
 export function pinLabelBox(x, y, titleText, priceText) {
   // 실제 그린 크기와 대조(v236): 헬리오시티 23억 실제 폭 88px·높이 −27~+6 → 어림 96px(양옆 4px 여유)·−29~+6.
-  let w = 14 + (priceText ? 5 : 0);
-  for (const ch of `${titleText}${priceText || ''}`) w += ch.codePointAt(0) > 0x2000 ? 10.5 : ch === ' ' ? 3 : 6.2;
-  return { x1: x - w / 2 - 2, x2: x + w / 2 + 2, y1: y - 29, y2: y + 6 };
+  // v266: 알약 모양(글자 10.5px, 가격 칩 안쪽 여백 14px + 칸 사이 5px) — 꼬리 끝이 좌표라 상자는 좌표 위쪽 약 30px
+  let w = 20 + (priceText ? 19 : 0);
+  for (const ch of `${titleText}${priceText || ''}`) w += ch.codePointAt(0) > 0x2000 ? 11 : ch === ' ' ? 3 : 6.5;
+  return { x1: x - w / 2 - 2, x2: x + w / 2 + 2, y1: y - 30, y2: y + 1 };
 }
 
 // v236: 겹치지 않게 이름표 자리 정하기(순수 함수). items: [{ x, y, title, price, force }] — 이미 중요도 순으로 정렬.
@@ -430,12 +434,13 @@ export default function NaverChoropleth({
         strokeWeight: 0, strokeOpacity: 0, fillColor: colorForRef.current(value), fillOpacity: 0, clickable: tier === 'mid' || noMarkersYet,
       };
     }
+    // v266: 지도를 가볍게 — 색칠은 옅게, 경계선은 가늘고 연하게(예전엔 회색 면이 지도를 덮어 무거워 보였다)
     return {
-      strokeWeight: hasValue ? 2 : 0.5,
-      strokeColor: borderColor || '#8A8172',
-      strokeOpacity: hasValue ? 1 : 0.15,
+      strokeWeight: hasValue ? 1.2 : 0.5,
+      strokeColor: borderColor || '#5B6B85',
+      strokeOpacity: hasValue ? 0.55 : 0.12,
       fillColor: colorForRef.current(value),
-      fillOpacity: hasValue ? 0.32 : 0,
+      fillOpacity: hasValue ? 0.22 : 0,
       clickable: true,
     };
   };
@@ -444,12 +449,13 @@ export default function NaverChoropleth({
     const value = dongValuesRef.current?.[idx];
     const hasValue = value != null;
     const near = zoomTierRef.current === 'near';
+    // v266: 단지 핀이 보이는 확대(near)에서는 동 색칠을 거의 투명하게 — 핀과 지도 글자가 잘 보이게
     return {
-      strokeWeight: hasValue ? 1.5 : 0.6,
-      strokeColor: borderColor || '#8A8172',
-      strokeOpacity: near ? (hasValue ? 0.5 : 0.25) : (hasValue ? 0.9 : 0.12),
+      strokeWeight: near ? 0.8 : (hasValue ? 1.2 : 0.6),
+      strokeColor: borderColor || '#5B6B85',
+      strokeOpacity: near ? (hasValue ? 0.3 : 0.15) : (hasValue ? 0.55 : 0.12),
       fillColor: colorForRef.current(value),
-      fillOpacity: near ? (hasValue ? 0.2 : 0.06) : (hasValue ? 0.35 : 0),
+      fillOpacity: near ? (hasValue ? 0.07 : 0) : (hasValue ? 0.22 : 0),
     };
   };
 
