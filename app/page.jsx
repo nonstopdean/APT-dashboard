@@ -2760,7 +2760,7 @@ export default function Page() {
       const price = isRent ? t.deposit : t.amount;
       if (!Number.isFinite(price) || price <= 0) return;
       const d8 = `${t.year}${String(t.month).padStart(2, '0')}${String(t.day ?? 1).padStart(2, '0')}`;
-      rows.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, area: t.area, floor: t.floor, d8, price, rent: isRent ? (t.monthlyRent || 0) : 0, high: !isRent && Boolean(dailyHighMap?.get(key)) });
+      rows.push({ key, apt: t.apt, dong: t.dong, regionCode: t.regionCode, area: t.area, floor: t.floor, d8, price, rent: isRent ? (t.monthlyRent || 0) : 0, high: !isRent && Boolean(dailyHighMap?.get(key)), ppp: isRent ? t.depositPerPyeong : t.pricePerPyeong });
       const dk = `${t.regionCode}|${t.dong}`;
       dongCount.set(dk, (dongCount.get(dk) || 0) + 1);
     });
@@ -2771,9 +2771,23 @@ export default function Page() {
     const now = new Date();
     const cut = new Date(now.getTime() - 7 * 86400000);
     const cut8 = `${cut.getFullYear()}${String(cut.getMonth() + 1).padStart(2, '0')}${String(cut.getDate()).padStart(2, '0')}`;
+    // v267: 머리 요약 — 최근 3개월(계약일) 거래 수·평균 평당가, 그 전 3개월 대비 평당가 변화(양쪽 5건 이상일 때만)
+    const dayStr = (ms) => { const d = new Date(ms); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
+    const c3 = dayStr(now.getTime() - 91 * 86400000);
+    const c6 = dayStr(now.getTime() - 182 * 86400000);
+    const avg = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : null);
+    const recentP = rows.filter((r) => r.d8 >= c3 && Number.isFinite(r.ppp)).map((r) => r.ppp);
+    const prevP = rows.filter((r) => r.d8 >= c6 && r.d8 < c3 && Number.isFinite(r.ppp)).map((r) => r.ppp);
+    const a3 = avg(recentP);
+    const a6 = avg(prevP);
+    const stats = {
+      n3: rows.filter((r) => r.d8 >= c3).length,
+      avg3: a3,
+      change: recentP.length >= 5 && prevP.length >= 5 && a6 ? ((a3 - a6) / a6) * 100 : null,
+    };
     return {
       title: top ? `${labelFor(rc)} ${dongName}${dongCount.size > 1 ? ' 일대' : ''}` : '',
-      total: rows.length, complexes: keys.size, isRent, newCut: cut8, rows: rows.slice(0, 300),
+      total: rows.length, complexes: keys.size, isRent, newCut: cut8, rows: rows.slice(0, 300), stats,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, mapPanelList, mapTx, isRent, dailyHighMap]);
