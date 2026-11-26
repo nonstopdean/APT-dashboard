@@ -580,7 +580,8 @@ export default function MapTab({
         {/* v267: 디스코처럼 지도 왼쪽 세로 토글 — 핀 가격 기준(총액/34평/평당가)을 지도에서 바로 바꾼다(필터 바 "핀 가격"과 같은 값) */}
         {mapZoomTier === 'near' && !isRone && !isRatio && (
           <div data-pin-mode-rail="1" style={{
-            position: 'absolute', left: 14, top: 66, zIndex: 19, display: 'flex', flexDirection: 'column', gap: 2, padding: 3,
+            // v268: "신규 실거래" 알약(top 66)이 있으면 그 아래로 — 폰에서는 알약이 거의 전체 폭이라 겹쳤다
+            position: 'absolute', left: 14, top: dailyPill && dailyPill.n > 0 ? 110 : 66, zIndex: 19, display: 'flex', flexDirection: 'column', gap: 2, padding: 3,
             background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`, borderRadius: 10, boxShadow: '0 3px 12px rgba(15,30,61,0.14)',
           }}>
             {[['deal', '총액'], ['p34', '34평'], ['unit', '평당']].map(([k, l]) => (
