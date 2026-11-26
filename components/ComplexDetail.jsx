@@ -10,6 +10,7 @@ import {
 import FloatingWindow from './FloatingWindow';
 import DetailSections from './DetailSections';
 import ComplexTradePanel from './ComplexTradePanel';
+import JeonseSafety from './JeonseSafety';
 
 // 단지 상세. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 // selectedApt가 있을 때만 부모(page.jsx)가 이 컴포넌트를 렌더링한다.
@@ -137,6 +138,11 @@ export default function ComplexDetail({
             </div>
           </div>
         );
+
+  // v269: 전세 안전진단(하우스머치 참고) — 평형별 갭 자료(매매·전세 중간값)를 그대로 쓴다. 단지가 바뀌면 key로 새로 시작.
+  const bJeonseSafety = (aptJeonseInfo?.gaps || []).length > 0 && (
+    <JeonseSafety key={`${selectedApt?.regionCode}|${selectedApt?.dong}|${selectedApt?.apt}`} gaps={aptJeonseInfo.gaps} />
+  );
 
   // v192: 평형별 갭 = 최근 12개월 매매가 중간값 − 전세 보증금 중간값. 매매·전세가 둘 다 있는 면적만.
   const gapCell = { padding: '5px 6px', textAlign: 'right', whiteSpace: 'nowrap' };
@@ -964,6 +970,7 @@ export default function ComplexDetail({
           { id: 'summary', title: '시세 요약', defaultOpen: true, blocks: [bSummaryCards, bJeonseTrend, bGapTable, bGapTrend, bVolumeBanner, bVolumeChart, bCompareBtn, bAlert] },
           { id: 'location', title: '입지', defaultOpen: true, blocks: [bTerrainLoading, bTerrainSun, bPoiLoading, bPoi, bSchoolsLoading, bSchools] },
           { id: 'nearby', title: '주변·비교', defaultOpen: true, blocks: [bPeer34, bRadiusSummary, bRadiusCard, bSimilar] },
+          { id: 'safety', title: '전세 안전진단', defaultOpen: true, blocks: [bJeonseSafety] },
           { id: 'calc', title: '계산기', defaultOpen: false, blocks: [bAcqCalc, bSwapCalc] },
         ]}
       />
