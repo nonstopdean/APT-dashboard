@@ -4,7 +4,7 @@ import {
   kvReady, kvGet, kvMGet, kvMSet, kvSet,
 } from '../../../lib/kv';
 import {
-  leafRegions, updateMax, kstDate, monthsToFetch, monthsBefore, backfillTask,
+  leafRegions, updateMax, kstDate, monthsToFetch, monthsBefore, backfillTask, makeGate, failKind,
 } from '../../../lib/daily-report';
 
 export const runtime = 'nodejs';
@@ -21,7 +21,10 @@ const BF_LASTRUN = 'daily:bflastrun';
 const BACK_MONTHS = 34; // daily-snapshot과 같은 값
 const UNTIL_MS = 42000; // 새 묶음은 시작 후 이 시간까지만 시작
 const TASK_MS = 10000; // 한 건 최대 대기
-const POOL = 8;
+const POOL = 4; // v265: 8 → 4
+const BATCH = 8; // 한 번에 계획하는 작업 수
+const GAP_MS = 170; // v265: 국토부 요청 사이 최소 간격(11/26 새벽 155건째에 국토부 오류로 멈춤)
+const MAX_FAIL_ROUNDS = 3; // v265: 국토부 오류로 실패한 묶음은 3초 쉬고 다시(최대 3번)
 
 const chunks = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
 const withTimeout = (fn, ms) => () => Promise.race([
@@ -84,10 +87,12 @@ export async function GET(request) {
   let error = '';
   const why = {};
   const touched = new Set();
+  const gate = makeGate(GAP_MS);
+  let failRounds = 0;
   try {
     while (done < total && Date.now() - started < UNTIL_MS) {
       const ids = [];
-      for (let k = 0; k < POOL && done + k < total; k += 1) ids.push(done + k);
+      for (let k = 0; k < BATCH && done + k < total; k += 1) ids.push(done + k);
       const plan = ids.map((i) => {
         const { regionIdx, ym } = backfillTask(i, regions.length, backMonths);
         return { code: regions[regionIdx].code, ym };
@@ -95,14 +100,14 @@ export async function GET(request) {
       // eslint-disable-next-line no-await-in-loop
       await loadMax(plan.map((p) => p.code));
       // eslint-disable-next-line no-await-in-loop
-      const rs = await runPool(plan.map((p) => withTimeout(() => fetchRegionMonth(serviceKey, p.code, p.ym, { strict: true }), TASK_MS)), POOL);
+      const rs = await runPool(plan.map((p) => withTimeout(async () => { await gate(); return fetchRegionMonth(serviceKey, p.code, p.ym, { strict: true }); }, TASK_MS)), POOL);
       let ok = 0;
       for (let k = 0; k < rs.length; k += 1) {
         const x = rs[k];
         if (!Array.isArray(x)) {
-          const key = x?.error === 'timeout' ? 'timeout' : (x?.error?.message === 'RTMS_ERROR' ? 'rtms' : 'other');
+          const key = failKind(x);
           why[key] = (why[key] || 0) + 1;
-          break; // 실패한 자리에서 멈추고 다음에 그 자리부터
+          break; // 실패한 자리에서 멈추고 그 자리부터 다시
         }
         const before = Object.keys(maxMaps[plan[k].code]).length;
         updateMax(maxMaps[plan[k].code], x);
@@ -111,7 +116,12 @@ export async function GET(request) {
         ok += 1;
       }
       done += ok;
-      if (ok < rs.length) { error = '국토부 응답 오류·지연으로 멈춤'; break; }
+      if (ok < rs.length) {
+        failRounds += 1;
+        if (failRounds >= MAX_FAIL_ROUNDS || Date.now() - started > UNTIL_MS - 4000) { error = '국토부 응답 오류·지연으로 멈춤'; break; }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => { setTimeout(r, 3000); });
+      }
     }
   } catch (e) {
     error = '과거 채우기 중 오류';
