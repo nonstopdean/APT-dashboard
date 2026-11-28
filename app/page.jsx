@@ -727,6 +727,41 @@ export default function Page() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedApt?.apt, selectedApt?.dong, selectedApt?.regionCode]);
+  // v277: 단지 공유 링크(?c=지역코드&d=동&a=단지명). 처음 열 때 있으면 그 단지 상세를 열고(서버 저장 좌표가 있으면 그 위치로),
+  //       단지 상세를 열고 닫을 때마다 주소창 주소를 바꿔 둔다(뒤로 가기 기록은 남기지 않음, 다른 주소 값은 그대로).
+  const deepLinkDoneRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkDoneRef.current) return;
+    deepLinkDoneRef.current = true;
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const c = q.get('c'); const a = q.get('a'); const d = q.get('d') || '';
+      if (!c || !a || !/^\d{5}$/.test(c)) return;
+      setViewMode('map');
+      setSelectedApt({ apt: a, dong: d, regionCode: c });
+      fetchServerGeocodeCache([`${c}|${d}|${a}`]).then((hits) => {
+        const coord = hits?.[`${c}|${d}|${a}`];
+        // 첫 화면 이동(기억한 지역)보다 늦게 가도록 조금 기다린다
+        if (coord && Number.isFinite(coord.lat)) setTimeout(() => setFocusLatLng({ lat: coord.lat, lng: coord.lng, zoom: 16, instant: true }), 1200);
+      }).catch(() => {});
+    } catch (e) { /* 주소를 못 읽으면 평소처럼 */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!deepLinkDoneRef.current) return;
+    try {
+      const url = new URL(window.location.href);
+      if (selectedApt?.apt && selectedApt?.regionCode) {
+        url.searchParams.set('c', String(selectedApt.regionCode));
+        url.searchParams.set('d', String(selectedApt.dong || ''));
+        url.searchParams.set('a', String(selectedApt.apt));
+      } else {
+        ['c', 'd', 'a'].forEach((k) => url.searchParams.delete(k));
+      }
+      if (url.toString() !== window.location.href) window.history.replaceState(window.history.state, '', url.toString());
+    } catch (e) { /* 무시 */ }
+  }, [selectedApt?.apt, selectedApt?.dong, selectedApt?.regionCode]);
+
   const clearRecentViews = () => {
     setRecentViews([]);
     try { window.localStorage.removeItem(RECENT_VIEW_KEY); } catch (e) { /* 무시 */ }
