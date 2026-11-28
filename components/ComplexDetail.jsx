@@ -12,6 +12,40 @@ import DetailSections from './DetailSections';
 import ComplexTradePanel from './ComplexTradePanel';
 import JeonseSafety from './JeonseSafety';
 
+// v277: 단지 링크 복사 — 이 주소를 열면 같은 단지 상세가 바로 열린다(page.jsx가 ?c=지역코드&d=동&a=단지명을 읽음)
+export function complexShareUrl(apt) {
+  if (typeof window === 'undefined' || !apt?.apt || !apt?.regionCode) return '';
+  const q = new URLSearchParams({ c: String(apt.regionCode), d: String(apt.dong || ''), a: String(apt.apt) });
+  return `${window.location.origin}/?${q.toString()}`;
+}
+function ShareLink({ apt }) {
+  const [state, setState] = React.useState(''); // '' | 'ok' | 'fail'
+  const copy = async () => {
+    const url = complexShareUrl(apt);
+    try {
+      if (navigator.share && /Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+        await navigator.share({ title: `${apt.apt} 실거래가`, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setState('ok');
+    } catch (e) {
+      setState('fail');
+    }
+    setTimeout(() => setState(''), 2500);
+  };
+  return (
+    <button type="button" data-share-link="1" onClick={copy}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, border: `1px solid ${PALETTE.border}`, borderRadius: 999,
+        padding: '5px 11px', background: state === 'ok' ? '#E8F7EE' : '#fff', color: state === 'ok' ? '#15803D' : PALETTE.textSecondary,
+        fontSize: 11.5, fontWeight: 700, cursor: 'pointer', marginBottom: 10,
+      }}>
+      {state === 'ok' ? '✓ 링크를 복사했어요' : state === 'fail' ? '복사하지 못했어요 — 주소창의 주소를 써 주세요' : '🔗 이 단지 링크 복사'}
+    </button>
+  );
+}
+
 // 단지 상세. app/page.jsx 안에 있던 ~600줄짜리 JSX를 그대로 옮긴 것으로, 로직은 바꾸지 않았다.
 // selectedApt가 있을 때만 부모(page.jsx)가 이 컴포넌트를 렌더링한다.
 // variant="panel"이면(지도 탭) 화면을 가리는 모달 대신, 지도는 계속 보이게 오른쪽에 붙는
@@ -948,7 +982,7 @@ export default function ComplexDetail({
       <DetailSections
         summaryLine={summaryLine}
         sections={[
-          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [bComplexInfo, bGongsiLoading, bGongsi] },
+          { id: 'info', title: '단지 정보', defaultOpen: true, blocks: [<ShareLink key="share" apt={selectedApt} />, bComplexInfo, bGongsiLoading, bGongsi] },
           {
             id: 'trade',
             title: '실거래가',
