@@ -702,6 +702,36 @@ export default function Page() {
     }
   }, []);
 
+  // v275: 최근 본 단지(이 브라우저에 최대 10개). 단지 상세를 열 때마다 맨 앞에 넣고, 왼쪽 검색 패널에서 다시 연다.
+  const RECENT_VIEW_KEY = 'apt-dashboard-recent-views';
+  const [recentViews, setRecentViews] = useState([]);
+  useEffect(() => {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(RECENT_VIEW_KEY) || '[]');
+      if (Array.isArray(raw)) setRecentViews(raw.filter((r) => r && r.apt && r.regionCode).slice(0, 10));
+    } catch (e) { /* 없거나 깨졌으면 빈 목록 */ }
+  }, []);
+  useEffect(() => {
+    if (!selectedApt?.apt || !selectedApt?.regionCode) return;
+    const item = {
+      apt: String(selectedApt.apt), dong: String(selectedApt.dong || ''), regionCode: String(selectedApt.regionCode),
+      lat: Number.isFinite(selectedApt.lat) ? selectedApt.lat : null, lng: Number.isFinite(selectedApt.lng) ? selectedApt.lng : null,
+    };
+    const id = `${item.regionCode}|${item.dong}|${item.apt}`;
+    setRecentViews((prev) => {
+      const old = prev.find((r) => `${r.regionCode}|${r.dong}|${r.apt}` === id);
+      if (item.lat == null && old?.lat != null) { item.lat = old.lat; item.lng = old.lng; } // 좌표 없이 열려도 예전 좌표 유지
+      const next = [item, ...prev.filter((r) => `${r.regionCode}|${r.dong}|${r.apt}` !== id)].slice(0, 10);
+      try { window.localStorage.setItem(RECENT_VIEW_KEY, JSON.stringify(next)); } catch (e) { /* 저장 실패 무시 */ }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApt?.apt, selectedApt?.dong, selectedApt?.regionCode]);
+  const clearRecentViews = () => {
+    setRecentViews([]);
+    try { window.localStorage.removeItem(RECENT_VIEW_KEY); } catch (e) { /* 무시 */ }
+  };
+
   const persistFavorites = (next) => {
     setFavorites(next);
     try {
@@ -3498,6 +3528,14 @@ export default function Page() {
             summary={searchRegionCard}
             onCloseSummary={() => setSearchRegion(null)}
             onOpenDashboard={searchRegion ? () => { addRegionAndFetch(searchRegion.code); setViewMode('normal'); } : null}
+            recentViews={recentViews}
+            onClearRecentViews={clearRecentViews}
+            onPickRecentView={(r) => {
+              setSearchRegion(null);
+              if (Number.isFinite(r.lat) && Number.isFinite(r.lng)) setFocusLatLng({ lat: r.lat, lng: r.lng, zoom: 16 });
+              setSelectedApt({ apt: r.apt, dong: r.dong, regionCode: r.regionCode, lat: r.lat ?? undefined, lng: r.lng ?? undefined });
+              if (typeof window !== 'undefined' && window.innerWidth <= 720) setPanelOpen(false);
+            }}
             recent={viewRecent}
             recentOpen={recentOpen}
             onToggleRecent={() => setRecentOpen((v) => !v)}
