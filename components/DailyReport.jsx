@@ -84,7 +84,8 @@ export default function DailyReport({ setSelectedApt, styles }) {
   const tops = fTrades.slice(0, 20);
   const topHigh = r ? [...(r.byRegion || [])].filter((g) => g.h > 0).sort((a, b) => b.h - a.h)[0] : null;
   // v257: 날짜별 추이(최근 30일, 오래된 날부터)
-  const series = [...(data.stats || [])].slice(0, 30).reverse().map((s) => ({
+  // v271: 국토부 장애로 전부 실패한 날(신고 0·실패 있음)은 추이에서 뺀다(0으로 보이면 거래가 없던 날로 오해)
+  const series = [...(data.stats || [])].filter((s) => !(s.t === 0 && s.f > 0)).slice(0, 30).reverse().map((s) => ({
     day: `${Number(String(s.d).slice(4, 6))}/${Number(String(s.d).slice(6, 8))}`,
     서울: s.s?.서울 || 0, 인천: s.s?.인천 || 0, 경기: s.s?.경기 || 0, 신고가: s.h || 0, 합계: s.t || 0,
   }));
@@ -106,6 +107,10 @@ export default function DailyReport({ setSelectedApt, styles }) {
         ) : !r ? (
           <p style={{ fontSize: 13, color: PALETTE.textMuted, margin: 0, lineHeight: 1.7 }}>
             아직 쌓인 리포트가 없어요. 매일 아침 8시에 자동으로 저장되고, 첫날은 기준만 잡아서 둘째 날부터 "그날 신고된 거래"가 나와요.
+          </p>
+        ) : r.total === 0 && (r.failed?.length || 0) > 0 && !r.baseline?.length ? (
+          <p data-daily-molit-down="1" style={{ fontSize: 13, color: PALETTE.textMuted, margin: 0, lineHeight: 1.7 }}>
+            {fmtDate(r.date)}은 국토부 실거래 서버가 응답하지 않아 자료를 받지 못했어요({r.failed.length}개 지역). 이 날 신고분은 다음 날 리포트에 함께 잡혀요.
           </p>
         ) : r.total === 0 && r.baseline?.length ? (
           <p style={{ fontSize: 13, color: PALETTE.textMuted, margin: 0, lineHeight: 1.7 }}>
