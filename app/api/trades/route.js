@@ -72,7 +72,11 @@ export async function GET(request) {
   let errorMsg = null;
   results.forEach((r, i) => {
     if (r && r.error) {
-      errorMsg = errorMsg || publicError(r.error, '일부 기간의 자료를 불러오지 못했습니다.');
+      // v271: 국토부 서버 장애(HTTP 오류 응답)는 알아듣기 쉬운 말로
+      const raw = String(r.error?.message || r.error || '');
+      errorMsg = errorMsg || (/HTTP/i.test(raw)
+        ? '국토부 실거래 서버가 응답하지 않아 일부 기간 자료가 비어 있어요. 잠시 뒤 다시 조회해 주세요.'
+        : publicError(r.error, '일부 기간의 자료를 불러오지 못했습니다.'));
       rawByMember[keys[i]] = [];
     } else {
       rawByMember[keys[i]] = r || [];
