@@ -148,6 +148,13 @@ export async function GET(request) {
     updateMax(maxMaps[r.code], trades);
   });
 
+  // v271: 모든 지역이 실패한 날(11/28 아침: 국토부가 모든 요청에 HTTP_ERROR)은 "0건 리포트"를 저장하지 않는다.
+  //       목록(index)에 안 들어가므로 같은 날 다시 도는 크론(vercel.json ?retry=1, 한국 10:30·13:30)이 다시 시도한다.
+  if (failed.length === regions.length) {
+    await mark('molit-down', { failed: failed.length, why });
+    return Response.json({ date, skipped: '국토부 응답 오류로 오늘 자료를 받지 못했어요(나중에 다시 시도)', why, ms: Date.now() - started });
+  }
+
   const bfPrev = (await kvGet(BACKFILL)) || null;
   const baseYm = bfPrev?.baseYm || monthsBefore(months[0], 1)[0]; // 처음 정한 기준 달에서 거꾸로(달이 바뀌어도 순서가 밀리지 않게)
   const backMonths = [baseYm, ...monthsBefore(baseYm, BACK_MONTHS - 1)];
