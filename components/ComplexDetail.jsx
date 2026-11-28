@@ -30,7 +30,17 @@ function ShareLink({ apt }) {
       await navigator.clipboard.writeText(url);
       setState('ok');
     } catch (e) {
-      setState('fail');
+      // v278: 클립보드 권한이 막힌 창(앱 안 브라우저 등)에서는 예전 방식(숨긴 입력칸 + 복사 명령)으로 한 번 더
+      let ok = false;
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = url; ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch (e2) { ok = false; }
+      setState(ok ? 'ok' : 'fail');
     }
     setTimeout(() => setState(''), 2500);
   };
