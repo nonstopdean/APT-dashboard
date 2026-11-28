@@ -83,7 +83,7 @@ export default function MapSearchPanel({
               else if (remoteRows[0]) pick(onPickComplex)(remoteRows[0]);
             }
           }}
-          placeholder="예: 동탄역포레너스, 강서구, 역삼동"
+          placeholder="예: 강서구, 역삼동, 단지 이름"
           style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', padding: '10px 0', fontSize: 13, background: 'transparent' }}
         />
         {query && <span style={{ cursor: 'pointer', color: P.textMuted, fontSize: 14 }} onClick={() => setQuery('')}>✕</span>}
