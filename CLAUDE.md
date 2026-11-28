@@ -160,6 +160,7 @@
 - **v278**: 링크 복사에서 클립보드 권한이 막히면 숨긴 textarea + `execCommand('copy')`로 한 번 더.
 - **v279 = 공유 링크 미리보기 제목**: **화면 코드는 이제 `app/HomeClient.jsx`**(예전 `app/page.jsx` 내용 그대로, 함수 이름만 HomeClient). `app/page.jsx`는 서버 컴포넌트로 `generateMetadata({ searchParams })`가 `?c&d&a`면 제목 "단지명 실거래가 · 도갱노노"·설명(지역·동)을 바꾸고 `<HomeClient />`만 그린다. 이 때문에 첫 페이지는 요청마다 서버에서 그려짐(동적). 이후 "page.jsx 고친다"는 말은 대부분 HomeClient.jsx를 뜻한다.
 - **v280 = 단지 비교 카테고리로 고르기**(사용자 "검색 말고 카테고리로 여러 단지"): 시장분석 "단지 비교"에 "📂 카테고리로 고르기"(기본)·"🔍 이름으로 찾기". `MarketCompare.jsx` `CategoryPicker` = 지역 칩 → 동 칩 → 평형대(20평대 이하/30평대/40평 이상, 공급 평형) → 기준(거래 많은·평당가 높은·많이 오른·신고가·고점 대비 하락; 뒤 셋은 같은 평형 3건 이상) → 목록 15개(더 보기 60) 눌러 담기/빼기, "위에서 N개 한 번에 담기". 순수 함수 `lib/market-compare.js` `categoryRows`·`categoryGroups`·`compareUnitOf`(전월세는 보증금/공급평). 최대 5 → 8개, `LINE_COLORS` 8색.
+- **v281**: 단지 비교 평형대 거르기를 단지의 모든 거래로(`sizeBuckets(tx)` → 키별 s/m/l {n, avgUnit, latest}) — 예전엔 마지막 거래 평형만 봐서 리센츠(마지막 14평)가 30평대에서 빠졌다. 평형을 고르면 목록의 평형·최근가·건수·평당가(정렬 포함)도 그 평형 거래로.
 - 커밋 도구(Claude 작업용): `difflib`으로 원격 원본 대비 덩어리를 만들고 원본에 적용해 새 파일과 같은지 확인한 뒤 브라우저 sessionStorage에 넣어 편집기에 붙여넣는다. api.github.com 비인증 조회는 시간당 60번 한도(넘으면 403 → raw.githubusercontent로).
 - 사용자가 준 참고 자료(다른 AI가 만든 "집시세" diff, TanStack/Tailwind라 직접 적용 불가)의 아이디어: 폰 하단 고정 탭바, 지도 위 검색창·필터 칩, 폰에서 목록 열기/닫기 버튼, 목록에 평당가·"신축" 배지, 지도 키 없을 때 안내 카드.
 - **아직 확인 안 된 것**: 폰 화면, 위치 다듬기가 실제 브라우저에서 단지를 낱개로 푸는지.
