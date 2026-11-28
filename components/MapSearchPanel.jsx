@@ -13,6 +13,7 @@ const fmtPrice = (v) => (Number.isFinite(v) ? (v >= 10000 ? `${(v / 10000).toFix
 export default function MapSearchPanel({
   complexes = [], regionGroups, sidoAggregates, regionLabel, onPickComplex, onPickRegion, onPickDong,
   summary, onCloseSummary, onOpenDashboard, palette, recent = null, onOpenTrade, recentOpen = false, onToggleRecent,
+  recentViews = [], onPickRecentView, onClearRecentViews,
 }) {
   const P = palette;
   const [query, setQuery] = useState('');
@@ -94,6 +95,31 @@ export default function MapSearchPanel({
           단지 이름이나 지역(시·구·동)을 두 글자 이상 적으면 바로 찾아요. 누르면 지도가 그곳으로 가요.
           지도를 움직이면 화면 안 단지가 자동으로 보여요.
         </p>
+      )}
+
+      {/* v275: 최근 본 단지(이 브라우저에 최대 10개) — 누르면 그 단지로 가서 상세를 연다 */}
+      {!qOk && recentViews.length > 0 && onPickRecentView && (
+        <div data-recent-views="1" style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: P.textSecondary, flex: 1 }}>🕘 최근 본 단지</span>
+            {onClearRecentViews && (
+              <span role="button" tabIndex={0} onClick={onClearRecentViews} onKeyDown={(e) => { if (e.key === 'Enter') onClearRecentViews(); }}
+                style={{ fontSize: 10.5, color: P.textMuted, cursor: 'pointer', textDecoration: 'underline' }}>지우기</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {recentViews.map((r) => (
+              <button key={`${r.regionCode}|${r.dong}|${r.apt}`} type="button" data-recent-view="1" onClick={() => onPickRecentView(r)}
+                title={`${regionLabel(r.regionCode)} ${r.dong}`}
+                style={{
+                  border: `1px solid ${P.border}`, borderRadius: 999, padding: '5px 10px', background: '#fff', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, color: P.textPrimary, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                {r.apt}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {qOk && (
