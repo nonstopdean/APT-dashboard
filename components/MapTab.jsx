@@ -604,6 +604,35 @@ export default function MapTab({
           </div>
         )}
 
+        {/* v274: 부동산플래닛·밸류맵처럼 지도 왼쪽 세로 도구 — 지하철역·학교·시세를 레이어 창을 열지 않고 바로 켜고 끈다 */}
+        {(() => {
+          const pinRailOn = mapZoomTier === 'near' && !isRone && !isRatio;
+          const pinTop = dailyPill && dailyPill.n > 0 ? 110 : 66;
+          const tools = [
+            ['subway', '🚇', '역', subwayLayerOn, () => setSubwayLayerOn((v) => !v), '지하철역 표시'],
+            ['school', '🏫', '학교', schoolLayerOn, () => setSchoolLayerOn((v) => !v), schoolLocationsLoading ? '학교 위치 불러오는 중' : '초·중학교 표시'],
+            ...(toggleMarketLayer ? [['market', '📊', '시세', marketLayerOn, toggleMarketLayer, '지역 평균 시세 말풍선·색칠']] : []),
+          ];
+          return (
+            <div data-quick-tools="1" style={{
+              position: 'absolute', left: 14, top: pinRailOn ? pinTop + 108 : pinTop, zIndex: 19, display: 'flex', flexDirection: 'column', gap: 2, padding: 3,
+              background: 'rgba(255,255,255,0.97)', border: `1px solid ${PALETTE.border}`, borderRadius: 10, boxShadow: '0 3px 12px rgba(15,30,61,0.14)',
+            }}>
+              {tools.map(([id, icon, label, on, toggle, title]) => (
+                <button key={id} type="button" data-quick-tool={id} data-on={on ? '1' : '0'} onClick={toggle} title={title}
+                  style={{
+                    border: 'none', borderRadius: 7, padding: '5px 4px', cursor: 'pointer', minWidth: 40, lineHeight: 1.1,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                    background: on ? PALETTE.accentSoft : 'transparent', color: on ? PALETTE.accentDark : PALETTE.textSecondary,
+                  }}>
+                  <span style={{ fontSize: 14 }}>{icon}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800 }}>{label}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* v273: 국토부 실거래 서버 장애 안내(최근 5분 안에 주변 구 자료에서 오류를 봤을 때). 닫기 가능 */}
         {molitIssueAt > 0 && Date.now() - molitIssueAt < 300000 && molitIssueAt !== molitDismissed && (
           <div data-molit-issue="1" role="status" style={{
