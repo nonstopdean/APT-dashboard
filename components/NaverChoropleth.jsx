@@ -17,7 +17,9 @@ function markerHtmlOf(titleText, priceText, pinned) {
   const chip = priceText
     ? `<span style="display:inline-block;padding:3px 7px;border-radius:999px;background:#1D4ED8;color:#fff;font-weight:800;letter-spacing:-0.2px;">${priceText}</span>`
     : '';
-  return `<div style="display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:pointer;transform:translate(-50%,-100%);">` +
+  // v272: position:absolute — 네이버가 감싸는 바깥 칸의 크기가 0이 되게 한다. 예전엔 바깥 칸이 (옮기기 전) 이름표 크기만큼
+  //       좌표 오른쪽 아래에 투명하게 남아 이웃 핀 위를 덮어, 핀을 눌러도 다른 단지가 열리거나 아무 일도 없었다.
+  return `<div style="position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;pointer-events:auto;cursor:pointer;transform:translate(-50%,-100%);">` +
     `<div style="display:flex;align-items:center;gap:5px;padding:2px ${priceText ? '9px 2px 2px' : '9px'};border-radius:999px;background:${bg};border:${border};box-shadow:0 2px 6px rgba(15,30,61,0.18);font-size:10.5px;line-height:1.15;white-space:nowrap;color:#0F1B33;font-weight:700;">` +
     `${chip}<span style="${priceText ? '' : 'padding:3px 0;'}">${star}${titleText}</span></div>` +
     `<div style="width:0;height:0;margin-top:-1px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid ${pinned ? '#1D4ED8' : '#fff'};filter:drop-shadow(0 1px 1px rgba(15,30,61,0.18));"></div></div>`;
