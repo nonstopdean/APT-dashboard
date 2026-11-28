@@ -7,21 +7,24 @@ import {
 } from '../lib/ui-helpers';
 import {
   regionCompareRows, searchRows, complexLabels, complexCompareStats,
-  COMPARE_SORTS, COMPARE_SIZES, categoryRows, categoryGroups, compareUnitOf,
+  COMPARE_SORTS, COMPARE_SIZES, categoryRows, categoryGroups, compareUnitOf, sizeBuckets,
 } from '../lib/market-compare';
 import { supplyPyeong } from '../lib/pyeong';
 import LongCompare from './LongCompare';
 
 // v280: 단지 비교 "카테고리로 고르기" — 지역 → 동 → 평형대 → 기준을 눌러 목록에서 담는다(이름을 몰라도 고를 수 있게).
 const PICK_SHOW = 15;
-function CategoryPicker({ rows, isRent, picked, onAdd, onRemove, max }) {
+function CategoryPicker({ rows, tx, isRent, picked, onAdd, onRemove, max }) {
   const [region, setRegion] = useState('all');
   const [dong, setDong] = useState('all');
   const [size, setSize] = useState('all');
   const [sort, setSort] = useState('volume');
   const [more, setMore] = useState(false);
   const groups = useMemo(() => categoryGroups(rows, region), [rows, region]);
-  const list = useMemo(() => categoryRows(rows, { region, dong, size, sort, isRent, sizeOf: supplyPyeong }), [rows, region, dong, size, sort, isRent]);
+  // v281: 평형대는 단지의 모든 거래로(마지막 거래 평형만 보지 않게). 평형을 고르면 평당가·최근가도 그 평형 거래로.
+  const bySize = useMemo(() => sizeBuckets(tx, isRent, supplyPyeong), [tx, isRent]);
+  const list = useMemo(() => categoryRows(rows, { region, dong, size, sort, isRent, sizeOf: supplyPyeong, bySize }), [rows, region, dong, size, sort, isRent, bySize]);
+  const bucketOf = (r) => (size !== 'all' ? bySize.get(r.key)?.[size] : null);
   const shown = more ? list.slice(0, 60) : list.slice(0, PICK_SHOW);
   const pickedKeys = new Set(picked.map((p) => p.key));
   const room = max - picked.length;
@@ -36,7 +39,7 @@ function CategoryPicker({ rows, isRent, picked, onAdd, onRemove, max }) {
   const metric = (r) => {
     if (sort === 'rise') return { text: fmtPct(r.change), color: toneOf(r.change) };
     if (sort === 'drop') return { text: `고점 대비 ${fmtPct(r.drawdown)}`, color: PALETTE.down };
-    const u = compareUnitOf(r, isRent, supplyPyeong);
+    const u = bucketOf(r)?.avgUnit ?? compareUnitOf(r, isRent, supplyPyeong);
     return { text: u ? `평당 ${fmtManwon(Math.round(u))}` : '-', color: PALETTE.textPrimary };
   };
   if (!rows || rows.length === 0) {
@@ -93,6 +96,10 @@ function CategoryPicker({ rows, isRent, picked, onAdd, onRemove, max }) {
           {shown.map((r) => {
             const on = pickedKeys.has(r.key);
             const m = metric(r);
+            const bk = bucketOf(r);
+            const showArea = bk?.latest?.area ?? r.area;
+            const showPrice = bk?.latest?.price ?? r.latest;
+            const showN = bk ? bk.n : r.volume;
             return (
               <button key={r.key} type="button" data-pick-row="1" disabled={!on && room <= 0}
                 onClick={() => (on ? onRemove(r.key) : onAdd(r))}
@@ -109,7 +116,7 @@ function CategoryPicker({ rows, isRent, picked, onAdd, onRemove, max }) {
                     {r.newHigh && (r.sameN || 0) >= 3 ? '🔺 ' : ''}{r.apt}
                   </span>
                   <span style={{ display: 'block', fontSize: 10.5, color: PALETTE.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {region === 'all' ? `${labelFor(r.regionCode)} ` : ''}{r.dong} · {supplyPyeong(r.area)}평 {fmtWon(r.latest)} · {r.volume}건
+                    {region === 'all' ? `${labelFor(r.regionCode)} ` : ''}{r.dong} · {supplyPyeong(showArea)}평 {fmtWon(showPrice)} · {showN}건
                   </span>
                 </span>
                 <span style={{ fontSize: 11, fontWeight: 700, color: m.color, whiteSpace: 'nowrap' }}>{m.text}</span>
@@ -164,7 +171,7 @@ function ComplexCompare({ rows, tx, isRent, pinnedComplexes, setSelectedApt, sty
         <span style={{ alignSelf: 'center', fontSize: 11.5, color: PALETTE.textMuted, marginLeft: 'auto' }}>{picked.length}/{MAX}개 담음</span>
       </div>
       {pickMode === 'category' && (
-        <CategoryPicker rows={rows} isRent={isRent} picked={picked} max={MAX}
+        <CategoryPicker rows={rows} tx={tx} isRent={isRent} picked={picked} max={MAX}
           onAdd={(r) => add({ key: r.key, apt: r.apt, dong: r.dong, regionCode: r.regionCode })}
           onRemove={(key) => setPicked((prev) => prev.filter((p) => p.key !== key))} />
       )}
