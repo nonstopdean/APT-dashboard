@@ -51,9 +51,10 @@ export default function MapTab({
   schoolInfoOf, listSchool = 'all', setListSchool, elemSchools = null,
   householdsOf, listHH = 'all', setListHH, hhData = null,
   setSchoolWanted, setHhWanted, setPanelCover, onPickComplex, areaBubbles, dailyPill = null,
-  marketLayerOn = true, toggleMarketLayer = null,
+  marketLayerOn = true, toggleMarketLayer = null, molitIssueAt = 0,
 }) {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  const [molitDismissed, setMolitDismissed] = useState(0); // v273: 닫은 장애 안내(그 시각)
   // v222: 주소 끝에 ?map=kakao를 붙이면 네이버 키가 있어도 카카오 대체 지도로 본다(대체 지도 확인용).
   // 첫 렌더는 서버와 같게(네이버) 그리고, 화면에 붙은 뒤에 바꾼다(하이드레이션 불일치 방지).
   const [forceKakao, setForceKakao] = useState(false);
@@ -600,6 +601,19 @@ export default function MapTab({
                 {l}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* v273: 국토부 실거래 서버 장애 안내(최근 5분 안에 주변 구 자료에서 오류를 봤을 때). 닫기 가능 */}
+        {molitIssueAt > 0 && Date.now() - molitIssueAt < 300000 && molitIssueAt !== molitDismissed && (
+          <div data-molit-issue="1" role="status" style={{
+            position: 'absolute', left: '50%', bottom: 132, transform: 'translateX(-50%)', zIndex: 22, maxWidth: 'calc(100% - 28px)',
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10,
+            background: '#FFF7E6', border: '1px solid #F5C97A', color: '#7A4B00', fontSize: 12, boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
+          }}>
+            <span>⚠️ 국토부 실거래 서버가 응답하지 않아 일부 지역 단지·가격이 안 보일 수 있어요. 잠시 뒤 자동으로 다시 받아요.</span>
+            <button type="button" onClick={() => setMolitDismissed(molitIssueAt)} aria-label="안내 닫기"
+              style={{ border: 'none', background: 'transparent', color: '#7A4B00', cursor: 'pointer', fontSize: 14, flexShrink: 0 }}>✕</button>
           </div>
         )}
 
