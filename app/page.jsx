@@ -1624,6 +1624,7 @@ export default function Page() {
   // v203: 선택하지 않은 구도 지도에서 둘러보고 누를 수 있게, 화면에 보이는 구를 자동으로 불러온 데이터(지도 핀 전용 —
   // 대시보드·순위는 선택한 지역 그대로). { [regionCode]: { key, at, aptList: [{apt,dong}], trades: [행] } }, 최대 8곳.
   const [browseData, setBrowseData] = useState({});
+  const [molitIssueAt, setMolitIssueAt] = useState(0); // v273: 주변 구 자료에서 국토부 오류를 마지막으로 본 시각
   const browseEnd = months.length ? months[months.length - 1] : ymNow();
   const browseStart = months.length ? months[0] : ymShift(browseEnd, -5);
   const browseDataKey = `${dealType}|${browseStart}|${browseEnd}`;
@@ -3237,7 +3238,9 @@ export default function Page() {
   }, [viewMode, mapZoomTier, mapViewportBounds, dealType, propertyType, selected, featureBoxes, searchRegion]);
   useEffect(() => {
     if (!browseKey) return undefined;
-    const codes = browseKey.split(',').filter((c) => browseData[c]?.key !== browseDataKey);
+    // v273: 국토부 장애로 일부 달이 비어 온 지역은 2분 뒤 다시 받는다(예전엔 한 번 받으면 다시 안 받아 복구돼도 비어 있었다)
+    const codes = browseKey.split(',').filter((c) => browseData[c]?.key !== browseDataKey
+      || (browseData[c]?.err && Date.now() - browseData[c].at > 120000));
     if (!codes.length) return undefined;
     const ep = dealType === 'rent' ? '/api/rents' : '/api/trades';
     let cancelled = false;
@@ -3247,6 +3250,8 @@ export default function Page() {
         fetch(`${ep}?codes=${code}&start=${browseStart}&end=${browseEnd}`).then((r) => r.json()).catch(() => null),
       ]).then(([list, tx]) => [code, list, tx]))).then((results) => {
         if (cancelled) return;
+        // v273: 국토부 장애 안내(지도 위 알림) — 받은 지역 중 하나라도 오류 문구가 오면
+        if (results.some(([, , tx]) => tx?.error)) setMolitIssueAt(Date.now());
         setBrowseData((prev) => {
           const next = { ...prev };
           results.forEach(([code, list, tx]) => {
@@ -3254,6 +3259,7 @@ export default function Page() {
             next[code] = {
               key: browseDataKey,
               at: Date.now(),
+              err: Boolean(tx?.error || !tx),
               aptList: (list?.data?.[code] || []).map((it) => ({ apt: it.kaptName, dong: it.dong })),
               trades: (tx?.months || []).flatMap((ym) => tx?.data?.[`${code}_${ym}`] || []),
             };
@@ -4008,6 +4014,7 @@ export default function Page() {
           householdsOf={householdsOf} listHH={listHH} setListHH={setListHH} hhData={hhData}
           setSchoolWanted={setSchoolWanted} setHhWanted={setHhWanted} setPanelCover={setPanelCover} onPickComplex={goToComplex} areaBubbles={areaBubbles} dailyPill={dailyPill}
           marketLayerOn={marketLayerOn} toggleMarketLayer={toggleMarketLayer}
+          molitIssueAt={molitIssueAt}
           mapColorMode={mapColorMode} setMapColorMode={setMapColorMode}
           budgetSearchOpen={budgetSearchOpen} setBudgetSearchOpen={setBudgetSearchOpen}
           budgetAmount={budgetAmount} setBudgetAmount={setBudgetAmount}
