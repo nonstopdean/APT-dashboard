@@ -9,6 +9,14 @@
       "schedule": "0 23 * * *"
     },
     {
+      "path": "/api/daily-snapshot?retry=1",
+      "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/daily-snapshot?retry=2",
+      "schedule": "30 4 * * *"
+    },
+    {
       "path": "/api/daily-backfill",
       "schedule": "0 18 * * *"
     }
