@@ -520,7 +520,8 @@ export default function MapTab({
             })}
           </svg>
         )}
-        {seoulMapData.max > seoulMapData.min && (
+        {/* v276: 색칠을 안 할 때(시세 꺼짐)는 범례도 숨긴다 — 폰에서 아래 목록 막대와 겹쳤다 */}
+        {showFill && seoulMapData.max > seoulMapData.min && (
           <div style={{
             position: 'absolute', left: 16, bottom: 16, zIndex: 20,
             background: 'rgba(255,255,255,0.94)', border: `1px solid ${PALETTE.border}`, borderRadius: 8,
@@ -636,7 +637,8 @@ export default function MapTab({
         {/* v273: 국토부 실거래 서버 장애 안내(최근 5분 안에 주변 구 자료에서 오류를 봤을 때). 닫기 가능 */}
         {molitIssueAt > 0 && Date.now() - molitIssueAt < 300000 && molitIssueAt !== molitDismissed && (
           <div data-molit-issue="1" role="status" style={{
-            position: 'absolute', left: '50%', bottom: 132, transform: 'translateX(-50%)', zIndex: 22, maxWidth: 'calc(100% - 28px)',
+            // v276: 좌우 14px 안쪽에서 가운데 정렬(최대 520px) — 예전엔 left:50%라 폰에서 폭이 절반으로 줄어 5줄로 길쭉했다
+            position: 'absolute', left: 14, right: 14, marginLeft: 'auto', marginRight: 'auto', width: 'fit-content', maxWidth: 520, bottom: 132, zIndex: 22,
             display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10,
             background: '#FFF7E6', border: '1px solid #F5C97A', color: '#7A4B00', fontSize: 12, boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
           }}>
